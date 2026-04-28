@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "moonspire:block/card_forge"
+    }
+  }
+}
