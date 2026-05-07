@@ -13,8 +13,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.common.util.INBTSerializable;
 
 public class PlayerCardData implements INBTSerializable<CompoundTag> {
-    public static final int MIN_DECK_SIZE = 15;
-    public static final int MAX_DECK_SIZE = 30;
     public static final StreamCodec<RegistryFriendlyByteBuf, PlayerCardData> STREAM_CODEC = StreamCodec.of(
             PlayerCardData::writeToBuffer,
             PlayerCardData::readFromBuffer);
@@ -32,9 +30,6 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
 
     public void addCard(CardInstance card) {
         collection.add(card);
-        if (deck.size() < MAX_DECK_SIZE) {
-            deck.add(card.id());
-        }
     }
 
     public boolean removeCard(UUID id) {
@@ -44,11 +39,9 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
 
     public void setDeck(List<UUID> cardIds) {
         deck.clear();
+        List<UUID> available = collection.stream().map(CardInstance::id).toList();
         for (UUID id : cardIds) {
-            if (deck.size() >= MAX_DECK_SIZE) {
-                break;
-            }
-            if (findCard(id).isPresent()) {
+            if (available.contains(id)) {
                 deck.add(id);
             }
         }
@@ -59,20 +52,15 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
     }
 
     public List<CardInstance> deckCards() {
-        List<CardInstance> cards = new ArrayList<>();
-        for (UUID id : deck) {
-            findCard(id).ifPresent(cards::add);
-        }
-        return cards;
+        return new ArrayList<>(collection);
     }
 
     public boolean hasValidDeck() {
-        int count = deckCards().size();
-        return count >= MIN_DECK_SIZE && count <= MAX_DECK_SIZE;
+        return !collection.isEmpty();
     }
 
     public int validDeckSize() {
-        return deckCards().size();
+        return collection.size();
     }
 
     @Override
@@ -91,6 +79,7 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
             deckTag.add(idTag);
         }
         tag.put("deck", deckTag);
+        tag.putBoolean("moonspireCardsDirtyMarker", true);
         return tag;
     }
 
@@ -110,9 +99,6 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
             }
         }
         deck.removeIf(id -> findCard(id).isEmpty());
-        if (deck.size() > MAX_DECK_SIZE) {
-            deck.subList(MAX_DECK_SIZE, deck.size()).clear();
-        }
     }
 
     private static void writeToBuffer(RegistryFriendlyByteBuf buf, PlayerCardData data) {

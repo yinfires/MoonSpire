@@ -9,11 +9,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record UsePreparedCardPayload(int targetId) implements CustomPacketPayload {
+public record UsePreparedCardPayload(int handIndex, int targetId) implements CustomPacketPayload {
     public static final Type<UsePreparedCardPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "use_prepared_card"));
     public static final StreamCodec<RegistryFriendlyByteBuf, UsePreparedCardPayload> STREAM_CODEC = StreamCodec.of(
-            (buf, payload) -> buf.writeVarInt(payload.targetId),
-            buf -> new UsePreparedCardPayload(buf.readVarInt()));
+            (buf, payload) -> {
+                buf.writeVarInt(payload.handIndex);
+                buf.writeVarInt(payload.targetId);
+            },
+            buf -> new UsePreparedCardPayload(buf.readVarInt(), buf.readVarInt()));
 
     @Override
     public Type<? extends CustomPacketPayload> type() {
@@ -22,7 +25,7 @@ public record UsePreparedCardPayload(int targetId) implements CustomPacketPayloa
 
     public static void handle(UsePreparedCardPayload payload, IPayloadContext context) {
         if (context.player() instanceof ServerPlayer player) {
-            BattleManager.usePreparedCard(player, payload.targetId);
+            BattleManager.useCard(player, payload.handIndex, payload.targetId);
         }
     }
 }

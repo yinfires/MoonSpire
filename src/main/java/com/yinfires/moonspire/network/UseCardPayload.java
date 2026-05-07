@@ -1,0 +1,31 @@
+package com.yinfires.moonspire.network;
+
+import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.battle.BattleManager;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+public record UseCardPayload(int handIndex, int targetId) implements CustomPacketPayload {
+    public static final Type<UseCardPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "use_card"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, UseCardPayload> STREAM_CODEC = StreamCodec.of(
+            (buf, payload) -> {
+                buf.writeVarInt(payload.handIndex);
+                buf.writeVarInt(payload.targetId);
+            },
+            buf -> new UseCardPayload(buf.readVarInt(), buf.readVarInt()));
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
+    }
+
+    public static void handle(UseCardPayload payload, IPayloadContext context) {
+        if (context.player() instanceof ServerPlayer player) {
+            BattleManager.useCard(player, payload.handIndex, payload.targetId);
+        }
+    }
+}

@@ -1,9 +1,11 @@
 package com.yinfires.moonspire.registry;
 
 import com.yinfires.moonspire.MoonSpire;
+import java.util.Collection;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -19,5 +21,9 @@ public final class ModItems {
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
+    }
+
+    public static Collection<DeferredHolder<Item, ? extends Item>> creativeTabItems() {
+        return ITEMS.getEntries();
     }
 }

@@ -37,7 +37,7 @@ public record SetDeckPayload(List<UUID> cardIds) implements CustomPacketPayload 
     }
 
     private static SetDeckPayload read(RegistryFriendlyByteBuf buf) {
-        int size = Math.min(30, buf.readVarInt());
+        int size = Math.max(0, Math.min(4096, buf.readVarInt()));
         List<UUID> ids = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             ids.add(buf.readUUID());

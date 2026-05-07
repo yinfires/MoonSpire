@@ -35,6 +35,8 @@ bin/
 .env
 .env.*
 local.properties
+doc/
+
 
 ### Logs And Crash Dumps ###
 logs/

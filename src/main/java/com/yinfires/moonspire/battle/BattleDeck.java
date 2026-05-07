@@ -5,13 +5,15 @@ import com.yinfires.moonspire.card.CardInstance;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.util.RandomSource;
 
 public class BattleDeck {
     private final List<CardInstance> drawPile = new ArrayList<>();
     private final List<CardInstance> discardPile = new ArrayList<>();
+    private final List<CardInstance> exhaustPile = new ArrayList<>();
     private final List<CardInstance> hand = new ArrayList<>();
-    private final List<CardInstance> prepared = new ArrayList<>();
 
     public BattleDeck(List<CardInstance> cards, RandomSource random) {
         for (CardInstance card : cards) {
@@ -28,20 +30,22 @@ public class BattleDeck {
         return discardPile;
     }
 
+    public List<CardInstance> exhaustPile() {
+        return exhaustPile;
+    }
+
     public List<CardInstance> hand() {
         return hand;
     }
 
-    public List<CardInstance> prepared() {
-        return prepared;
+    public void startTurn(RandomSource random) {
+        discardHand();
+        draw(CardBalance.STARTING_HAND_SIZE, random);
     }
 
-    public void startRound(RandomSource random) {
+    public void discardHand() {
         discardPile.addAll(hand);
-        discardPile.addAll(prepared);
         hand.clear();
-        prepared.clear();
-        draw(CardBalance.STARTING_HAND_SIZE, random);
     }
 
     public void draw(int count, RandomSource random) {
@@ -58,75 +62,100 @@ public class BattleDeck {
         }
     }
 
-    public int prepare(List<Integer> handIndexes, int maxEnergy) {
-        int spent = 0;
-        List<CardInstance> selected = new ArrayList<>();
-        for (int index : handIndexes) {
-            if (index < 0 || index >= hand.size()) {
-                continue;
-            }
-            CardInstance card = hand.get(index);
-            if (spent + card.cost() <= maxEnergy && !selected.contains(card)) {
-                selected.add(card);
-                spent += card.cost();
+    public CardInstance peekHand(int index) {
+        if (index < 0 || index >= hand.size()) {
+            return null;
+        }
+        return hand.get(index);
+    }
+
+    public CardInstance useHand(int index) {
+        if (index < 0 || index >= hand.size()) {
+            return null;
+        }
+        CardInstance card = hand.remove(index);
+        return card;
+    }
+
+    public void discard(CardInstance card) {
+        if (card != null) {
+            discardPile.add(card);
+        }
+    }
+
+    public void exhaust(CardInstance card) {
+        if (card != null) {
+            exhaustPile.add(card);
+        }
+    }
+
+    public List<CardInstance> removeHandByIds(List<UUID> ids) {
+        Set<UUID> selectedIds = Set.copyOf(ids == null ? List.of() : ids);
+        List<CardInstance> removed = new ArrayList<>();
+        if (selectedIds.isEmpty()) {
+            return removed;
+        }
+        for (int i = hand.size() - 1; i >= 0; i--) {
+            if (selectedIds.contains(hand.get(i).id())) {
+                removed.add(0, hand.remove(i));
             }
         }
-        hand.removeAll(selected);
-        prepared.addAll(selected);
-        return spent;
+        return removed;
     }
 
-    public CardInstance popNextAttack() {
-        for (int i = 0; i < prepared.size(); i++) {
-            CardInstance card = prepared.get(i);
-            if (card.hasAttack()) {
-                prepared.remove(i);
-                discardPile.add(card);
-                return card;
+    public List<CardInstance> removeFirstHandCards(int count) {
+        List<CardInstance> removed = new ArrayList<>();
+        int capped = Math.min(Math.max(0, count), hand.size());
+        for (int i = 0; i < capped; i++) {
+            removed.add(hand.remove(0));
+        }
+        return removed;
+    }
+
+    public void discardAll(List<CardInstance> cards) {
+        if (cards != null) {
+            discardPile.addAll(cards);
+        }
+    }
+
+    public void exhaustAll(List<CardInstance> cards) {
+        if (cards != null) {
+            exhaustPile.addAll(cards);
+        }
+    }
+
+    public int firstAffordableAttack(int energyLeft) {
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance card = hand.get(i);
+            if (card.hasAttack() && card.cost() <= energyLeft) {
+                return i;
             }
         }
-        return null;
+        return -1;
     }
 
-    public CardInstance popNextDefense() {
-        for (int i = 0; i < prepared.size(); i++) {
-            CardInstance card = prepared.get(i);
-            if (card.hasDefense()) {
-                prepared.remove(i);
-                discardPile.add(card);
-                return card;
+    public int firstAffordableDefense(int energyLeft) {
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance card = hand.get(i);
+            if (card.hasDefense() && card.cost() <= energyLeft) {
+                return i;
             }
         }
-        return null;
+        return -1;
     }
 
-    public CardInstance peekNextAction() {
-        for (CardInstance card : prepared) {
-            if (card.hasAttack() || card.hasDefense()) {
-                return card;
+    public int firstAffordableAction(int energyLeft) {
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance card = hand.get(i);
+            if (card.hasAnyEffect() && card.cost() <= energyLeft) {
+                return i;
             }
         }
-        return null;
+        return -1;
     }
 
-    public CardInstance popNextAction() {
-        for (int i = 0; i < prepared.size(); i++) {
-            CardInstance card = prepared.get(i);
-            if (card.hasAttack() || card.hasDefense()) {
-                prepared.remove(i);
-                discardPile.add(card);
-                return card;
-            }
-        }
-        return null;
-    }
-
-    public boolean hasPreparedActions() {
-        return prepared.stream().anyMatch(card -> card.hasAttack() || card.hasDefense());
-    }
-
-    public int bestPreparedSpeed() {
-        return prepared.stream().mapToInt(CardInstance::speed).max().orElse(0);
+    public boolean hasAffordableAction(int energyLeft) {
+        return hand.stream().anyMatch(card -> card.hasAnyEffect() && card.cost() <= energyLeft);
     }
 
     private static void shuffle(List<CardInstance> cards, RandomSource random) {

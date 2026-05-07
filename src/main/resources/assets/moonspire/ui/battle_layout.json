@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "elements": {
+    "player_entry": {
+      "anchor": "top_left",
+      "x": 1,
+      "y": 1,
+      "width": 184,
+      "height": 42,
+      "scale": 1.0
+    },
+    "monster_entry": {
+      "anchor": "top_right",
+      "x": 1,
+      "y": 1,
+      "width": 184,
+      "height": 42,
+      "scale": 1.0
+    },
+    "monster_intent": {
+      "anchor": "top_center",
+      "x": 0,
+      "y": 1,
+      "width": 290,
+      "height": 132,
+      "scale": 0.74999994
+    },
+    "energy": {
+      "anchor": "bottom_left",
+      "x": 104,
+      "y": 74,
+      "width": 58,
+      "height": 58,
+      "scale": 0.5999999
+    },
+    "draw_pile": {
+      "anchor": "bottom_left",
+      "x": 1,
+      "y": 1,
+      "width": 58,
+      "height": 68,
+      "scale": 1.0
+    },
+    "discard_pile": {
+      "anchor": "bottom_right",
+      "x": 1,
+      "y": 1,
+      "width": 58,
+      "height": 68,
+      "scale": 1.0
+    },
+    "exhaust_pile": {
+      "anchor": "bottom_right",
+      "x": 1,
+      "y": 75,
+      "width": 58,
+      "height": 68,
+      "scale": 1.0
+    },
+    "end_turn": {
+      "anchor": "top_right",
+      "x": 83,
+      "y": 226,
+      "width": 68,
+      "height": 26,
+      "scale": 0.99999994
+    },
+    "hand": {
+      "anchor": "bottom_center",
+      "x": 0,
+      "y": -21,
+      "width": 820,
+      "height": 170,
+      "scale": 1.0
+    },
+    "play_area": {
+      "anchor": "center",
+      "x": 0,
+      "y": -23,
+      "width": 512,
+      "height": 230,
+      "scale": 1.2499998
+    },
+    "card_preview": {
+      "anchor": "mouse",
+      "x": 18,
+      "y": -82,
+      "width": 128,
+      "height": 158,
+      "scale": 1.0
+    },
+    "tooltip": {
+      "anchor": "mouse",
+      "x": 18,
+      "y": 18,
+      "width": 122,
+      "height": 90,
+      "scale": 1.0
+    }
+  }
+}

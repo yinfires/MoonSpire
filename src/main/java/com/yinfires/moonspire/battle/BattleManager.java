@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.battle;
 
 import com.yinfires.moonspire.card.CardFactory;
+import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.PlayerCardData;
 import com.yinfires.moonspire.network.BattleSnapshotPayload;
 import com.yinfires.moonspire.network.PlayerCardDataPayload;
@@ -70,29 +71,68 @@ public final class BattleManager {
         BY_PLAYER.put(player.getUUID(), battle);
         BY_ENTITY_ID.put(player.getId(), battle);
         BY_ENTITY_ID.put(monster.getId(), battle);
+        battle.start();
         sync(battle);
         player.displayClientMessage(Component.translatable("message.moonspire.battle_started", monster.getDisplayName()), true);
     }
 
     public static void prepare(ServerPlayer player, List<Integer> handIndexes) {
+        endTurn(player);
+    }
+
+    public static void usePreparedCard(ServerPlayer player, int handIndex, int targetId) {
+        useCard(player, handIndex, targetId);
+    }
+
+    public static void useCard(ServerPlayer player, int handIndex, int targetId) {
         BattleState battle = BY_PLAYER.get(player.getUUID());
         if (battle != null) {
-            battle.preparePlayerCards(handIndexes);
+            battle.usePlayerCard(handIndex, targetId);
             sync(battle);
         }
     }
 
-    public static void usePreparedCard(ServerPlayer player, int targetId) {
+    public static void setThinking(ServerPlayer player, boolean thinking) {
+        // The turn-based battle screen no longer pauses with Tab.
+    }
+
+    public static void endTurn(ServerPlayer player) {
         BattleState battle = BY_PLAYER.get(player.getUUID());
         if (battle != null) {
-            battle.usePlayerPreparedCard(targetId);
+            battle.endPlayerTurn();
+            sync(battle);
+        }
+    }
+
+    public static void cancelBattle(ServerPlayer player) {
+        BattleState battle = BY_PLAYER.get(player.getUUID());
+        if (battle != null) {
+            endBattle(battle);
+        }
+    }
+
+    public static void selectTarget(ServerPlayer player, int targetId) {
+        BattleState battle = BY_PLAYER.get(player.getUUID());
+        if (battle != null) {
+            battle.selectTarget(targetId);
+            sync(battle);
+        }
+    }
+
+    public static void confirmHandSelection(ServerPlayer player, List<UUID> cardIds) {
+        BattleState battle = BY_PLAYER.get(player.getUUID());
+        if (battle != null) {
+            battle.confirmHandSelection(cardIds);
             sync(battle);
         }
     }
 
     public static boolean handleDamage(LivingEntity target, Entity sourceEntity) {
         BattleState battle = battleFor(target);
-        if (battle == null || battle.suppressDamageEvent()) {
+        if (battle == null) {
+            return false;
+        }
+        if (battle.suppressDamageEvent()) {
             return false;
         }
         if (sourceEntity instanceof LivingEntity attacker && battle.involves(attacker)) {
@@ -100,6 +140,8 @@ public final class BattleManager {
                 battle.handleAttack(attacker, target);
             }
             sync(battle);
+        } else if (sourceEntity instanceof LivingEntity attacker) {
+            battle.pacifyOutsideAttacker(attacker);
         }
         return battle.involves(target);
     }
@@ -129,7 +171,13 @@ public final class BattleManager {
             return;
         }
         PlayerCardData data = player.getData(ModAttachments.PLAYER_CARDS.get());
-        data.addCard(CardFactory.fromItem(stack));
+        CardInstance card = CardFactory.fromItem(stack);
+        if (card == null) {
+            player.displayClientMessage(Component.translatable("message.moonspire.not_convertible"), true);
+            return;
+        }
+        data.addCard(card);
+        player.setData(ModAttachments.PLAYER_CARDS.get(), data);
         stack.shrink(1);
         player.getInventory().setChanged();
         player.syncData(ModAttachments.PLAYER_CARDS.get());
@@ -143,6 +191,7 @@ public final class BattleManager {
         }
         PlayerCardData data = player.getData(ModAttachments.PLAYER_CARDS.get());
         data.setDeck(cardIds);
+        player.setData(ModAttachments.PLAYER_CARDS.get(), data);
         player.syncData(ModAttachments.PLAYER_CARDS.get());
         syncCardData(player);
     }
@@ -168,10 +217,10 @@ public final class BattleManager {
     }
 
     private static void endBattle(BattleState battle) {
-        battle.finish();
         BY_PLAYER.remove(battle.player().getUUID());
         BY_ENTITY_ID.remove(battle.player().getId());
         BY_ENTITY_ID.remove(battle.monster().getId());
+        battle.finish();
         PacketDistributor.sendToPlayer(battle.player(), new BattleSnapshotPayload(BattleSnapshot.inactive()));
     }
 }

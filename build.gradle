@@ -32,7 +32,19 @@ repositories {
         name = 'Aliyun Public Mirror'
         url = uri('https://maven.aliyun.com/repository/public')
     }
+    maven {
+        name = 'Huawei Cloud Maven Mirror'
+        url = uri('https://repo.huaweicloud.com/repository/maven/')
+    }
     mavenCentral()
+    maven {
+        name = 'NeoForged Releases'
+        url = uri('https://maven.neoforged.net/releases')
+    }
+    maven {
+        name = 'Minecraft Libraries'
+        url = uri('https://libraries.minecraft.net')
+    }
 }
 
 base {

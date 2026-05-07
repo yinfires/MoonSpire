@@ -1,6 +1,8 @@
 package com.yinfires.moonspire.battle;
 
 import com.yinfires.moonspire.card.CardInstance;
+import com.yinfires.moonspire.card.MoonSpireCardRegistry;
+import com.yinfires.moonspire.developer.DeveloperDataManager;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.world.entity.EntityType;
@@ -12,44 +14,92 @@ public final class MonsterDeckProfile {
     }
 
     public static List<CardInstance> createDeck(LivingEntity monster) {
+        List<CardInstance> overrideCards = DeveloperDataManager.monsterOverride(monster)
+                .map(definition -> DeveloperDataManager.cardsByIds(definition.deckCardIds()))
+                .orElse(List.of());
+        if (!overrideCards.isEmpty()) {
+            return copyAll(overrideCards);
+        }
+        return createDefaultDeck(monster);
+    }
+
+    public static List<CardInstance> createDefaultDeck(LivingEntity monster) {
         EntityType<?> type = monster.getType();
         if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
-            return repeat(
-                    CardInstance.simpleMonsterCard("Claw", "A close-range monster attack.", 5, 0, 1, 4),
-                    CardInstance.simpleMonsterCard("Rotten Guard", "A crude defensive posture.", 0, 4, 1, 3),
-                    CardInstance.simpleMonsterCard("Lunge", "A heavier monster attack.", 8, 0, 2, 3));
+            return cards(
+                    card("builtin_monster_claw"),
+                    card("builtin_monster_rotten_guard"),
+                    card("builtin_monster_lunge"),
+                    card("builtin_monster_claw"),
+                    card("builtin_monster_rotten_guard"));
         }
         if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
-            return repeat(
-                    CardInstance.simpleMonsterCard("Bone Shot", "A ranged monster attack.", 6, 0, 1, 6),
-                    CardInstance.simpleMonsterCard("Sidestep", "A quick defensive move.", 0, 3, 1, 7),
-                    CardInstance.simpleMonsterCard("Aimed Volley", "A strong prepared shot.", 9, 0, 2, 5));
+            return cards(
+                    card("builtin_monster_bone_shot"),
+                    card("builtin_monster_sidestep"),
+                    card("builtin_monster_aimed_volley"),
+                    card("builtin_monster_bone_shot"),
+                    card("builtin_monster_sidestep"));
         }
         if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
-            return repeat(
-                    CardInstance.simpleMonsterCard("Pounce", "A fast monster attack.", 5, 0, 1, 8),
-                    CardInstance.simpleMonsterCard("Skitter", "A fast evasive guard.", 0, 3, 1, 9),
-                    CardInstance.simpleMonsterCard("Bite", "A committed monster bite.", 7, 0, 2, 7));
+            return cards(
+                    card("builtin_monster_pounce"),
+                    card("builtin_monster_skitter"),
+                    card("builtin_monster_bite"),
+                    card("builtin_monster_pounce"),
+                    card("builtin_monster_skitter"));
         }
         return fallback(monster);
+    }
+
+    public static List<String> defaultDeckCardIds(EntityType<?> type) {
+        if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
+            return List.of("builtin_monster_claw", "builtin_monster_rotten_guard", "builtin_monster_lunge", "builtin_monster_claw", "builtin_monster_rotten_guard");
+        }
+        if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
+            return List.of("builtin_monster_bone_shot", "builtin_monster_sidestep", "builtin_monster_aimed_volley", "builtin_monster_bone_shot", "builtin_monster_sidestep");
+        }
+        if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
+            return List.of("builtin_monster_pounce", "builtin_monster_skitter", "builtin_monster_bite", "builtin_monster_pounce", "builtin_monster_skitter");
+        }
+        return List.of("builtin_monster_strike", "builtin_monster_guard", "builtin_monster_heavy_strike", "builtin_monster_strike", "builtin_monster_guard");
     }
 
     private static List<CardInstance> fallback(LivingEntity monster) {
         int attack = Math.max(3, (int) Math.ceil(monster.getAttributeValue(Attributes.ATTACK_DAMAGE)));
         int defense = Math.max(2, monster.getArmorValue());
-        int speed = Math.max(3, Math.min(9, 5 + (int) Math.round(monster.getAttributeValue(Attributes.MOVEMENT_SPEED) * 10.0D)));
-        return repeat(
-                CardInstance.simpleMonsterCard("Strike", "A generated monster attack.", attack, 0, attack >= 8 ? 2 : 1, speed),
-                CardInstance.simpleMonsterCard("Guard", "A generated monster defense.", 0, defense, 1, speed),
-                CardInstance.simpleMonsterCard("Heavy Strike", "A generated heavy attack.", attack + 3, 0, 2, Math.max(1, speed - 2)));
+        return cards(
+                card("builtin_monster_strike", attack, 0, attack >= 8 ? 2 : 1),
+                card("builtin_monster_guard", 0, defense, 1),
+                card("builtin_monster_heavy_strike", attack + 3, 0, 2),
+                card("builtin_monster_strike", attack, 0, attack >= 8 ? 2 : 1),
+                card("builtin_monster_guard", 0, defense, 1));
     }
 
-    private static List<CardInstance> repeat(CardInstance first, CardInstance second, CardInstance third) {
+    private static CardInstance card(String id) {
+        return MoonSpireCardRegistry.cardInstance(id).orElseThrow(() -> new IllegalStateException("Missing Moon Spire card: " + id));
+    }
+
+    private static CardInstance card(String id, int attack, int defense, int cost) {
+        return MoonSpireCardRegistry.card(id)
+                .map(definition -> definition.withCombatValues(attack, defense, cost).createInstance())
+                .orElseThrow(() -> new IllegalStateException("Missing Moon Spire card: " + id));
+    }
+
+    private static List<CardInstance> cards(CardInstance first, CardInstance second, CardInstance third, CardInstance fourth, CardInstance fifth) {
         List<CardInstance> cards = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            cards.add(first.copyForBattle());
-            cards.add(second.copyForBattle());
-            cards.add(third.copyForBattle());
+        cards.add(first.copyForBattle());
+        cards.add(second.copyForBattle());
+        cards.add(third.copyForBattle());
+        cards.add(fourth.copyForBattle());
+        cards.add(fifth.copyForBattle());
+        return cards;
+    }
+
+    private static List<CardInstance> copyAll(List<CardInstance> sourceCards) {
+        List<CardInstance> cards = new ArrayList<>();
+        for (CardInstance card : sourceCards) {
+            cards.add(card.copyForBattle());
         }
         return cards;
     }

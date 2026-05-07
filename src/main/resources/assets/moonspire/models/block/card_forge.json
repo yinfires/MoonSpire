@@ -1,6 +1,12 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "all": "minecraft:block/amethyst_block"
+    "down": "moonspire:block/card_forge_bottom",
+    "east": "moonspire:block/card_forge_side",
+    "north": "moonspire:block/card_forge_front",
+    "particle": "moonspire:block/card_forge_front",
+    "south": "moonspire:block/card_forge_front",
+    "up": "moonspire:block/card_forge_top",
+    "west": "moonspire:block/card_forge_side"
   }
 }
