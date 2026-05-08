@@ -58,7 +58,12 @@ public class BattleDeck {
                 discardPile.clear();
                 shuffle(drawPile, random);
             }
-            hand.add(drawPile.remove(drawPile.size() - 1));
+            CardInstance drawn = drawPile.remove(drawPile.size() - 1);
+            if (hand.size() >= CardBalance.MAX_HAND_SIZE) {
+                discardPile.add(drawn);
+            } else {
+                hand.add(drawn);
+            }
         }
     }
 

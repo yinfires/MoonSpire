@@ -44,6 +44,7 @@ public final class ClientBattleState {
     private static final List<BlockGainAnimation> blockGainAnimations = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
+    private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
     private static CardInstance monsterPlayedCard;
     private static float monsterPlayedCardTicks;
     private static long monsterPlayedCardEventSequence;
@@ -75,6 +76,7 @@ public final class ClientBattleState {
             blockGainAnimations.clear();
             pendingVisualEvents.clear();
             visualStates.clear();
+            fakeDeathStarts.clear();
             monsterPlayedCard = null;
             monsterPlayedCardTicks = 0.0F;
             monsterPlayedCardEventSequence = 0L;
@@ -88,6 +90,7 @@ public final class ClientBattleState {
             pendingVisualEvents.add(new ScheduledVisualEvent(visualEvent, visualEvent.delayTicks()));
             enqueueDamageNumbers(visualEvent);
         }
+        updateFakeDeathStarts(next);
         clampSelectedHandIndex();
     }
 
@@ -162,6 +165,10 @@ public final class ClientBattleState {
 
     public static boolean isHoveredEntityId(int entityId) {
         return hoveredEntityIds.contains(entityId);
+    }
+
+    public static boolean hasHoveredEntityIds() {
+        return !hoveredEntityIds.isEmpty();
     }
 
     public static float cameraYaw() {
@@ -305,6 +312,14 @@ public final class ClientBattleState {
         return state == null ? 0 : state.knockbackTicks();
     }
 
+    public static int fakeDeathRenderTicks(int entityId) {
+        Long start = fakeDeathStarts.get(entityId);
+        if (start == null) {
+            return 0;
+        }
+        return Math.min(20, (int) ((System.nanoTime() - start) / 50_000_000L));
+    }
+
     public static void tickDamageNumbers() {
         Iterator<DamageNumber> iterator = damageNumbers.iterator();
         while (iterator.hasNext()) {
@@ -376,6 +391,25 @@ public final class ClientBattleState {
         }
         if (event.healthDamage() > 0) {
             damageNumbers.add(new DamageNumber(event.targetId(), event.healthDamage(), false, event.delayTicks() + damageNumbers.size() * 2 + 4));
+        }
+    }
+
+    private static void updateFakeDeathStarts(BattleSnapshot next) {
+        long now = System.nanoTime();
+        Set<Integer> fakeDeadIds = new HashSet<>();
+        for (var player : next.players()) {
+            if (player.fakeDead()) {
+                fakeDeadIds.add(player.entityId());
+            }
+        }
+        for (var enemy : next.enemies()) {
+            if (enemy.fakeDead()) {
+                fakeDeadIds.add(enemy.entityId());
+            }
+        }
+        fakeDeathStarts.keySet().removeIf(id -> !fakeDeadIds.contains(id));
+        for (int entityId : fakeDeadIds) {
+            fakeDeathStarts.putIfAbsent(entityId, now);
         }
     }
 

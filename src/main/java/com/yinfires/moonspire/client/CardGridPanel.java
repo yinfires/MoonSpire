@@ -112,6 +112,7 @@ final class CardGridPanel {
                 previewAnimation.snapPositionToTarget();
             }
             previewAnimation.advance(animationFrameTicks());
+            CardRenderHelper.warmupCard(font, card, values.apply(card));
             renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
             if (previewAnimation.progress() > 0.86F) {
                 int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());

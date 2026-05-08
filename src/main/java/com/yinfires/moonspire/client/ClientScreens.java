@@ -9,7 +9,14 @@ public final class ClientScreens {
 
     public static void openDeckScreen() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player != null && !ClientBattleState.active()) {
+        if (minecraft.player == null) {
+            return;
+        }
+        if (minecraft.screen instanceof DeckScreen) {
+            minecraft.setScreen(null);
+            return;
+        }
+        if (!ClientBattleState.active() && minecraft.screen == null) {
             minecraft.setScreen(new DeckScreen());
         }
     }

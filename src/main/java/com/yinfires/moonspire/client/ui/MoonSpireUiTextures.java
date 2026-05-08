@@ -71,9 +71,14 @@ public final class MoonSpireUiTextures {
     }
 
     public static void drawOverlay(GuiGraphics graphics, int width, int height) {
+        graphics.flush();
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 1000.0F);
         RenderSystem.disableDepthTest();
         graphics.fillGradient(0, 0, width, height, CHEST_OVERLAY_TOP, CHEST_OVERLAY_BOTTOM);
+        graphics.flush();
         RenderSystem.enableDepthTest();
+        graphics.pose().popPose();
     }
 
     public static void drawWorldBillboard(Matrix4f matrix, VertexConsumer consumer, int x, int y, int width, int height, int light, float u0, float v0, float u1, float v1) {

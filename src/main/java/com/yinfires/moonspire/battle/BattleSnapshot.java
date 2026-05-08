@@ -12,8 +12,10 @@ public record BattleSnapshot(
         boolean resolvingEffects,
         int round,
         int selectedTargetId,
-        BattleCombatantSnapshot player,
-        BattleCombatantSnapshot monster,
+        int localPlayerEntityId,
+        boolean localPlayerEndedTurn,
+        List<BattleCombatantSnapshot> players,
+        List<BattleCombatantSnapshot> enemies,
         int drawPile,
         int discardPile,
         int exhaustPile,
@@ -25,10 +27,27 @@ public record BattleSnapshot(
         List<CardInstance> monsterHand,
         CardInstance monsterIntent,
         List<CardInstance> monsterIntentCards,
+        List<BattleEnemyIntentSnapshot> enemyIntents,
+        List<BattleEntityCardsSnapshot> entityHands,
         List<BattleVisualEvent> visualEvents) {
     public static final StreamCodec<RegistryFriendlyByteBuf, BattleSnapshot> STREAM_CODEC = StreamCodec.of(
             BattleSnapshot::write,
             BattleSnapshot::read);
+
+    public BattleSnapshot {
+        players = List.copyOf(players == null ? List.of() : players);
+        enemies = List.copyOf(enemies == null ? List.of() : enemies);
+        hand = List.copyOf(hand == null ? List.of() : hand);
+        drawPileCards = List.copyOf(drawPileCards == null ? List.of() : drawPileCards);
+        discardPileCards = List.copyOf(discardPileCards == null ? List.of() : discardPileCards);
+        exhaustPileCards = List.copyOf(exhaustPileCards == null ? List.of() : exhaustPileCards);
+        pendingHandSelection = pendingHandSelection == null ? PendingHandSelectionSnapshot.NONE : pendingHandSelection;
+        monsterHand = List.copyOf(monsterHand == null ? List.of() : monsterHand);
+        monsterIntentCards = List.copyOf(monsterIntentCards == null ? List.of() : monsterIntentCards);
+        enemyIntents = List.copyOf(enemyIntents == null ? List.of() : enemyIntents);
+        entityHands = List.copyOf(entityHands == null ? List.of() : entityHands);
+        visualEvents = List.copyOf(visualEvents == null ? List.of() : visualEvents);
+    }
 
     public static BattleSnapshot inactive() {
         return new BattleSnapshot(
@@ -37,8 +56,10 @@ public record BattleSnapshot(
                 false,
                 0,
                 -1,
-                BattleCombatantSnapshot.empty(),
-                BattleCombatantSnapshot.empty(),
+                -1,
+                false,
+                List.of(),
+                List.of(),
                 0,
                 0,
                 0,
@@ -50,43 +71,107 @@ public record BattleSnapshot(
                 List.of(),
                 null,
                 List.of(),
+                List.of(),
+                List.of(),
                 List.of());
     }
 
+    public BattleCombatantSnapshot player() {
+        BattleCombatantSnapshot local = combatant(localPlayerEntityId);
+        if (local != null) {
+            return local;
+        }
+        return players.isEmpty() ? BattleCombatantSnapshot.empty() : players.getFirst();
+    }
+
+    public BattleCombatantSnapshot monster() {
+        return enemies.isEmpty() ? BattleCombatantSnapshot.empty() : enemies.getFirst();
+    }
+
+    public BattleCombatantSnapshot combatant(int entityId) {
+        for (BattleCombatantSnapshot player : players) {
+            if (player.entityId() == entityId) {
+                return player;
+            }
+        }
+        for (BattleCombatantSnapshot enemy : enemies) {
+            if (enemy.entityId() == entityId) {
+                return enemy;
+            }
+        }
+        return null;
+    }
+
+    public boolean isPlayerEntity(int entityId) {
+        return players.stream().anyMatch(player -> player.entityId() == entityId);
+    }
+
+    public boolean isEnemyEntity(int entityId) {
+        return enemies.stream().anyMatch(enemy -> enemy.entityId() == entityId);
+    }
+
+    public boolean localPlayerFakeDead() {
+        return player().fakeDead();
+    }
+
     public int monsterEntityId() {
-        return monster.entityId();
+        return monster().entityId();
     }
 
     public float playerHealth() {
-        return player.health();
+        return player().health();
     }
 
     public float playerMaxHealth() {
-        return player.maxHealth();
+        return player().maxHealth();
     }
 
     public int playerDefense() {
-        return player.defense();
+        return player().defense();
     }
 
     public int playerEnergyLeft() {
-        return player.energyLeft();
+        return player().energyLeft();
     }
 
     public int playerMaxEnergy() {
-        return player.maxEnergy();
+        return player().maxEnergy();
     }
 
     public float monsterHealth() {
-        return monster.health();
+        return monster().health();
     }
 
     public float monsterMaxHealth() {
-        return monster.maxHealth();
+        return monster().maxHealth();
     }
 
     public int monsterDefense() {
-        return monster.defense();
+        return monster().defense();
+    }
+
+    public List<CardInstance> intentCardsFor(int enemyEntityId) {
+        for (BattleEnemyIntentSnapshot intent : enemyIntents) {
+            if (intent.entityId() == enemyEntityId) {
+                return intent.cards();
+            }
+        }
+        return enemyEntityId == monster().entityId() ? monsterIntentCards : List.of();
+    }
+
+    public List<CardInstance> handCardsFor(int entityId) {
+        if (entityId == player().entityId()) {
+            return hand;
+        }
+        if (entityId == monster().entityId() && !monsterHand.isEmpty()) {
+            return monsterHand;
+        }
+        for (BattleEntityCardsSnapshot entityHand : entityHands) {
+            if (entityHand.entityId() == entityId) {
+                return entityHand.cards();
+            }
+        }
+        return List.of();
     }
 
     private static void write(RegistryFriendlyByteBuf buf, BattleSnapshot snapshot) {
@@ -95,8 +180,10 @@ public record BattleSnapshot(
         buf.writeBoolean(snapshot.resolvingEffects);
         buf.writeVarInt(snapshot.round);
         buf.writeVarInt(snapshot.selectedTargetId);
-        BattleCombatantSnapshot.STREAM_CODEC.encode(buf, snapshot.player);
-        BattleCombatantSnapshot.STREAM_CODEC.encode(buf, snapshot.monster);
+        buf.writeVarInt(snapshot.localPlayerEntityId);
+        buf.writeBoolean(snapshot.localPlayerEndedTurn);
+        writeCombatants(buf, snapshot.players);
+        writeCombatants(buf, snapshot.enemies);
         buf.writeVarInt(snapshot.drawPile);
         buf.writeVarInt(snapshot.discardPile);
         buf.writeVarInt(snapshot.exhaustPile);
@@ -108,6 +195,14 @@ public record BattleSnapshot(
         writeCards(buf, snapshot.monsterHand);
         writeOptionalCard(buf, snapshot.monsterIntent);
         writeCards(buf, snapshot.monsterIntentCards);
+        buf.writeVarInt(snapshot.enemyIntents.size());
+        for (BattleEnemyIntentSnapshot intent : snapshot.enemyIntents) {
+            BattleEnemyIntentSnapshot.STREAM_CODEC.encode(buf, intent);
+        }
+        buf.writeVarInt(snapshot.entityHands.size());
+        for (BattleEntityCardsSnapshot entityHand : snapshot.entityHands) {
+            BattleEntityCardsSnapshot.STREAM_CODEC.encode(buf, entityHand);
+        }
         buf.writeVarInt(snapshot.visualEvents.size());
         for (BattleVisualEvent visualEvent : snapshot.visualEvents) {
             BattleVisualEvent.STREAM_CODEC.encode(buf, visualEvent);
@@ -120,8 +215,10 @@ public record BattleSnapshot(
         boolean resolvingEffects = buf.readBoolean();
         int round = buf.readVarInt();
         int selectedTargetId = buf.readVarInt();
-        BattleCombatantSnapshot player = BattleCombatantSnapshot.STREAM_CODEC.decode(buf);
-        BattleCombatantSnapshot monster = BattleCombatantSnapshot.STREAM_CODEC.decode(buf);
+        int localPlayerEntityId = buf.readVarInt();
+        boolean localPlayerEndedTurn = buf.readBoolean();
+        List<BattleCombatantSnapshot> players = readCombatants(buf);
+        List<BattleCombatantSnapshot> enemies = readCombatants(buf);
         int drawPile = buf.readVarInt();
         int discardPile = buf.readVarInt();
         int exhaustPile = buf.readVarInt();
@@ -133,12 +230,38 @@ public record BattleSnapshot(
         List<CardInstance> monsterHand = readCards(buf);
         CardInstance monsterIntent = readOptionalCard(buf);
         List<CardInstance> monsterIntentCards = readCards(buf);
-        int visualCount = Math.min(64, buf.readVarInt());
+        int intentCount = Math.min(64, buf.readVarInt());
+        List<BattleEnemyIntentSnapshot> enemyIntents = new ArrayList<>(intentCount);
+        for (int i = 0; i < intentCount; i++) {
+            enemyIntents.add(BattleEnemyIntentSnapshot.STREAM_CODEC.decode(buf));
+        }
+        int handCount = Math.min(64, buf.readVarInt());
+        List<BattleEntityCardsSnapshot> entityHands = new ArrayList<>(handCount);
+        for (int i = 0; i < handCount; i++) {
+            entityHands.add(BattleEntityCardsSnapshot.STREAM_CODEC.decode(buf));
+        }
+        int visualCount = Math.min(128, buf.readVarInt());
         List<BattleVisualEvent> visualEvents = new ArrayList<>(visualCount);
         for (int i = 0; i < visualCount; i++) {
             visualEvents.add(BattleVisualEvent.STREAM_CODEC.decode(buf));
         }
-        return new BattleSnapshot(active, phase, resolvingEffects, round, selectedTargetId, player, monster, drawPile, discardPile, exhaustPile, hand, drawPileCards, discardPileCards, exhaustPileCards, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, visualEvents);
+        return new BattleSnapshot(active, phase, resolvingEffects, round, selectedTargetId, localPlayerEntityId, localPlayerEndedTurn, players, enemies, drawPile, discardPile, exhaustPile, hand, drawPileCards, discardPileCards, exhaustPileCards, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, enemyIntents, entityHands, visualEvents);
+    }
+
+    private static void writeCombatants(RegistryFriendlyByteBuf buf, List<BattleCombatantSnapshot> combatants) {
+        buf.writeVarInt(combatants.size());
+        for (BattleCombatantSnapshot combatant : combatants) {
+            BattleCombatantSnapshot.STREAM_CODEC.encode(buf, combatant);
+        }
+    }
+
+    private static List<BattleCombatantSnapshot> readCombatants(RegistryFriendlyByteBuf buf) {
+        int size = Math.min(32, buf.readVarInt());
+        List<BattleCombatantSnapshot> combatants = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            combatants.add(BattleCombatantSnapshot.STREAM_CODEC.decode(buf));
+        }
+        return combatants;
     }
 
     private static void writeCards(RegistryFriendlyByteBuf buf, List<CardInstance> cards) {
@@ -149,7 +272,7 @@ public record BattleSnapshot(
     }
 
     private static List<CardInstance> readCards(RegistryFriendlyByteBuf buf) {
-        int size = Math.min(60, buf.readVarInt());
+        int size = Math.min(80, buf.readVarInt());
         List<CardInstance> cards = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             cards.add(CardInstance.STREAM_CODEC.decode(buf));

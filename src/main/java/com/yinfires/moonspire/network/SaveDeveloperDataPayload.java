@@ -8,6 +8,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -28,10 +29,17 @@ public record SaveDeveloperDataPayload(String json) implements CustomPacketPaylo
             try {
                 DeveloperData data = DeveloperData.fromJson(payload.json);
                 DeveloperDataManager.save(data);
-                PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(true, data.toJson()));
+                syncDeveloperData(player.server, player, data);
             } catch (IOException ignored) {
                 PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(true, DeveloperDataManager.load().toJson()));
             }
+        }
+    }
+
+    private static void syncDeveloperData(MinecraftServer server, ServerPlayer saver, DeveloperData data) {
+        String json = data.toJson();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(player.hasPermissions(2), json, player == saver && player.hasPermissions(2)));
         }
     }
 }

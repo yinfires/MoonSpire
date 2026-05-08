@@ -41,8 +41,18 @@ public final class BattleWorldOverlay {
         if (minecraft.level == null) {
             return;
         }
-        renderHighlight(minecraft.level.getEntity(snapshot.player().entityId()), snapshot.player().entityId(), poseStack, camera, bufferSource);
-        renderHighlight(minecraft.level.getEntity(snapshot.monster().entityId()), snapshot.monster().entityId(), poseStack, camera, bufferSource);
+        for (BattleCombatantSnapshot combatant : snapshot.players()) {
+            if (combatant.fakeDead()) {
+                continue;
+            }
+            renderHighlight(minecraft.level.getEntity(combatant.entityId()), combatant.entityId(), poseStack, camera, bufferSource);
+        }
+        for (BattleCombatantSnapshot combatant : snapshot.enemies()) {
+            if (combatant.fakeDead()) {
+                continue;
+            }
+            renderHighlight(minecraft.level.getEntity(combatant.entityId()), combatant.entityId(), poseStack, camera, bufferSource);
+        }
     }
 
     public static boolean suppressBattleNameTag(Entity entity) {
@@ -50,7 +60,7 @@ public final class BattleWorldOverlay {
         if (!snapshot.active()) {
             return false;
         }
-        return entity.getId() == snapshot.player().entityId() || entity.getId() == snapshot.monster().entityId();
+        return snapshot.combatant(entity.getId()) != null;
     }
 
     public static void renderLivingOverlay(Entity entity, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
@@ -60,13 +70,12 @@ public final class BattleWorldOverlay {
         }
         BattleCombatantSnapshot combatant = null;
         boolean monster = false;
-        if (entity.getId() == snapshot.player().entityId()) {
-            combatant = snapshot.player();
-        } else if (entity.getId() == snapshot.monster().entityId()) {
-            combatant = snapshot.monster();
-            monster = true;
-        }
+        combatant = snapshot.combatant(entity.getId());
+        monster = snapshot.isEnemyEntity(entity.getId());
         if (combatant == null) {
+            return;
+        }
+        if (combatant.fakeDead()) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -80,7 +89,7 @@ public final class BattleWorldOverlay {
         int light = Math.max(packedLight, LightTexture.FULL_BRIGHT);
         drawBar(font, matrix, bufferSource, combatant, light);
         if (monster) {
-            drawIntent(font, matrix, bufferSource, snapshot.monsterIntentCards(), light);
+            drawIntent(font, matrix, bufferSource, snapshot.intentCardsFor(entity.getId()), combatant, light);
         }
         drawEffects(font, matrix, bufferSource, combatant.effects(), light);
         drawBlockGainAnimations(matrix, bufferSource, entity, light);
@@ -92,7 +101,7 @@ public final class BattleWorldOverlay {
         if (entity == null) {
             return;
         }
-        boolean selected = ClientBattleState.selectedTargetId() == entityId;
+        boolean selected = !ClientBattleState.hasHoveredEntityIds() && ClientBattleState.selectedTargetId() == entityId;
         boolean hovered = ClientBattleState.isHoveredEntityId(entityId);
         if (!selected && !hovered) {
             return;
@@ -129,17 +138,18 @@ public final class BattleWorldOverlay {
         font.drawInBatch(text, -font.width(text) / 2.0F, -15, 0xFFFFFFFF, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
     }
 
-    private static void drawIntent(Font font, Matrix4f matrix, MultiBufferSource bufferSource, List<CardInstance> intentCards, int packedLight) {
+    private static void drawIntent(Font font, Matrix4f matrix, MultiBufferSource bufferSource, List<CardInstance> intentCards, BattleCombatantSnapshot enemy, int packedLight) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         int attack = 0;
         int block = 0;
         int negative = 0;
         int positive = 0;
         for (CardInstance card : intentCards) {
-            attack += Math.max(0, card.hasAttack() ? CardRenderHelper.previewAttack(card, snapshot.monster(), snapshot.player()) : 0);
-            block += Math.max(0, card.selfEffectAmount(CardEffectKind.BLOCK));
+            attack += Math.max(0, card.hasAttack() ? CardRenderHelper.previewAttack(card, enemy, snapshot.player()) : 0);
             for (CardEffect effect : card.effects()) {
-                if (effect.kind() == CardEffectKind.BLEED) {
+                if (effect.kind() == CardEffectKind.BLOCK && effect.target().targetsSelf()) {
+                    block += Math.max(0, effect.amount()) * Math.max(1, effect.count());
+                } else if (effect.kind() == CardEffectKind.BLEED && effect.target().targetsEnemy()) {
                     negative += Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.GUARD && effect.target().targetsSelf()) {
                     positive += Math.max(0, effect.amount()) * Math.max(1, effect.count());

@@ -2,6 +2,7 @@ package com.yinfires.moonspire.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.BattleVisualEvent;
 import com.yinfires.moonspire.client.ui.MoonSpireBattleLayoutEditor;
 import com.yinfires.moonspire.client.ui.MoonSpireClientConfig;
@@ -25,8 +26,9 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -57,6 +59,7 @@ public final class ClientEvents {
     public static final KeyMapping OPEN_DECK = new KeyMapping("key.moonspire.open_deck", KeyConflictContext.IN_GAME, InputConstants.Type.KEYSYM, InputConstants.KEY_K, CATEGORY);
     public static final KeyMapping UI_DEBUG = new KeyMapping("key.moonspire.ui_debug", KeyConflictContext.UNIVERSAL, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, CATEGORY);
     private static final ResourceLocation BATTLE_HUD_LAYER = ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "battle_hud");
+    private static final double CHALLENGE_RANGE = 10.0D;
     private static final Map<Integer, ItemStack> TEMP_MAIN_HANDS = new HashMap<>();
     private static long lastUiDebugKeyMillis;
 
@@ -99,8 +102,8 @@ public final class ClientEvents {
             }
             suppressVanillaBattleKeys(minecraft);
             while (CHALLENGE.consumeClick()) {
-                if (minecraft.hitResult instanceof EntityHitResult entityHitResult) {
-                    Entity target = entityHitResult.getEntity();
+                LivingEntity target = challengeTarget(minecraft);
+                if (target != null) {
                     PacketDistributor.sendToServer(new ChallengeTargetPayload(target.getId()));
                 }
             }
@@ -162,7 +165,10 @@ public final class ClientEvents {
                 return;
             }
             if (event.getKey() == GLFW.GLFW_KEY_Q && event.getAction() == InputConstants.PRESS) {
-                PacketDistributor.sendToServer(new EndTurnPayload());
+                var snapshot = ClientBattleState.snapshot();
+                if (snapshot.phase() == BattlePhase.PLAYER_TURN && !snapshot.localPlayerEndedTurn() && !snapshot.localPlayerFakeDead()) {
+                    PacketDistributor.sendToServer(new EndTurnPayload());
+                }
             }
         }
 
@@ -217,6 +223,12 @@ public final class ClientEvents {
 
         @SubscribeEvent
         public static void tintHurtCombatants(RenderLivingEvent.Pre<?, ?> event) {
+            if (ClientBattleState.active()) {
+                var combatant = ClientBattleState.snapshot().combatant(event.getEntity().getId());
+                if (combatant != null && combatant.fakeDead() && event.getEntity() instanceof LivingEntity living) {
+                    living.deathTime = Math.max(living.deathTime, ClientBattleState.fakeDeathRenderTicks(event.getEntity().getId()));
+                }
+            }
             int ticks = ClientBattleState.hurtFlashTicks(event.getEntity().getId());
             if (ticks > 0) {
                 event.getPoseStack().translate(0.0D, 0.0D, 0.0D);
@@ -352,6 +364,32 @@ public final class ClientEvents {
                 }
             }
         }
+    }
+
+    static LivingEntity challengeTarget(Minecraft minecraft) {
+        if (minecraft.player == null || minecraft.level == null) {
+            return null;
+        }
+        Vec3 start = minecraft.player.getEyePosition();
+        Vec3 look = minecraft.player.getLookAngle();
+        Vec3 end = start.add(look.scale(CHALLENGE_RANGE));
+        AABB search = minecraft.player.getBoundingBox().expandTowards(look.scale(CHALLENGE_RANGE)).inflate(1.0D);
+        LivingEntity best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (LivingEntity entity : minecraft.level.getEntitiesOfClass(LivingEntity.class, search)) {
+            if (entity == minecraft.player || !entity.isAlive() || entity.getType().getCategory() != MobCategory.MONSTER) {
+                continue;
+            }
+            var hit = entity.getBoundingBox().inflate(0.25D).clip(start, end);
+            if (hit.isPresent()) {
+                double distance = start.distanceToSqr(hit.get());
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = entity;
+                }
+            }
+        }
+        return best;
     }
 
     static boolean handleUiDebugKey(Minecraft minecraft) {

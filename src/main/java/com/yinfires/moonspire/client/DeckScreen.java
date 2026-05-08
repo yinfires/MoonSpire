@@ -3,6 +3,7 @@ package com.yinfires.moonspire.client;
 import com.yinfires.moonspire.card.CardInstance;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 public class DeckScreen extends NoBlurScreen {
     private static final int BOTTOM_RESERVE = 0;
@@ -51,6 +52,15 @@ public class DeckScreen extends NoBlurScreen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         return cardPanel.scroll(width, height, BOTTOM_RESERVE, scrollY) || super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (ClientEvents.OPEN_DECK.matches(keyCode, scanCode) || keyCode == GLFW.GLFW_KEY_K) {
+            onClose();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

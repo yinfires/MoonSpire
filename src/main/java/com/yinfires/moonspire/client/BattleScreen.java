@@ -5,6 +5,7 @@ import com.yinfires.moonspire.MoonSpire;
 import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectType;
+import com.yinfires.moonspire.battle.BattleEnemyIntentSnapshot;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.BattleSnapshot;
 import com.yinfires.moonspire.battle.PendingHandSelectionSnapshot;
@@ -48,6 +49,11 @@ import org.lwjgl.glfw.GLFW;
 public class BattleScreen extends NoBlurScreen {
     private static final int ENTRY_SPEED_X_OFFSET = 72;
     private static final int ENTRY_HEADER_Y_OFFSET = 7;
+    private static final int ENTRY_ROW_HEIGHT = 42;
+    private static final int ENTRY_GAP = 8;
+    private static final int ENTRY_SCROLL_STEP = 28;
+    private static final int ENTRY_AREA_BOTTOM_MARGIN = 8;
+    private static final int ENTRY_INTENT_GUTTER = 60;
     private static final int HUD_TIP_WIDTH = 182;
     private static final int HUD_TIP_PAD = 6;
     private static final int HUD_TIP_PARAGRAPH_GAP = 10;
@@ -91,8 +97,10 @@ public class BattleScreen extends NoBlurScreen {
     private final PileHoverAnimation exhaustPileHover = new PileHoverAnimation();
     private DragState dragState;
     private CardGridPanel pileOverlay;
+    private PileOverlaySource pileOverlaySource = PileOverlaySource.NONE;
     private int hoveredHandIndex = -1;
     private int hoveredMonsterIntentIndex = -1;
+    private int hoveredMonsterIntentEntityId = -1;
     private BattleSnapshot previousSnapshot = BattleSnapshot.inactive();
     private BattlePhase turnBannerPhase = BattlePhase.PLAYER_TURN;
     private int turnBannerTicks;
@@ -107,10 +115,15 @@ public class BattleScreen extends NoBlurScreen {
     private long frameIndex;
     private long lastAnimationNanos;
     private float currentFrameTicks;
+    private double playerEntryScroll;
+    private double enemyEntryScroll;
     private FrameCache frameCache = FrameCache.empty();
     private boolean awaitingUseCardSnapshot;
+    private boolean awaitingEndTurnSnapshot;
     private final Set<UUID> locallyUsedCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
+    private long cachedBattleDeckSnapshotVersion = -1L;
+    private List<CardInstance> cachedBattleDeckCards = List.of();
 
     public BattleScreen() {
         super(Component.translatable("screen.moonspire.battle"));
@@ -130,18 +143,23 @@ public class BattleScreen extends NoBlurScreen {
             syncSnapshotAnimations(snapshot);
             syncedSnapshotVersion = ClientBattleState.snapshotVersion();
         }
+        if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerEndedTurn()) {
+            awaitingEndTurnSnapshot = false;
+        }
         boolean pileModalActive = pileOverlay != null;
         boolean handSelectionActive = snapshot.pendingHandSelection().active();
-        frameCache = createFrameCache(snapshot, pileModalActive || handSelectionActive ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, pileModalActive || handSelectionActive ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY);
+        boolean modalInputBlocked = pileModalActive || handSelectionActive;
+        frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY);
         if (pileModalActive || handSelectionActive) {
             dragState = null;
             rotatingCamera = false;
             pendingTargetClickId = -1;
             hoveredHandIndex = -1;
             hoveredMonsterIntentIndex = -1;
+            hoveredMonsterIntentEntityId = -1;
             monsterIntentPreview.clear();
             ClientBattleState.setHoveredEntityId(-1);
-            renderBattleBase(graphics, snapshot, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick, true);
+            renderModalBackground(graphics, snapshot, partialTick);
             if (pileModalActive) {
                 renderPileOverlay(graphics, mouseX, mouseY);
             } else {
@@ -159,7 +177,7 @@ public class BattleScreen extends NoBlurScreen {
             hoveredTarget = -1;
             ClientBattleState.setHoveredEntityId(-1);
         } else if (hoveredTarget == -1 && monsterIntentCardAt(mouseX, mouseY, snapshot)) {
-            hoveredTarget = snapshot.monster().entityId();
+            hoveredTarget = currentIntentEntityId(snapshot);
             ClientBattleState.setHoveredEntityId(hoveredTarget);
         } else {
             ClientBattleState.setHoveredEntityId(hoveredTarget);
@@ -170,6 +188,7 @@ public class BattleScreen extends NoBlurScreen {
     private void renderBattleBase(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean modalBackground) {
         if (modalBackground) {
             hoveredMonsterIntentIndex = -1;
+            hoveredMonsterIntentEntityId = -1;
             monsterIntentPreview.clear();
             return;
         }
@@ -191,6 +210,14 @@ public class BattleScreen extends NoBlurScreen {
         renderHudTooltip(graphics, snapshot, mouseX, mouseY);
     }
 
+    private void renderModalBackground(GuiGraphics graphics, BattleSnapshot snapshot, float partialTick) {
+        renderEntries(graphics, snapshot, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE);
+        renderBottomBar(graphics, snapshot, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick, false);
+        renderMonsterPlayedCard(graphics, snapshot, true);
+        renderTurnBanner(graphics, partialTick);
+        renderWidgets(graphics, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick);
+    }
+
     @Override
     public void tick() {
         uiTicks++;
@@ -210,12 +237,13 @@ public class BattleScreen extends NoBlurScreen {
             return clickHandSelectionOverlay(mouseX, mouseY, button, snapshot);
         }
         if (pileOverlay != null) {
+            updatePileOverlayCards(snapshot);
             if (button == 0 && pileOverlay.mouseClicked(width, height, CARD_GRID_BOTTOM_RESERVE, mouseX, mouseY, button)) {
                 pendingTargetClickId = -1;
                 return true;
             }
             if (button == 1) {
-                pileOverlay = null;
+                closePileOverlay();
             }
             pendingTargetClickId = -1;
             return true;
@@ -232,8 +260,7 @@ public class BattleScreen extends NoBlurScreen {
                 entityId = interactiveTargetUnderMouse(mouseX, mouseY, snapshot);
             }
             if (entityId != -1) {
-                pileOverlay = new CardGridPanel(entityId == snapshot.monster().entityId() ? snapshot.monsterHand() : snapshot.hand(), Component.translatable("screen.moonspire.deck_view"));
-                pileOverlay.warmup(width, height, CARD_GRID_BOTTOM_RESERVE, font, CardRenderHelper.CardValues::original);
+                openPileOverlay(snapshot.handCardsFor(entityId), Component.translatable("screen.moonspire.deck_view"), PileOverlaySource.ENTITY_HAND);
             }
             return true;
         }
@@ -314,6 +341,7 @@ public class BattleScreen extends NoBlurScreen {
             return true;
         }
         if (pileOverlay != null) {
+            updatePileOverlayCards(ClientBattleState.snapshot());
             if (button == 0) {
                 pileOverlay.mouseDragged(width, height, CARD_GRID_BOTTOM_RESERVE, mouseY);
             }
@@ -340,10 +368,14 @@ public class BattleScreen extends NoBlurScreen {
             return true;
         }
         if (pileOverlay != null && scrollY != 0.0D) {
+            updatePileOverlayCards(ClientBattleState.snapshot());
             pileOverlay.scroll(width, height, CARD_GRID_BOTTOM_RESERVE, scrollY);
             return true;
         }
         if (MoonSpireBattleLayoutEditor.mouseScrolled(scrollY, hasShiftDown(), hasControlDown())) {
+            return true;
+        }
+        if (scrollEntries(mouseX, mouseY, scrollY, ClientBattleState.snapshot())) {
             return true;
         }
         if (scrollY != 0.0D) {
@@ -366,16 +398,29 @@ public class BattleScreen extends NoBlurScreen {
             return true;
         }
         if (pileOverlay != null) {
+            if (ClientEvents.OPEN_DECK.matches(keyCode, scanCode) || keyCode == GLFW.GLFW_KEY_K) {
+                if (pileOverlaySource == PileOverlaySource.BATTLE_DECK) {
+                    closePileOverlay();
+                }
+                return true;
+            }
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 Minecraft.getInstance().setScreen(new PauseScreen(true));
             }
+            return true;
+        }
+        if (ClientEvents.OPEN_DECK.matches(keyCode, scanCode) || keyCode == GLFW.GLFW_KEY_K) {
+            openBattleDeckOverlay(ClientBattleState.snapshot());
             return true;
         }
         if (MoonSpireBattleLayoutEditor.keyPressed(keyCode, modifiers)) {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_Q) {
-            PacketDistributor.sendToServer(new EndTurnPayload());
+            if (canEndTurn(ClientBattleState.snapshot())) {
+                awaitingEndTurnSnapshot = true;
+                PacketDistributor.sendToServer(new EndTurnPayload());
+            }
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_R) {
@@ -395,13 +440,48 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderEntries(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY) {
-        renderEntry(graphics, snapshot.player(), layout().resolve("player_entry", width, height), entityName(snapshot.player().entityId(), Component.translatable("screen.moonspire.player_entry")), false, mouseX, mouseY);
-        renderEntry(graphics, snapshot.monster(), layout().resolve("monster_entry", width, height), entityName(snapshot.monster().entityId(), Component.translatable("screen.moonspire.monster_entry")), true, mouseX, mouseY);
+        renderEntryArea(graphics, snapshot, liveCombatants(snapshot.players()), layout().resolve("player_entry", width, height), false, mouseX, mouseY);
+        renderEntryArea(graphics, snapshot, liveCombatants(snapshot.enemies()), layout().resolve("monster_entry", width, height), true, mouseX, mouseY);
+    }
+
+    private void renderEntryArea(GuiGraphics graphics, BattleSnapshot snapshot, List<BattleCombatantSnapshot> entries, MoonSpireUiRect baseRect, boolean enemyArea, int mouseX, int mouseY) {
+        if (entries.isEmpty()) {
+            clampEntryScroll(entries.size(), baseRect, enemyArea);
+            return;
+        }
+        MoonSpireUiRect area = entryAreaRect(baseRect);
+        double scroll = clampEntryScroll(entries.size(), baseRect, enemyArea);
+        graphics.enableScissor(Math.max(0, area.x() - ENTRY_INTENT_GUTTER - 2), Math.max(0, area.y() - 2), Math.min(width, area.right() + ENTRY_INTENT_GUTTER + 2), Math.min(height, area.bottom() + 2));
+        try {
+            for (int i = 0; i < entries.size(); i++) {
+                BattleCombatantSnapshot entry = entries.get(i);
+                MoonSpireUiRect row = entryRowRect(baseRect, i, scroll);
+                if (row.bottom() < area.y() || row.y() > area.bottom()) {
+                    continue;
+                }
+                renderEntry(graphics, entry, row, entityName(entry.entityId(), Component.translatable(enemyArea ? "screen.moonspire.monster_entry" : "screen.moonspire.player_entry")), enemyArea, mouseX, mouseY);
+            }
+        } finally {
+            graphics.disableScissor();
+        }
+    }
+
+    private MoonSpireUiRect entryRowRect(MoonSpireUiRect baseRect, int index, double scroll) {
+        return new MoonSpireUiRect(baseRect.x(), (int) Math.round(baseRect.y() + index * (ENTRY_ROW_HEIGHT + ENTRY_GAP) - scroll), baseRect.width(), ENTRY_ROW_HEIGHT);
+    }
+
+    private MoonSpireUiRect entryAreaRect(MoonSpireUiRect baseRect) {
+        MoonSpireUiRect exhaust = layout().resolve("exhaust_pile", width, height);
+        int bottomLimit = Math.max(baseRect.y() + ENTRY_ROW_HEIGHT, exhaust.y() - ENTRY_AREA_BOTTOM_MARGIN);
+        return new MoonSpireUiRect(baseRect.x(), baseRect.y(), baseRect.width(), Math.max(ENTRY_ROW_HEIGHT, bottomLimit - baseRect.y()));
     }
 
     private void renderEntry(GuiGraphics graphics, BattleCombatantSnapshot entry, MoonSpireUiRect rect, Component fallbackName, boolean selectable, int mouseX, int mouseY) {
+        if (entry.fakeDead()) {
+            return;
+        }
         boolean hovered = ClientBattleState.isHoveredEntityId(entry.entityId());
-        boolean selected = selectable && ClientBattleState.selectedTargetId() == entry.entityId();
+        boolean selected = selectable && !ClientBattleState.hasHoveredEntityIds() && ClientBattleState.selectedTargetId() == entry.entityId();
         int x = rect.x();
         int y = rect.y();
         if (selected) {
@@ -419,27 +499,28 @@ public class BattleScreen extends NoBlurScreen {
 
     private void renderIntentSummary(GuiGraphics graphics, BattleCombatantSnapshot entry, int x, int y) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
-        if (entry.entityId() != snapshot.monster().entityId() || snapshot.monsterIntentCards().isEmpty()) {
+        List<CardInstance> intentCards = snapshot.intentCardsFor(entry.entityId());
+        if (!snapshot.isEnemyEntity(entry.entityId()) || intentCards.isEmpty()) {
             return;
         }
         int attack = 0;
         int block = 0;
         int negativeEffects = 0;
         int positiveEffects = 0;
-        for (CardInstance card : snapshot.monsterIntentCards()) {
+        for (CardInstance card : intentCards) {
             for (CardEffect effect : card.effects()) {
                 if (effect.amount() <= 0) {
                     continue;
                 }
-                List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true);
+                List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true, -1, entry.entityId());
                 int totalAmount = Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 if (effect.kind() == CardEffectKind.DAMAGE && targets.contains(snapshot.player().entityId())) {
-                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), snapshot.monster().roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD)) * Math.max(1, effect.count());
-                } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(snapshot.monster().entityId())) {
+                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD)) * Math.max(1, effect.count());
+                } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(entry.entityId())) {
                     block += totalAmount;
                 } else if (effect.kind() == CardEffectKind.BLEED && targets.contains(snapshot.player().entityId())) {
                     negativeEffects += totalAmount;
-                } else if (effect.kind() == CardEffectKind.GUARD && targets.contains(snapshot.monster().entityId())) {
+                } else if (effect.kind() == CardEffectKind.GUARD && targets.contains(entry.entityId())) {
                     positiveEffects += totalAmount;
                 }
             }
@@ -503,10 +584,10 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderMonsterIntent(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY) {
-        List<CardInstance> intentCards = snapshot.monsterIntentCards().isEmpty() && snapshot.monsterIntent() != null
-                ? List.of(snapshot.monsterIntent())
-                : snapshot.monsterIntentCards();
+        int intentEntityId = currentIntentEntityId(snapshot);
+        List<CardInstance> intentCards = intentCardsFor(snapshot, intentEntityId);
         if (intentCards.isEmpty()) {
+            hoveredMonsterIntentEntityId = -1;
             return;
         }
         MoonSpireUiRect rect = layout().resolve("monster_intent", width, height);
@@ -523,23 +604,26 @@ public class BattleScreen extends NoBlurScreen {
         }
         if (hoveredIndex >= 0) {
             hoveredMonsterIntentIndex = hoveredIndex;
-        } else if (hoveredMonsterIntentIndex >= 0 && hoveredMonsterIntentIndex < intentCards.size()) {
+            hoveredMonsterIntentEntityId = intentEntityId;
+        } else if (hoveredMonsterIntentEntityId == intentEntityId && hoveredMonsterIntentIndex >= 0 && hoveredMonsterIntentIndex < intentCards.size()) {
             int hoveredX = x + hoveredMonsterIntentIndex * spacing;
             IntentPreviewBounds preview = intentPreviewBoundsForSmallCard(hoveredX, y);
             if (preview.contains(mouseX, mouseY)) {
                 hoveredIndex = hoveredMonsterIntentIndex;
             } else {
                 hoveredMonsterIntentIndex = -1;
+                hoveredMonsterIntentEntityId = -1;
             }
         } else {
             hoveredMonsterIntentIndex = -1;
+            hoveredMonsterIntentEntityId = -1;
         }
         for (int i = 0; i < intentCards.size(); i++) {
             if (i == hoveredIndex) {
                 continue;
             }
             CardInstance card = intentCards.get(i);
-            CardRenderHelper.renderSmallCard(graphics, font, card, x + i * spacing, y, false, false, cardValues(snapshot, card), false);
+            CardRenderHelper.renderSmallCard(graphics, font, card, x + i * spacing, y, false, false, cardValues(snapshot, card, intentAttacker(snapshot, intentEntityId), true), false);
         }
         if (hoveredIndex >= 0) {
             int hoveredX = x + hoveredIndex * spacing;
@@ -548,7 +632,7 @@ public class BattleScreen extends NoBlurScreen {
             monsterIntentPreview.setOpenTarget(card.id(), hoveredX + CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, y + CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F,
                     preview.centerX(), preview.centerY(), CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH, HAND_PREVIEW_SCALE);
             monsterIntentPreview.advance(currentFrameTicks);
-            renderAnimatedIntentPreview(graphics, snapshot, card, monsterIntentPreview);
+            renderAnimatedIntentPreview(graphics, snapshot, card, intentEntityId, monsterIntentPreview);
             if (monsterIntentPreview.progress() > 0.86F) {
                 CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), width, height);
             }
@@ -557,21 +641,51 @@ public class BattleScreen extends NoBlurScreen {
             monsterIntentPreview.advance(currentFrameTicks);
             CardInstance closingCard = monsterIntentPreview.card(intentCards);
             if (closingCard != null && monsterIntentPreview.visible()) {
-                renderAnimatedIntentPreview(graphics, snapshot, closingCard, monsterIntentPreview);
+                renderAnimatedIntentPreview(graphics, snapshot, closingCard, intentEntityId, monsterIntentPreview);
             } else {
                 monsterIntentPreview.clear();
             }
         }
     }
 
-    private void renderAnimatedIntentPreview(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, PreviewCardAnimation animation) {
+    private void renderAnimatedIntentPreview(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, int attackerEntityId, PreviewCardAnimation animation) {
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 120.0F);
         graphics.pose().translate(animation.centerX(), animation.centerY(), 0.0F);
         graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
         graphics.pose().translate(-CardRenderHelper.CARD_WIDTH / 2.0F, -CardRenderHelper.CARD_HEIGHT / 2.0F, 0.0F);
-        renderCardBody(graphics, snapshot, card, false);
+        renderCardBody(graphics, snapshot, card, false, cardValues(snapshot, card, intentAttacker(snapshot, attackerEntityId), true));
         graphics.pose().popPose();
+    }
+
+    private int currentIntentEntityId(BattleSnapshot snapshot) {
+        int hovered = ClientBattleState.hoveredEntityId();
+        if (snapshot.isEnemyEntity(hovered) && !combatantFakeDead(snapshot, hovered)) {
+            return hovered;
+        }
+        int selected = ClientBattleState.selectedTargetId();
+        if (snapshot.isEnemyEntity(selected) && !combatantFakeDead(snapshot, selected)) {
+            return selected;
+        }
+        for (BattleCombatantSnapshot enemy : snapshot.enemies()) {
+            if (!enemy.fakeDead()) {
+                return enemy.entityId();
+            }
+        }
+        return snapshot.monster().entityId();
+    }
+
+    private List<CardInstance> intentCardsFor(BattleSnapshot snapshot, int enemyEntityId) {
+        List<CardInstance> cards = snapshot.intentCardsFor(enemyEntityId);
+        if (!cards.isEmpty()) {
+            return cards;
+        }
+        return enemyEntityId == snapshot.monster().entityId() && snapshot.monsterIntent() != null ? List.of(snapshot.monsterIntent()) : List.of();
+    }
+
+    private BattleCombatantSnapshot intentAttacker(BattleSnapshot snapshot, int enemyEntityId) {
+        BattleCombatantSnapshot combatant = snapshot.combatant(enemyEntityId);
+        return combatant == null ? snapshot.monster() : combatant;
     }
 
     private void renderBottomBar(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean renderHand) {
@@ -682,8 +796,12 @@ public class BattleScreen extends NoBlurScreen {
         CardRenderHelper.renderEnergyCostDisplay(graphics, font, snapshot.player().energyLeft(), snapshot.player().maxEnergy(), rect.x(), rect.y(), rect.width(), rect.height());
     }
 
+    private boolean canEndTurn(BattleSnapshot snapshot) {
+        return snapshot.phase() == BattlePhase.PLAYER_TURN && !snapshot.localPlayerEndedTurn() && !snapshot.localPlayerFakeDead() && !awaitingEndTurnSnapshot;
+    }
+
     private void renderEndTurnButton(GuiGraphics graphics, BattleSnapshot snapshot, MoonSpireUiRect rect, int mouseX, int mouseY, float partialTick) {
-        boolean enabled = snapshot.phase() == BattlePhase.PLAYER_TURN;
+        boolean enabled = canEndTurn(snapshot);
         boolean hasPlayable = enabled && hasPlayableCard(snapshot);
         boolean hovered = enabled && rect.contains(mouseX, mouseY);
         boolean highlightedNoPlay = enabled && !hasPlayable;
@@ -694,12 +812,32 @@ public class BattleScreen extends NoBlurScreen {
             graphics.fill(rect.x() - 3, rect.y() - 3, rect.x() + rect.width() + 3, rect.y() + rect.height() + 3, glow);
         }
         MoonSpireUiTextures.drawButton(graphics, rect.x(), rect.y(), rect.width(), rect.height(), hovered, enabled);
-        Component label = enabled
-                ? Component.translatable("screen.moonspire.end_turn", snapshot.round())
-                : phaseComponent(snapshot.phase());
+        Component label;
+        if (snapshot.localPlayerFakeDead()) {
+            label = Component.translatable("screen.moonspire.end_turn.dead");
+        } else if (waitingForOtherPlayers(snapshot)) {
+            label = Component.translatable("screen.moonspire.end_turn.waiting_players");
+        } else {
+            label = Component.translatable("screen.moonspire.end_turn", snapshot.round());
+        }
         int textColor = highlightedNoPlay ? 0xFFFFD84D : hovered ? 0xFFFF5F63 : 0xFFFFFFFF;
-        float labelScale = Math.min(1.0F, (rect.width() - 8.0F) / Math.max(1.0F, font.width(label)));
+        float labelScale = Math.min(1.0F, Math.min((rect.width() - 8.0F) / Math.max(1.0F, font.width(label)), (rect.height() - 4.0F) / Math.max(1.0F, font.lineHeight)));
         CardRenderHelper.drawOutlinedScreenText(graphics, font, label, rect.x() + rect.width() / 2, rect.y() + rect.height() / 2, labelScale, textColor, 0xFF46393B);
+    }
+
+    private boolean waitingForOtherPlayers(BattleSnapshot snapshot) {
+        if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerFakeDead()) {
+            return false;
+        }
+        if (!snapshot.localPlayerEndedTurn() && !awaitingEndTurnSnapshot) {
+            return false;
+        }
+        for (BattleCombatantSnapshot player : snapshot.players()) {
+            if (player.entityId() != snapshot.localPlayerEntityId() && !player.fakeDead() && !player.endedTurn()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void renderHudTooltip(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY) {
@@ -873,7 +1011,8 @@ public class BattleScreen extends NoBlurScreen {
         graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
         renderSmallPlayableGlow(graphics, playable, 0.0F, 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, selected, unaffordable, cardValues(snapshot, card), false, showDescription);
+        CardRenderHelper.CardValues values = cardValues(snapshot, card);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, selected, unaffordable, values, false, showDescription);
         graphics.disableScissor();
         renderSmallPlayableOutline(graphics, playable, 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         graphics.pose().popPose();
@@ -1021,12 +1160,13 @@ public class BattleScreen extends NoBlurScreen {
             return;
         }
         BattleSnapshot snapshot = ClientBattleState.snapshot();
+        updatePileOverlayCards(snapshot);
         pileOverlay.render(graphics, font, width, height, mouseX, mouseY, CARD_GRID_BOTTOM_RESERVE, card -> false, CardRenderHelper.CardValues::original,
                 (previewGraphics, previewFont, card, x, y, selected) -> {
                     previewGraphics.pose().pushPose();
                     previewGraphics.pose().translate(x, y, 0.0F);
-            CardRenderHelper.renderCard(previewGraphics, previewFont, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false);
-            previewGraphics.pose().popPose();
+                    CardRenderHelper.renderCard(previewGraphics, previewFont, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false);
+                    previewGraphics.pose().popPose();
                 });
     }
 
@@ -1124,7 +1264,7 @@ public class BattleScreen extends NoBlurScreen {
         boolean hovered = ready && confirm.contains(mouseX, mouseY) && !handSelectionOverlay.confirming();
         MoonSpireUiTextures.drawButton(graphics, confirm.x(), confirm.y(), confirm.w(), confirm.h(), hovered, ready && !handSelectionOverlay.confirming());
         Component label = Component.translatable("screen.moonspire.hand_selection.confirm_button");
-        CardRenderHelper.drawOutlinedScreenText(graphics, font, label, confirm.x() + confirm.w() / 2, confirm.y() + confirm.h() / 2, 1.0F, ready ? 0xFFFFFFFF : 0xFF8E989A, 0xFF313638);
+        CardRenderHelper.drawOutlinedScreenText(graphics, font, label, confirm.x() + confirm.w() / 2, confirm.y() + confirm.h() / 2, 1.0F, ready && !handSelectionOverlay.confirming() ? 0xFFFFFFFF : 0xFF8E989A, 0xFF313638);
         renderHandSelectionHoveredPreview(graphics, snapshot, mouseX, mouseY, partialTick);
     }
 
@@ -1141,7 +1281,7 @@ public class BattleScreen extends NoBlurScreen {
         }
         for (int i = 0; i < visibleCards.size(); i++) {
             CardInstance card = visibleCards.get(i);
-            if (handSelectionOverlay.confirming() || card.id().equals(hoveredCardId)) {
+            if (card.id().equals(hoveredCardId)) {
                 continue;
             }
             HandCardAnimation animation = handAnimations.get(card.id());
@@ -1331,6 +1471,8 @@ public class BattleScreen extends NoBlurScreen {
             awaitingUseCardSnapshot = false;
             locallyUsedCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
+            cachedBattleDeckSnapshotVersion = -1L;
+            cachedBattleDeckCards = List.of();
             recordPerf(PerfBucket.SNAPSHOT_SYNC, start);
             return;
         }
@@ -1492,7 +1634,17 @@ public class BattleScreen extends NoBlurScreen {
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card) {
         BattleCombatantSnapshot attacker = snapshot.player();
         boolean monsterCard = snapshot.monsterHand().contains(card) || snapshot.monsterIntentCards().contains(card);
-        if (snapshot.monsterHand().contains(card) || snapshot.monsterIntentCards().contains(card)) {
+        for (BattleEnemyIntentSnapshot intent : snapshot.enemyIntents()) {
+            if (intent.cards().contains(card)) {
+                BattleCombatantSnapshot intentUser = snapshot.combatant(intent.entityId());
+                if (intentUser != null) {
+                    attacker = intentUser;
+                    monsterCard = true;
+                    break;
+                }
+            }
+        }
+        if (monsterCard && attacker.entityId() == snapshot.player().entityId()) {
             attacker = snapshot.monster();
         }
         return cardValues(snapshot, card, attacker, monsterCard);
@@ -1544,11 +1696,15 @@ public class BattleScreen extends NoBlurScreen {
         if (entityId == snapshot.monster().entityId()) {
             return snapshot.monster();
         }
-        return BattleCombatantSnapshot.empty();
+        BattleCombatantSnapshot combatant = snapshot.combatant(entityId);
+        return combatant == null ? BattleCombatantSnapshot.empty() : combatant;
     }
 
     private boolean playable(CardInstance card, BattleSnapshot snapshot) {
         return snapshot.phase() == BattlePhase.PLAYER_TURN
+                && !snapshot.localPlayerEndedTurn()
+                && !snapshot.localPlayerFakeDead()
+                && !awaitingEndTurnSnapshot
                 && !cardActionsLocked(snapshot)
                 && card.cost() <= snapshot.player().energyLeft()
                 && card.hasAnyEffect();
@@ -1813,22 +1969,68 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean clickPile(double mouseX, double mouseY, BattleSnapshot snapshot) {
         if (drawPileAt(mouseX, mouseY)) {
-            pileOverlay = new CardGridPanel(snapshot.drawPileCards(), Component.translatable("screen.moonspire.draw_pile"));
+            openPileOverlay(snapshot.drawPileCards(), Component.translatable("screen.moonspire.draw_pile"), PileOverlaySource.DRAW);
             return true;
         }
         if (discardPileAt(mouseX, mouseY)) {
-            pileOverlay = new CardGridPanel(snapshot.discardPileCards(), Component.translatable("screen.moonspire.discard_pile"));
+            openPileOverlay(snapshot.discardPileCards(), Component.translatable("screen.moonspire.discard_pile"), PileOverlaySource.DISCARD);
             return true;
         }
         if (visibleExhaustPileAt(mouseX, mouseY, snapshot)) {
-            pileOverlay = new CardGridPanel(snapshot.exhaustPileCards(), Component.translatable("screen.moonspire.exhaust_pile"));
+            openPileOverlay(snapshot.exhaustPileCards(), Component.translatable("screen.moonspire.exhaust_pile"), PileOverlaySource.EXHAUST);
             return true;
         }
         return false;
     }
 
+    private void openBattleDeckOverlay(BattleSnapshot snapshot) {
+        if (!snapshot.active() || snapshot.pendingHandSelection().active() || pileOverlay != null || MoonSpireBattleLayoutEditor.enabled()) {
+            return;
+        }
+        openPileOverlay(battleDeckCards(snapshot), Component.translatable("screen.moonspire.deck_view"), PileOverlaySource.BATTLE_DECK);
+    }
+
+    private void openPileOverlay(List<CardInstance> cards, Component title, PileOverlaySource source) {
+        pileOverlay = new CardGridPanel(cards, title);
+        pileOverlaySource = source;
+    }
+
+    private void closePileOverlay() {
+        pileOverlay = null;
+        pileOverlaySource = PileOverlaySource.NONE;
+    }
+
+    private void updatePileOverlayCards(BattleSnapshot snapshot) {
+        if (pileOverlay == null) {
+            return;
+        }
+        switch (pileOverlaySource) {
+            case BATTLE_DECK -> pileOverlay.setCards(battleDeckCards(snapshot));
+            case DRAW -> pileOverlay.setCards(snapshot.drawPileCards());
+            case DISCARD -> pileOverlay.setCards(snapshot.discardPileCards());
+            case EXHAUST -> pileOverlay.setCards(snapshot.exhaustPileCards());
+            default -> {
+            }
+        }
+    }
+
+    private List<CardInstance> battleDeckCards(BattleSnapshot snapshot) {
+        long snapshotVersion = ClientBattleState.snapshotVersion();
+        if (cachedBattleDeckSnapshotVersion == snapshotVersion) {
+            return cachedBattleDeckCards;
+        }
+        List<CardInstance> cards = new ArrayList<>(snapshot.hand().size() + snapshot.drawPileCards().size() + snapshot.discardPileCards().size());
+        cards.addAll(snapshot.hand());
+        cards.addAll(snapshot.drawPileCards());
+        cards.addAll(snapshot.discardPileCards());
+        cachedBattleDeckCards = List.copyOf(cards);
+        cachedBattleDeckSnapshotVersion = snapshotVersion;
+        return cachedBattleDeckCards;
+    }
+
     private boolean clickEndTurn(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        if (snapshot.phase() == BattlePhase.PLAYER_TURN && endTurnButtonAt(mouseX, mouseY)) {
+        if (canEndTurn(snapshot) && endTurnButtonAt(mouseX, mouseY)) {
+            awaitingEndTurnSnapshot = true;
             PacketDistributor.sendToServer(new EndTurnPayload());
             return true;
         }
@@ -1950,26 +2152,42 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private int combatantEntryUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        if (layout().resolve("player_entry", width, height).contains(mouseX, mouseY)) {
-            return snapshot.player().entityId();
+        int playerTarget = combatantEntryUnderMouse(mouseX, mouseY, liveCombatants(snapshot.players()), layout().resolve("player_entry", width, height), false);
+        if (playerTarget != -1) {
+            return playerTarget;
         }
-        if (layout().resolve("monster_entry", width, height).contains(mouseX, mouseY)) {
-            return snapshot.monster().entityId();
+        return combatantEntryUnderMouse(mouseX, mouseY, liveCombatants(snapshot.enemies()), layout().resolve("monster_entry", width, height), true);
+    }
+
+    private int combatantEntryUnderMouse(double mouseX, double mouseY, List<BattleCombatantSnapshot> entries, MoonSpireUiRect baseRect, boolean enemyArea) {
+        MoonSpireUiRect area = entryAreaRect(baseRect);
+        if (!area.contains(mouseX, mouseY)) {
+            return -1;
+        }
+        double scroll = clampEntryScroll(entries.size(), baseRect, enemyArea);
+        for (int i = 0; i < entries.size(); i++) {
+            MoonSpireUiRect row = entryRowRect(baseRect, i, scroll);
+            if (row.bottom() < area.y() || row.y() > area.bottom()) {
+                continue;
+            }
+            if (row.contains(mouseX, mouseY)) {
+                return entries.get(i).entityId();
+            }
         }
         return -1;
     }
 
     private int interactiveTargetUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        if (targetingBlockedByUiAt(mouseX, mouseY, snapshot)) {
-            return -1;
-        }
         int entryTarget = combatantEntryUnderMouse(mouseX, mouseY, snapshot);
-        return entryTarget != -1 ? entryTarget : targetEntityUnderMouse(mouseX, mouseY, snapshot);
+        if (entryTarget != -1) {
+            return entryTarget;
+        }
+        return targetingBlockedByUiAt(mouseX, mouseY, snapshot) ? -1 : targetEntityUnderMouse(mouseX, mouseY, snapshot);
     }
 
     private int selectableTargetUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
         int target = interactiveTargetUnderMouse(mouseX, mouseY, snapshot);
-        return target == snapshot.monster().entityId() ? target : -1;
+        return snapshot.isEnemyEntity(target) && !combatantFakeDead(snapshot, target) ? target : -1;
     }
 
     private int targetEntityUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
@@ -2025,9 +2243,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private boolean monsterIntentSmallCardAt(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        List<CardInstance> intentCards = snapshot.monsterIntentCards().isEmpty() && snapshot.monsterIntent() != null
-                ? List.of(snapshot.monsterIntent())
-                : snapshot.monsterIntentCards();
+        List<CardInstance> intentCards = intentCardsFor(snapshot, currentIntentEntityId(snapshot));
         if (intentCards.isEmpty() || !hasSelectedOrHoveredMonster(snapshot)) {
             return false;
         }
@@ -2051,10 +2267,9 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private IntentPreviewBounds monsterIntentPreviewBounds(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        List<CardInstance> intentCards = snapshot.monsterIntentCards().isEmpty() && snapshot.monsterIntent() != null
-                ? List.of(snapshot.monsterIntent())
-                : snapshot.monsterIntentCards();
-        if (intentCards.isEmpty() || hoveredMonsterIntentIndex < 0 || hoveredMonsterIntentIndex >= intentCards.size()) {
+        int intentEntityId = currentIntentEntityId(snapshot);
+        List<CardInstance> intentCards = intentCardsFor(snapshot, intentEntityId);
+        if (intentCards.isEmpty() || hoveredMonsterIntentEntityId != intentEntityId || hoveredMonsterIntentIndex < 0 || hoveredMonsterIntentIndex >= intentCards.size()) {
             return null;
         }
         MoonSpireUiRect rect = layout().resolve("monster_intent", width, height);
@@ -2088,6 +2303,52 @@ public class BattleScreen extends NoBlurScreen {
         return layout().resolve("exhaust_pile", width, height).contains(mouseX, mouseY);
     }
 
+    private boolean scrollEntries(double mouseX, double mouseY, double scrollY, BattleSnapshot snapshot) {
+        if (scrollY == 0.0D) {
+            return false;
+        }
+        MoonSpireUiRect playerBase = layout().resolve("player_entry", width, height);
+        if (entryAreaRect(playerBase).contains(mouseX, mouseY) && maxEntryScroll(liveCombatants(snapshot.players()).size(), playerBase) > 0.0D) {
+            playerEntryScroll = clamp(playerEntryScroll - scrollY * ENTRY_SCROLL_STEP, 0.0D, maxEntryScroll(liveCombatants(snapshot.players()).size(), playerBase));
+            return true;
+        }
+        MoonSpireUiRect enemyBase = layout().resolve("monster_entry", width, height);
+        if (entryAreaRect(enemyBase).contains(mouseX, mouseY) && maxEntryScroll(liveCombatants(snapshot.enemies()).size(), enemyBase) > 0.0D) {
+            enemyEntryScroll = clamp(enemyEntryScroll - scrollY * ENTRY_SCROLL_STEP, 0.0D, maxEntryScroll(liveCombatants(snapshot.enemies()).size(), enemyBase));
+            return true;
+        }
+        return false;
+    }
+
+    private double clampEntryScroll(int entryCount, MoonSpireUiRect baseRect, boolean enemyArea) {
+        double max = maxEntryScroll(entryCount, baseRect);
+        if (enemyArea) {
+            enemyEntryScroll = clamp(enemyEntryScroll, 0.0D, max);
+            return enemyEntryScroll;
+        }
+        playerEntryScroll = clamp(playerEntryScroll, 0.0D, max);
+        return playerEntryScroll;
+    }
+
+    private double maxEntryScroll(int entryCount, MoonSpireUiRect baseRect) {
+        int contentHeight = entryCount <= 0 ? 0 : entryCount * ENTRY_ROW_HEIGHT + Math.max(0, entryCount - 1) * ENTRY_GAP;
+        return Math.max(0.0D, contentHeight - entryAreaRect(baseRect).height());
+    }
+
+    private static List<BattleCombatantSnapshot> liveCombatants(List<BattleCombatantSnapshot> combatants) {
+        List<BattleCombatantSnapshot> live = new ArrayList<>();
+        for (BattleCombatantSnapshot combatant : combatants) {
+            if (!combatant.fakeDead()) {
+                live.add(combatant);
+            }
+        }
+        return live;
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private boolean visibleExhaustPileAt(double mouseX, double mouseY, BattleSnapshot snapshot) {
         return snapshot.exhaustPile() > 0 && exhaustPileAt(mouseX, mouseY);
     }
@@ -2117,19 +2378,37 @@ public class BattleScreen extends NoBlurScreen {
         Vec3 end = start.add(nearPoint.normalize().scale(48.0D));
         int bestEntityId = -1;
         double bestDistance = Double.MAX_VALUE;
-        int[] entityIds = {snapshot.player().entityId(), snapshot.monster().entityId()};
-        for (int entityId : entityIds) {
-            Entity entity = minecraft.level.getEntity(entityId);
-            if (entity == null) {
+        for (BattleCombatantSnapshot player : snapshot.players()) {
+            if (player.fakeDead()) {
                 continue;
             }
-            AABB box = entity.getBoundingBox().inflate(0.25D);
-            var hit = box.clip(start, end);
-            if (hit.isPresent()) {
-                double distance = start.distanceToSqr(hit.get());
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestEntityId = entityId;
+            Entity entity = minecraft.level.getEntity(player.entityId());
+            if (entity != null) {
+                AABB box = entity.getBoundingBox().inflate(0.25D);
+                var hit = box.clip(start, end);
+                if (hit.isPresent()) {
+                    double distance = start.distanceToSqr(hit.get());
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestEntityId = player.entityId();
+                    }
+                }
+            }
+        }
+        for (BattleCombatantSnapshot enemy : snapshot.enemies()) {
+            if (enemy.fakeDead()) {
+                continue;
+            }
+            Entity entity = minecraft.level.getEntity(enemy.entityId());
+            if (entity != null) {
+                AABB box = entity.getBoundingBox().inflate(0.25D);
+                var hit = box.clip(start, end);
+                if (hit.isPresent()) {
+                    double distance = start.distanceToSqr(hit.get());
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestEntityId = enemy.entityId();
+                    }
                 }
             }
         }
@@ -2184,7 +2463,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private boolean cardActionsLocked(BattleSnapshot snapshot) {
-        return snapshot.resolvingEffects() || snapshot.pendingHandSelection().active() || awaitingUseCardSnapshot;
+        return snapshot.resolvingEffects() || snapshot.pendingHandSelection().active() || awaitingUseCardSnapshot || awaitingEndTurnSnapshot || snapshot.localPlayerEndedTurn();
     }
 
     private CardInstance draggedCard(BattleSnapshot snapshot) {
@@ -2197,6 +2476,11 @@ public class BattleScreen extends NoBlurScreen {
 
     private int primaryTargetForCard(CardInstance card, BattleSnapshot snapshot) {
         if (card.targetsEnemy() && !card.targetsSelf()) {
+            for (BattleCombatantSnapshot enemy : snapshot.enemies()) {
+                if (!enemy.fakeDead()) {
+                    return enemy.entityId();
+                }
+            }
             return snapshot.monster().entityId();
         }
         return snapshot.player().entityId();
@@ -2206,10 +2490,10 @@ public class BattleScreen extends NoBlurScreen {
         if (card == null || !playableDraggedCardAt(card, snapshot, mouseX, mouseY)) {
             return List.of();
         }
-        return highlightedTargetsForCard(card, snapshot);
+        return highlightedTargetsForCard(card, snapshot, targetEntityUnderMouse(mouseX, mouseY, snapshot));
     }
 
-    private List<Integer> highlightedTargetsForCard(CardInstance card, BattleSnapshot snapshot) {
+    private List<Integer> highlightedTargetsForCard(CardInstance card, BattleSnapshot snapshot, int pointedTarget) {
         int bestCount = 0;
         LinkedHashSet<Integer> targets = new LinkedHashSet<>();
         for (CardEffect effect : card.effects()) {
@@ -2219,7 +2503,7 @@ public class BattleScreen extends NoBlurScreen {
             if (effect.kind() == CardEffectKind.EXHAUST) {
                 continue;
             }
-            List<Integer> effectTargets = targetIdsForEffectTarget(effect.target(), snapshot, false);
+            List<Integer> effectTargets = targetIdsForEffectTarget(effect.target(), snapshot, false, pointedTarget);
             if (effectTargets.size() > bestCount) {
                 bestCount = effectTargets.size();
                 targets.clear();
@@ -2228,20 +2512,60 @@ public class BattleScreen extends NoBlurScreen {
                 targets.addAll(effectTargets);
             }
         }
+        if (card.requiresExplicitTarget() && pointedTarget != -1) {
+            boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ENEMY);
+            boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ALLY);
+            if (needsEnemy && snapshot.isEnemyEntity(pointedTarget) && !combatantFakeDead(snapshot, pointedTarget)) {
+                targets.removeIf(entityId -> snapshot.isEnemyEntity(entityId) && entityId != pointedTarget);
+            }
+            if (needsAlly && snapshot.isPlayerEntity(pointedTarget) && !combatantFakeDead(snapshot, pointedTarget)) {
+                targets.removeIf(entityId -> snapshot.isPlayerEntity(entityId) && entityId != pointedTarget);
+            }
+        }
         return List.copyOf(targets);
     }
 
     private List<Integer> targetIdsForEffectTarget(CardTarget target, BattleSnapshot snapshot, boolean monsterCard) {
-        int self = monsterCard ? snapshot.monster().entityId() : snapshot.player().entityId();
-        int opponent = monsterCard ? snapshot.player().entityId() : snapshot.monster().entityId();
+        return targetIdsForEffectTarget(target, snapshot, monsterCard, -1, monsterCard ? snapshot.monster().entityId() : snapshot.player().entityId());
+    }
+
+    private List<Integer> targetIdsForEffectTarget(CardTarget target, BattleSnapshot snapshot, boolean monsterCard, int pointedTarget) {
+        return targetIdsForEffectTarget(target, snapshot, monsterCard, pointedTarget, monsterCard ? snapshot.monster().entityId() : snapshot.player().entityId());
+    }
+
+    private List<Integer> targetIdsForEffectTarget(CardTarget target, BattleSnapshot snapshot, boolean monsterCard, int pointedTarget, int selfEntityId) {
+        List<Integer> allies = liveIds(monsterCard ? snapshot.enemies() : snapshot.players());
+        List<Integer> enemies = liveIds(monsterCard ? snapshot.players() : snapshot.enemies());
+        int self = allies.contains(selfEntityId) ? selfEntityId : monsterCard ? snapshot.monster().entityId() : snapshot.player().entityId();
+        int opponent = enemies.contains(pointedTarget) ? pointedTarget : enemies.isEmpty() ? -1 : enemies.getFirst();
         return switch (target) {
             case SELF, ALL_ALLIES -> List.of(self);
             case SINGLE_ALLY -> List.of();
-            case SINGLE_ENEMY, ALL_ENEMIES, RANDOM_ENEMY -> List.of(opponent);
-            case ALL_UNITS -> List.of(self, opponent);
-            case ALL_OTHER_UNITS -> List.of(opponent);
+            case SINGLE_ENEMY, RANDOM_ENEMY -> opponent < 0 ? List.of() : List.of(opponent);
+            case ALL_ENEMIES -> enemies;
+            case ALL_UNITS -> {
+                List<Integer> all = new ArrayList<>(allies);
+                all.addAll(enemies);
+                yield all;
+            }
+            case ALL_OTHER_UNITS -> enemies;
             case ALL_OTHER_ALLIES, RANDOM_ALLY -> List.of();
         };
+    }
+
+    private List<Integer> liveIds(List<BattleCombatantSnapshot> combatants) {
+        List<Integer> ids = new ArrayList<>();
+        for (BattleCombatantSnapshot combatant : combatants) {
+            if (!combatant.fakeDead()) {
+                ids.add(combatant.entityId());
+            }
+        }
+        return ids;
+    }
+
+    private boolean combatantFakeDead(BattleSnapshot snapshot, int entityId) {
+        BattleCombatantSnapshot combatant = snapshot.combatant(entityId);
+        return combatant != null && combatant.fakeDead();
     }
 
     private boolean validDraggedTarget(CardInstance card, int targetEntityId, BattleSnapshot snapshot) {
@@ -2250,17 +2574,18 @@ public class BattleScreen extends NoBlurScreen {
         }
         boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ENEMY);
         boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ALLY);
-        if (needsEnemy && targetEntityId != snapshot.monster().entityId()) {
+        if (needsEnemy && (!snapshot.isEnemyEntity(targetEntityId) || combatantFakeDead(snapshot, targetEntityId))) {
             return false;
         }
-        if (needsAlly) {
+        if (needsAlly && (!snapshot.isPlayerEntity(targetEntityId) || targetEntityId == snapshot.player().entityId() || combatantFakeDead(snapshot, targetEntityId))) {
             return false;
         }
         return !needsEnemy || !needsAlly;
     }
 
     private boolean hasSelectedOrHoveredMonster(BattleSnapshot snapshot) {
-        return snapshot.selectedTargetId() == snapshot.monster().entityId() || ClientBattleState.isHoveredEntityId(snapshot.monster().entityId());
+        return snapshot.isEnemyEntity(snapshot.selectedTargetId()) && !combatantFakeDead(snapshot, snapshot.selectedTargetId())
+                || snapshot.enemies().stream().anyMatch(enemy -> !enemy.fakeDead() && ClientBattleState.isHoveredEntityId(enemy.entityId()));
     }
 
     private boolean shouldRenderMonsterIntent(BattleSnapshot snapshot, double mouseX, double mouseY) {
@@ -2269,7 +2594,8 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean draggingTargetedCardAtMonster(BattleSnapshot snapshot, double mouseX, double mouseY) {
         CardInstance card = draggedCard(snapshot);
-        return card != null && card.requiresExplicitTarget() && directTargetEntityUnderMouse(mouseX, mouseY, snapshot) == snapshot.monster().entityId();
+        int target = directTargetEntityUnderMouse(mouseX, mouseY, snapshot);
+        return card != null && card.requiresExplicitTarget() && snapshot.isEnemyEntity(target) && !combatantFakeDead(snapshot, target);
     }
 
     private HandLayout handLayout(BattleSnapshot snapshot) {
@@ -2501,7 +2827,7 @@ public class BattleScreen extends NoBlurScreen {
         }
 
         private boolean ready(PendingHandSelectionSnapshot selection) {
-            return selectedIds.size() >= selection.requiredCount();
+            return selectedIds.size() == selection.requiredCount();
         }
 
         private boolean isSelected(UUID cardId) {
@@ -2593,6 +2919,15 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private record PileIconBounds(float centerX, float centerY, int size) {
+    }
+
+    private enum PileOverlaySource {
+        NONE,
+        BATTLE_DECK,
+        DRAW,
+        DISCARD,
+        EXHAUST,
+        ENTITY_HAND
     }
 
     private static final class PileHoverAnimation {

@@ -45,6 +45,15 @@ public final class DeveloperDataManager {
         cachedStamp = safeStamp(dataFile());
     }
 
+    public static void setClientData(DeveloperData data) {
+        if (data == null) {
+            return;
+        }
+        data.ensureDefaults();
+        cached = data;
+        cachedStamp = safeStamp(dataFile());
+    }
+
     public static Path dataFile() {
         return DeveloperPaths.uiDirectory().resolve("developer_data.json");
     }

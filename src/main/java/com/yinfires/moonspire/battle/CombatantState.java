@@ -3,6 +3,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 
@@ -16,6 +17,10 @@ public class CombatantState {
     private int defense;
     private int energySpent;
     private int roundSpeed;
+    private boolean endedTurn;
+    private boolean fakeDead;
+    private int fakeDeathTicks;
+    private UUID creditedPlayerKill;
     private final Map<BattleEffectType, Integer> effects = new EnumMap<>(BattleEffectType.class);
 
     public CombatantState(LivingEntity entity, BattleDeck deck, int maxEnergy, float maxBattleHealth, int baseSpeed) {
@@ -85,6 +90,39 @@ public class CombatantState {
         return roundSpeed;
     }
 
+    public boolean endedTurn() {
+        return endedTurn;
+    }
+
+    public void setEndedTurn(boolean endedTurn) {
+        this.endedTurn = endedTurn;
+    }
+
+    public boolean fakeDead() {
+        return fakeDead;
+    }
+
+    public int fakeDeathTicks() {
+        return fakeDeathTicks;
+    }
+
+    public boolean fakeDeathAnimationDone() {
+        return !fakeDead || fakeDeathTicks >= 24;
+    }
+
+    public UUID creditedPlayerKill() {
+        return creditedPlayerKill;
+    }
+
+    public void tickFakeDeath() {
+        if (fakeDead) {
+            fakeDeathTicks++;
+            if (entity.isAlive()) {
+                entity.setHealth(Math.max(1.0F, entity.getHealth()));
+            }
+        }
+    }
+
     public void rollRoundSpeed(RandomSource random) {
         roundSpeed = Math.max(1, baseSpeed + random.nextInt(5) - 2);
     }
@@ -97,20 +135,20 @@ public class CombatantState {
         defense = 0;
     }
 
-    public BattleDamageResult applyCardDamage(int amount, CombatantState attacker) {
+    public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill) {
         int incoming = Math.max(0, amount);
         int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), roundSpeed, defense, effectAmount(BattleEffectType.GUARD));
-        return applyBlockableDamage(incoming, modifiedIncoming);
+        return applyBlockableDamage(incoming, modifiedIncoming, creditedPlayerKill);
     }
 
-    public BattleDamageResult applyEffectDamage(int amount) {
+    public BattleDamageResult applyEffectDamage(int amount, UUID creditedPlayerKill) {
         int damage = Math.max(0, amount);
-        return applyBlockableDamage(damage, damage);
+        return applyBlockableDamage(damage, damage, creditedPlayerKill);
     }
 
-    public BattleDamageResult applyDirectHealthDamage(int amount) {
+    public BattleDamageResult applyDirectHealthDamage(int amount, UUID creditedPlayerKill) {
         int damage = Math.max(0, amount);
-        applyHealthDamage(damage);
+        applyHealthDamage(damage, creditedPlayerKill);
         return new BattleDamageResult(0, damage, damage);
     }
 
@@ -147,24 +185,59 @@ public class CombatantState {
                 maxEnergy,
                 baseSpeed,
                 roundSpeed,
+                endedTurn,
+                fakeDead,
+                fakeDeathTicks,
                 effectSnapshots());
     }
 
     public boolean isDefeated() {
-        return battleHealth <= 0.0F || !entity.isAlive();
+        return fakeDead || battleHealth <= 0.0F;
     }
 
-    private BattleDamageResult applyBlockableDamage(int baseDamage, int damage) {
+    private BattleDamageResult applyBlockableDamage(int baseDamage, int damage, UUID creditedPlayerKill) {
+        if (fakeDead) {
+            return new BattleDamageResult(0, baseDamage, 0);
+        }
         int blocked = Math.min(defense, damage);
         defense -= blocked;
         int finalHealthDamage = damage - blocked;
-        applyHealthDamage(finalHealthDamage);
+        applyHealthDamage(finalHealthDamage, creditedPlayerKill);
         return new BattleDamageResult(blocked, baseDamage, finalHealthDamage);
     }
 
-    private void applyHealthDamage(int amount) {
+    private void applyHealthDamage(int amount, UUID creditedPlayerKill) {
         if (amount > 0) {
             battleHealth = Math.max(0.0F, battleHealth - amount);
+            if (battleHealth <= 0.0F) {
+                markFakeDead(creditedPlayerKill);
+            }
+        }
+    }
+
+    private void markFakeDead(UUID creditedPlayerKill) {
+        if (!fakeDead) {
+            fakeDead = true;
+            fakeDeathTicks = 0;
+            defense = 0;
+            energySpent = maxEnergy;
+            endedTurn = true;
+            deck().discardHand();
+        }
+        if (creditedPlayerKill != null) {
+            this.creditedPlayerKill = creditedPlayerKill;
+        }
+    }
+
+    public void clearFakeDeath() {
+        fakeDead = false;
+        fakeDeathTicks = 0;
+        creditedPlayerKill = null;
+        endedTurn = false;
+        defense = 0;
+        battleHealth = Math.max(1.0F, battleHealth);
+        if (entity.isAlive()) {
+            entity.setHealth(Math.max(1.0F, entity.getHealth()));
         }
     }
 

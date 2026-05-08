@@ -64,6 +64,8 @@ public final class CardRenderHelper {
     private static final int TEXTURE_WIDTH = 128;
     private static final int TEXTURE_HEIGHT = 158;
     private static final Map<String, TextureRef> FILE_TEXTURES = new HashMap<>();
+    private static final Map<String, List<FormattedCharSequence>> WRAPPED_DESCRIPTION_CACHE = new HashMap<>();
+    private static final int MAX_WRAPPED_DESCRIPTION_CACHE = 2048;
 
     private record TextureRef(ResourceLocation location, int width, int height) {
     }
@@ -93,6 +95,7 @@ public final class CardRenderHelper {
         if (path != null) {
             FILE_TEXTURES.remove(path.toAbsolutePath().normalize().toString());
         }
+        WRAPPED_DESCRIPTION_CACHE.clear();
     }
 
     public static void warmupCard(Font font, CardInstance card, CardValues values) {
@@ -105,13 +108,7 @@ public final class CardRenderHelper {
         DeveloperCardFace.Area descArea = face.descriptionArea();
         int descWidth = sx(CARD_WIDTH, descArea.width());
         float scale = 0.62F;
-        List<Component> lines = descriptionLines(card, values);
-        if (lines.isEmpty()) {
-            lines = List.of(card.descriptionComponent());
-        }
-        for (Component line : lines) {
-            font.split(line, Math.max(1, (int) (descWidth / scale)));
-        }
+        wrappedDescriptionLines(font, card, descWidth, descArea.height(), true, values, scale, 8);
         customTexture(face.imagePath(), DeveloperPaths.cardFacesDirectory());
         customTexture(card.artPath(), DeveloperPaths.cardArtDirectory());
         artItem(card.artItemId());
@@ -330,11 +327,11 @@ public final class CardRenderHelper {
     }
 
     public static CardLocalArea smallDescriptionArea(CardInstance card) {
-        return descriptionArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+        return descriptionArea(cardFace(card), SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT);
     }
 
     public static void renderSmallCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values) {
-        renderCardDescription(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, values, null, false);
+        renderCardDescription(graphics, font, card, cardFace(card), x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, values, false);
     }
 
     public static BarSegments combatantBarSegments(BattleCombatantSnapshot entry, int width) {
@@ -495,16 +492,16 @@ public final class CardRenderHelper {
         if (!showDescription) {
             return;
         }
-        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true);
+        renderCardDescription(graphics, font, card, face, x, y, width, height, detailed, values, true);
     }
 
-    private static CardLocalArea descriptionArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
-        DeveloperCardFace.Area descArea = cardFace(card, dataOverride).descriptionArea();
+    private static CardLocalArea descriptionArea(DeveloperCardFace face, int width, int height) {
+        DeveloperCardFace.Area descArea = face.descriptionArea();
         return new CardLocalArea(sx(width, descArea.x()), sy(height, descArea.y()), sx(width, descArea.width()), sy(height, descArea.height()));
     }
 
-    private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription) {
-        CardLocalArea descArea = descriptionArea(card, width, height, dataOverride);
+    private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, DeveloperCardFace face, int x, int y, int width, int height, boolean detailed, CardValues values, boolean clipDescription) {
+        CardLocalArea descArea = descriptionArea(face, width, height);
         int descX = x + descArea.x();
         int descY = y + descArea.y();
         int descWidth = descArea.width();
@@ -512,13 +509,30 @@ public final class CardRenderHelper {
         float scale = detailed ? 0.62F : 0.44F;
         int lineHeight = scaledLineHeight(font, scale);
         int maxLines = Math.max(1, Math.min(linesLimit(detailed), Math.max(1, (descHeight + 2) / lineHeight)));
+        List<FormattedCharSequence> wrappedLines = wrappedDescriptionLines(font, card, descWidth, descHeight, detailed, values, scale, maxLines);
+        if (clipDescription) {
+            enablePoseScissor(graphics, descX, descY, descWidth, descHeight);
+        }
+        drawCenteredLines(graphics, font, wrappedLines, descX, descY, descWidth, descHeight, CARD_DESCRIPTION_TEXT_COLOR, scale);
+        if (clipDescription) {
+            graphics.disableScissor();
+        }
+    }
+
+    private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, int descWidth, int descHeight, boolean detailed, CardValues values, float scale, int maxLines) {
         List<Component> lines = descriptionLines(card, values);
         if (lines.isEmpty()) {
             lines = List.of(card.descriptionComponent());
         }
+        int splitWidth = Math.max(1, (int) (descWidth / scale));
+        String key = wrappedDescriptionCacheKey(font, card, descWidth, descHeight, detailed, values, splitWidth, maxLines, lines);
+        List<FormattedCharSequence> cached = WRAPPED_DESCRIPTION_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
         List<FormattedCharSequence> wrappedLines = new ArrayList<>();
         for (Component line : lines) {
-            for (FormattedCharSequence wrapped : font.split(line, (int) (descWidth / scale))) {
+            for (FormattedCharSequence wrapped : font.split(line, splitWidth)) {
                 if (wrappedLines.size() >= maxLines) {
                     break;
                 }
@@ -528,13 +542,33 @@ public final class CardRenderHelper {
                 break;
             }
         }
-        if (clipDescription) {
-            enablePoseScissor(graphics, descX, descY, descWidth, descHeight);
+        if (WRAPPED_DESCRIPTION_CACHE.size() >= MAX_WRAPPED_DESCRIPTION_CACHE) {
+            WRAPPED_DESCRIPTION_CACHE.clear();
         }
-        drawCenteredLines(graphics, font, wrappedLines, descX, descY, descWidth, descHeight, CARD_DESCRIPTION_TEXT_COLOR, scale);
-        if (clipDescription) {
-            graphics.disableScissor();
+        List<FormattedCharSequence> result = List.copyOf(wrappedLines);
+        WRAPPED_DESCRIPTION_CACHE.put(key, result);
+        return result;
+    }
+
+    private static String wrappedDescriptionCacheKey(Font font, CardInstance card, int descWidth, int descHeight, boolean detailed, CardValues values, int splitWidth, int maxLines, List<Component> lines) {
+        StringBuilder builder = new StringBuilder(192);
+        builder.append(System.identityHashCode(font)).append('|')
+                .append(card.cardId()).append('|')
+                .append(card.developerCardId()).append('|')
+                .append(card.nameKey()).append('|')
+                .append(card.descriptionKey()).append('|')
+                .append(card.cost()).append('|')
+                .append(card.effects()).append('|')
+                .append(values == null ? CardValues.original(card) : values).append('|')
+                .append(descWidth).append('|')
+                .append(descHeight).append('|')
+                .append(detailed).append('|')
+                .append(splitWidth).append('|')
+                .append(maxLines);
+        for (Component line : lines) {
+            builder.append('|').append(line);
         }
+        return builder.toString();
     }
 
     public static void enablePoseScissor(GuiGraphics graphics, int x, int y, int width, int height) {

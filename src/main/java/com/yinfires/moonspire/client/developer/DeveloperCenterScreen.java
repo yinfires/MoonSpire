@@ -191,6 +191,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return;
         }
         if (!allowed) {
+            DeveloperDataManager.setClientData(DeveloperData.fromJson(json));
             minecraft.player.displayClientMessage(Component.translatable("debug.moonspire.developer_center.no_permission"), true);
             return;
         }

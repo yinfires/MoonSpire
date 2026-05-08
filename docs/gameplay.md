@@ -17,6 +17,15 @@
 - 玩法描述：卡牌战斗改为回合制流程，战斗开始后玩家永远先手，第 1 回合直接进入玩家回合。玩家可在自己的回合出牌，并通过 Q 或结束回合按钮结束回合；随后怪物按手牌和费用自动行动，怪物回合结束后进入下一战斗回合。准备阶段和 Tab 暂停不再参与战斗。玩家可按 R 主动取消当前战斗。
   - 代码实现：`BattleState` 使用 `BattlePhase.PLAYER_TURN`、`MONSTER_TURN`、`ROUND_END` 管理流程，`BattleManager` 通过 `UseCardPayload`、`EndTurnPayload`、`CancelBattlePayload` 和兼容旧载荷转发玩家操作。
   - 变更记录：删除旧的准备/执行倒计时玩法，改为玩家主动结束回合的纯卡牌战斗；新增 R 键取消当前战斗。
+- 玩法描述：挑战目标范围改为 10 格。玩家指向 10 格内可交战生物时，准星旁会提示按挑战目标键发起挑战；被指向的目标必定加入敌方，不要求它已经敌视玩家。战斗开始时，10 格内有有效卡组且未参战的其它玩家加入玩家方；10 格内对任一参战玩家有敌意且未参战的怪物加入敌方。
+  - 代码实现：`BattleHud` 和 `ClientEvents.CHALLENGE` 共同使用 `ClientEvents.challengeTarget()` 的 10 格客户端射线检测，不依赖原版 `hitResult` 的较短交互距离；命中后发送 `ChallengeTargetPayload`。`BattleManager.challenge()`、`collectPlayers()` 和 `collectEnemies()` 收集参战玩家、被挑战目标和附近敌意怪物，并把所有参战实体登记到同一个 `BattleState`。
+  - 变更记录：新增多人多怪参战规则，挑战范围从 8 格改为 10 格，并新增准星旁挑战提示。
+- 玩法描述：玩家方回合中，所有存活参战玩家可以同时按自己的手牌、费用和目标出牌。玩家按下结束回合后只结束自己的回合，不能继续出牌；只有本地玩家已经结束且仍存在其它存活玩家尚未结束时，界面按钮才显示“等待其他玩家结束回合”。没有其它玩家、其它玩家都已死亡或都已结束时不显示等待文案，怪物回合也不显示等待文案。所有存活玩家都结束后，才进入敌方回合。已死亡玩家不阻塞回合推进。单体敌方卡牌拖拽时优先使用鼠标当前指向的敌方目标，不再固定回退到第一只敌人。
+  - 代码实现：`BattleState` 为每个玩家维护独立 `CombatantState`、手牌、费用、牌堆、目标选择和 `endedTurn`；`BattleCombatantSnapshot` 同步每个玩家的 `endedTurn`，`BattleManager.sync()` 为每名参战玩家发送带本地视角的 `BattleSnapshot`，并由 `BattleState.shouldSyncNow()` 在无视觉事件和无结算时降低同步频率；`BattleScreen.waitingForOtherPlayers()` 只在玩家方回合、本地已结束或正在等待结束回合回包、且至少一名其它存活玩家尚未结束时显示等待文案，拖牌目标解析通过 `targetEntityUnderMouse()` 优先传入当前指向目标。
+  - 变更记录：玩家回合从单玩家行动扩展为多人同步出牌，并新增多人结束回合等待状态；本次修正等待文案的显示条件，避免单人战斗或怪物回合短暂显示“等待其他玩家结束回合”。
+- 玩法描述：战斗中的死亡都是假死亡。单位战斗生命降到 0 时会立即失去行动和目标资格，并等待死亡动画播放完成，但不会立刻触发真实死亡。玩家假死亡后不进入死亡界面，可以继续观战；结束回合按钮显示“你已死亡。”且不可用。整场战斗结束并等待所有假死亡动画完成后，才真正结算死亡。由玩家卡牌导致假死亡的怪物会按玩家击杀结算，能触发只有玩家击杀才有的掉落、统计和成就。
+  - 代码实现：`CombatantState` 保存 `fakeDead`、`fakeDeathTicks` 和 `creditedPlayerKill`；`BattleState.tick()` 在一方全灭后等待 `fakeDeathAnimationDone()`，`finish()` 再调用带玩家攻击来源的真实死亡路径。假死亡动画期间 `BattleState.freezeEntity()` 会清除残余速度、跳跃和导航，避免死亡姿态被击退或服务端校正反复打断。旧的 `maxHealth * 2` 高伤害收尾已移除，敌方真实死亡优先使用 `damageSources().playerAttack(killer)` 保留玩家击杀归因。
+  - 变更记录：新增高优先级假死亡、观战、延后真实死亡结算和玩家击杀归因规则。
 - 玩法描述：费用暂时固定为每方每回合 3 点，出牌消耗费用，费用不足的牌不能打出。
   - 代码实现：`CardBalance.fixedEnergy()` 固定返回 3，`CombatantState` 在每方回合开始重置费用并在出牌时扣费。
   - 变更记录：移除玩家经验等级和怪物血量对费用上限的影响。
@@ -74,6 +83,9 @@
 - 玩法描述：玩家不再手动选择战斗卡组；所有已持有卡牌都会自动进入下一次战斗牌组。卡组界面只用于查看已拥有的卡牌，不能点击选择或取消选择，也没有保存/完成底部按钮。玩家至少需要持有 1 张卡牌才能开始卡牌战斗。
   - 代码实现：`DeckScreen` 只渲染 `ClientCardState.cards().collection()` 的卡牌网格，数量由 `CardGridPanel` 统一显示，不再发送 `SetDeckPayload`；`PlayerCardData.deckCards()` 返回持有卡牌集合，`hasValidDeck()` 仅检查集合非空；`BattleManager.challenge()` 使用 `data.deckCards()` 创建玩家战斗牌库。
   - 变更记录：移除 15-30 张手动组牌限制和卡组保存交互，战斗牌组改为自动使用玩家持有的全部卡牌。
+- 玩法描述：玩家按 K 可以打开或关闭自己的卡组界面。非战斗中显示当前持有卡牌；战斗中只有处于最基础战斗界面、没有牌堆弹窗、手牌选择层或布局编辑器等其它界面时，才能按 K 打开本场战斗中自己的当前卡组。战斗中的卡组内容会随抽牌、弃牌、打牌和消耗变化，显示仍在战斗循环中的手牌、抽牌堆和弃牌堆，已消耗牌只在被消耗牌入口中查看。大量卡牌时，打开卡组或牌堆会先显示遮罩、标题、滚动和轻量占位卡面，首屏卡面内容会按帧补齐，不再在打开瞬间一次性处理所有卡面资源。
+  - 代码实现：`ClientScreens.openDeckScreen()` 让非战斗 `DeckScreen` 支持 K 开关且只在没有其它屏幕时打开；`BattleScreen.keyPressed()` 在基础战斗界面拦截 K，并用带快照版本缓存的 `battleDeckCards()` 从 `BattleSnapshot` 的 `hand`、`drawPileCards` 和 `discardPileCards` 合成 `CardGridPanel` 内容，弹窗打开期间每帧通过 `updatePileOverlayCards()` 跟随最新快照刷新；`CardGridPanel` 按帧渐进调用 `CardRenderHelper.warmupCard()`，`CardRenderHelper` 按卡牌显示签名缓存已预热结果，未预热完成时先绘制轻量占位卡面。
+  - 变更记录：新增战斗中 K 键查看当前战斗卡组，并允许 K 关闭自己卡组界面；本次优化卡组/牌堆大列表打开性能，避免同步预热导致明显卡顿。
 
 ## 界面与交互
 
@@ -278,13 +290,14 @@
 - 玩家可以在卡牌中配置“消耗 X 张手牌”和“丢弃 X 张手牌”两类效果。
 - 这两类效果严格按卡牌效果列表从上往下结算，不能被后续重排打乱。
 - 触发时，当前打出的牌不计入可选手牌。
-- 如果可选手牌数量大于需求，会打开阻塞式手牌选择界面；选够后确认，所选牌分别进入消耗堆或弃牌堆，然后继续后续效果。
+- 如果可选手牌数量大于需求，会打开阻塞式手牌选择界面；选够后确认，客户端会立即本地关闭选择层并播放所选牌的丢弃/消耗动画，服务端仍会按当前权威手牌和 pending selection 校验 UUID，校验通过后所选牌分别进入消耗堆或弃牌堆，然后继续后续效果。
 - 如果可选手牌数量不足，或刚好等于需求，则不打开选择界面，直接按当前手牌顺序处理所有需要的牌并继续结算。
 - 对玩家目标时，选择界面会阻塞底层战斗输入；对怪物或不可交互目标时，服务端会自动按当前手牌顺序处理，不等待客户端选择。
 - 选中的手牌在原地播放对应消耗/丢弃动画，不再飞入对应牌堆。
+- 选择界面确认后不会在客户端长时间停留在禁用状态；如果服务端拒绝或返回仍需选择的新快照，客户端会重新显示选择界面并允许再次确认。如果等待期间候选手牌发生变化，服务端会重新按当前仍有效的候选手牌校验，无法继续选择且剩余候选数量不大于需求时自动完成处理，避免丢弃/消耗流程卡在选择界面。
 - 开发者自定义里允许修改这两类效果的目标，但次数固定为 1。
 
-代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。
+代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck`、`BattleScreen.HandSelectionOverlay` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。
 
 ## 卡组与列表性能
 
@@ -293,3 +306,20 @@
 - 怪物卡组和开发者中心的搜索结果会按查询缓存，降低打开大列表时的卡顿。
 
 代码上主要由 `CardGridPanel`、`DeveloperFaceApplicationScreen`、`DeveloperMonsterDeckScreen` 和 `DeveloperCenterScreen` 的缓存逻辑实现。
+## 本次多人战斗修正规则补充
+
+- 玩法描述：玩家在玩家方回合按下结束回合后，立即进入等待状态，不能继续出牌，也不能再次通过快捷键重复结束回合；只有当前阶段仍是玩家方回合且本地玩家未结束、未假死亡时，结束回合按钮和 Q 快捷键才会生效。怪物方回合不会显示“等待其他玩家结束回合”。
+  - 代码实现：`BattleScreen` 使用 `canEndTurn()`、`awaitingEndTurnSnapshot` 和 `cardActionsLocked()` 在本地立刻锁定出牌与结束回合输入；`ClientEvents.keyInput()` 只在 `BattlePhase.PLAYER_TURN` 且本地玩家未结束、未假死亡时发送 `EndTurnPayload`；服务端 `BattleState.usePlayerCard()` 仍保留 `endedTurn()` 校验作为最终保护。
+  - 变更记录：修复多人回合中自己已结束但其他玩家未结束时仍能继续出牌的问题，并修复怪物方回合显示等待玩家文案的问题。
+- 玩法描述：手牌上限为 10。抽牌时如果手牌已经达到 10 张，之后抽到的卡牌不会进入手牌，而是直接进入弃牌堆。
+  - 代码实现：`CardBalance.MAX_HAND_SIZE` 定义上限，`BattleDeck.draw()` 在每次抽牌后检查 `hand.size()`，超过上限的抽牌结果加入 `discardPile`。
+  - 变更记录：新增手牌上限与超额抽牌丢弃规则。
+- 玩法描述：假死亡的生物在战斗中不再显示战斗条目、世界头顶血条/意图/状态/伤害数字，也不能再被选中或作为卡牌指向目标；死亡动画仍会播放。若玩家假死亡后的真实死亡被其它机制抵挡或取消，战斗收尾会清除假死亡并恢复玩家控制和战斗前状态，避免玩家永久停留在假死观战状态。
+  - 代码实现：`BattleScreen`、`BattleWorldOverlay` 的条目渲染、世界命中检测和目标高亮都过滤 `fakeDead`；`CombatantState.clearFakeDeath()` 与 `BattleState.recoverBlockedPlayerDeath()` 在真实死亡结算未使玩家死亡时恢复状态。
+  - 变更记录：修复死亡目标仍可选、仍显示世界信息，以及外部死亡保护导致玩家永久假死的问题。
+- 玩法描述：多种怪物同时参战时，当前选中或指向哪只怪物，就显示哪只怪物自己的意图；不同怪物不再共用第一只怪物的意图和预览数值。多人战斗中右键查看参战玩家或怪物条目时，显示被查看实体自己的手牌/卡组信息，而不是固定显示本地玩家或第一只怪物。
+  - 代码实现：`BattleSnapshot` 新增 `BattleEntityCardsSnapshot` 列表并提供 `handCardsFor(entityId)`；`BattleState.entityHandSnapshots()` 同步所有参战实体当前手牌；`BattleScreen.currentIntentEntityId()`、`intentCardsFor()` 和 `renderIntentSummary()` 按实体 id 读取对应怪物意图。
+  - 变更记录：修复多怪物只显示第一种怪物意图，以及多人查看卡组只显示自己的问题。
+- 玩法描述：开发者修改卡牌、卡面或怪物数据并保存后，服务器会把最新开发者数据同步给所有在线玩家；非管理员只刷新本地卡牌渲染/数值数据，不会自动打开开发者中心。
+  - 代码实现：`SaveDeveloperDataPayload` 保存后向在线玩家广播 `DeveloperCenterPayload`；该载荷新增 `openScreen` 标志，客户端 `DeveloperDataManager.setClientData()` 只刷新本地缓存，管理员需要时才打开开发者中心界面。
+  - 变更记录：修复多人环境中一名玩家修改卡牌后其它玩家看不到最新卡牌数据的问题。

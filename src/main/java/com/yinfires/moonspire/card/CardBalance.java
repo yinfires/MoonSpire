@@ -2,6 +2,7 @@ package com.yinfires.moonspire.card;
 
 public final class CardBalance {
     public static final int STARTING_HAND_SIZE = 5;
+    public static final int MAX_HAND_SIZE = 10;
     public static final int BASE_ENERGY = 3;
     public static final int PLAYER_BASE_SPEED = 5;
     public static final double PLAYER_DEFAULT_MOVEMENT_SPEED = 0.1D;
