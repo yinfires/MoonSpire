@@ -95,6 +95,28 @@ public final class CardRenderHelper {
         }
     }
 
+    public static void warmupCard(Font font, CardInstance card, CardValues values) {
+        if (font == null || card == null) {
+            return;
+        }
+        DeveloperCardFace face = cardFace(card);
+        font.width(card.nameComponent());
+        font.width(Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill"));
+        DeveloperCardFace.Area descArea = face.descriptionArea();
+        int descWidth = sx(CARD_WIDTH, descArea.width());
+        float scale = 0.62F;
+        List<Component> lines = descriptionLines(card, values);
+        if (lines.isEmpty()) {
+            lines = List.of(card.descriptionComponent());
+        }
+        for (Component line : lines) {
+            font.split(line, Math.max(1, (int) (descWidth / scale)));
+        }
+        customTexture(face.imagePath(), DeveloperPaths.cardFacesDirectory());
+        customTexture(card.artPath(), DeveloperPaths.cardArtDirectory());
+        artItem(card.artItemId());
+    }
+
     public record BarSegments(int healthWidth, int blockX, int blockWidth) {
     }
 
@@ -345,18 +367,27 @@ public final class CardRenderHelper {
     }
 
     public static void renderKeywordTipsBeside(GuiGraphics graphics, Font font, CardInstance card, int cardX, int cardY, int screenW) {
-        int rightX = cardX + CARD_WIDTH + 6;
-        int x = rightX + TIP_WIDTH <= screenW - 6 ? rightX : Math.max(6, cardX - TIP_WIDTH - 6);
+        int x = keywordTipsXBeside(cardX, CARD_WIDTH, screenW);
         renderKeywordTips(graphics, font, card, x, cardY);
     }
 
     public static void renderKeywordTipsBeside(GuiGraphics graphics, Font font, CardInstance card, int cardX, int cardY, int screenW, int screenH) {
-        int rightX = cardX + CARD_WIDTH + 6;
-        int x = rightX + TIP_WIDTH <= screenW - 6 ? rightX : Math.max(6, cardX - TIP_WIDTH - 6);
+        renderKeywordTipsBeside(graphics, font, card, cardX, cardY, CARD_WIDTH, CARD_HEIGHT, screenW, screenH);
+    }
+
+    public static void renderKeywordTipsBeside(GuiGraphics graphics, Font font, CardInstance card, int cardX, int cardY, int cardW, int cardH, int screenW, int screenH) {
+        int x = keywordTipsXBeside(cardX, cardW, screenW);
         int totalHeight = keywordTipsHeight(font, card);
-        int y = cardY + (CARD_HEIGHT - totalHeight) / 2;
+        int y = cardY + (cardH - totalHeight) / 2;
         y = Math.max(6, Math.min(screenH - totalHeight - 6, y));
         renderKeywordTips(graphics, font, card, x, y);
+    }
+
+    private static int keywordTipsXBeside(int cardX, int cardW, int screenW) {
+        int rightX = cardX + cardW + 6;
+        int preferredX = rightX + TIP_WIDTH <= screenW - 6 ? rightX : cardX - TIP_WIDTH - 6;
+        int maxX = Math.max(6, screenW - TIP_WIDTH - 6);
+        return Math.max(6, Math.min(maxX, preferredX));
     }
 
     public static int renderEffectTip(GuiGraphics graphics, Font font, BattleEffectType type, int amount, int x, int y) {

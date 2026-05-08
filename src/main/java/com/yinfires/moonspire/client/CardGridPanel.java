@@ -12,7 +12,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 
 final class CardGridPanel {
-    private static final int GRID_COLUMNS = 5;
+    private static final int GRID_VISIBLE_COLUMNS = 5;
+    private static final int GRID_SCALE_COLUMNS = 7;
     private static final int CARD_GAP_X = 18;
     private static final int CARD_GAP_Y = 20;
     private static final int PREVIEW_EDGE_MARGIN = 12;
@@ -21,8 +22,10 @@ final class CardGridPanel {
     private static final int SCROLLBAR_WIDTH = 7;
     private static final int SCROLLBAR_HIT_WIDTH = 20;
     private static final int SCROLL_STEP = 34;
-    private static final float GRID_CARD_SCALE = 0.72F;
-    private static final float GRID_MIN_CARD_SCALE = 0.54F;
+    private static final float GRID_CARD_SCALE = 0.60F;
+    private static final float GRID_MIN_CARD_SCALE = 0.45F;
+    private static final float PREVIEW_SCALE_REFERENCE = 0.72F;
+    private static final float PREVIEW_MIN_SCALE = 0.58F;
     private static final float GRID_SELECTED_SCALE_BONUS = 0.06F;
 
     private final Component title;
@@ -34,6 +37,12 @@ final class CardGridPanel {
     private int hoveredIndex = -1;
     private long lastAnimationNanos;
     private double previousScrollOffset = Double.NaN;
+    private Layout cachedLayout;
+    private int cachedFirstVisibleIndex = -1;
+    private int cachedLastVisibleIndex = -1;
+    private int cachedCardSignature;
+    private int currentCardSignature;
+    private boolean needsWarmup = true;
 
     CardGridPanel(List<CardInstance> cards, Component title) {
         this.title = title;
@@ -46,6 +55,9 @@ final class CardGridPanel {
         }
         this.cards.clear();
         this.cards.addAll(cards);
+        currentCardSignature = cardSignature();
+        invalidateLayout();
+        needsWarmup = true;
         if (previewAnimation.cardId() != null && this.cards.stream().noneMatch(card -> card.id().equals(previewAnimation.cardId()))) {
             previewAnimation.clear();
         }
@@ -75,9 +87,8 @@ final class CardGridPanel {
         double frameScrollOffset = clampedScrollOffset(layout);
         boolean scrolledSinceLastFrame = Double.isFinite(previousScrollOffset) && Math.abs(frameScrollOffset - previousScrollOffset) > 0.01D;
         previousScrollOffset = frameScrollOffset;
+        warmupVisibleCards(font, layout, values);
         MoonSpireUiTextures.drawOverlay(graphics, width, height);
-        graphics.drawCenteredString(font, title, width / 2, 18, 0xFFFFEAC2);
-        graphics.drawCenteredString(font, Integer.toString(cards.size()), width / 2, 31, 0xFFE3C48C);
 
         hoveredIndex = hoveredCardIndex(layout, mouseX, mouseY);
         graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
@@ -96,14 +107,18 @@ final class CardGridPanel {
             CardInstance card = cards.get(hoveredIndex);
             CardBounds cardBounds = cardBounds(layout, hoveredIndex);
             PreviewBounds preview = previewBounds(layout, hoveredIndex);
-            previewAnimation.setOpenTarget(card.id(), cardBounds.centerX(layout), cardBounds.centerY(layout), preview.centerX(), preview.centerY(), layout.cardScale(), 1.0F);
+            previewAnimation.setOpenTarget(card.id(), cardBounds.centerX(layout), cardBounds.centerY(layout), preview.centerX(), preview.centerY(), layout.cardScale(), preview.scale());
             if (scrolledSinceLastFrame) {
                 previewAnimation.snapPositionToTarget();
             }
             previewAnimation.advance(animationFrameTicks());
             renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
             if (previewAnimation.progress() > 0.86F) {
-                CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), width, height);
+                int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());
+                int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewAnimation.scale());
+                int previewX = Math.round(previewAnimation.centerX() - previewW / 2.0F);
+                int previewY = Math.round(previewAnimation.centerY() - previewH / 2.0F);
+                CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, previewX, previewY, previewW, previewH, width, height);
             }
         } else {
             previewAnimation.setClosingTarget();
@@ -116,6 +131,7 @@ final class CardGridPanel {
                 lastAnimationNanos = 0L;
             }
         }
+        renderTitleBand(graphics, font, layout);
     }
 
     boolean mouseClicked(int width, int height, int bottomReserve, double mouseX, double mouseY, int button) {
@@ -156,6 +172,8 @@ final class CardGridPanel {
             return false;
         }
         scrollOffset -= scrollY * SCROLL_STEP;
+        cachedFirstVisibleIndex = -1;
+        cachedLastVisibleIndex = -1;
         constrainScroll(layout);
         return true;
     }
@@ -186,12 +204,30 @@ final class CardGridPanel {
             return false;
         }
         PreviewBounds preview = previewBounds(layout, hoveredIndex);
-        return mouseX >= preview.x() && mouseX <= preview.x() + CardRenderHelper.CARD_WIDTH
-                && mouseY >= preview.y() && mouseY <= preview.y() + CardRenderHelper.CARD_HEIGHT;
+        return mouseX >= preview.x() && mouseX <= preview.x() + preview.width()
+                && mouseY >= preview.y() && mouseY <= preview.y() + preview.height();
     }
 
     boolean scrollbarAt(int width, int height, int bottomReserve, double mouseX, double mouseY) {
         return scrollbarAt(layout(width, height, bottomReserve), mouseX, mouseY);
+    }
+
+    void warmup(int width, int height, int bottomReserve, Font font, Function<CardInstance, CardRenderHelper.CardValues> values) {
+        Layout layout = layout(width, height, bottomReserve);
+        constrainScroll(layout);
+        warmupVisibleCards(font, layout, values);
+    }
+
+    private void warmupVisibleCards(Font font, Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
+        if (!needsWarmup) {
+            return;
+        }
+        needsWarmup = false;
+        int end = Math.min(cards.size(), lastVisibleIndex(layout));
+        for (int i = firstVisibleIndex(layout); i < end; i++) {
+            CardInstance card = cards.get(i);
+            CardRenderHelper.warmupCard(font, card, values.apply(card));
+        }
     }
 
     private void renderGridCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int baseW, int baseH, float baseScale, boolean selected, CardRenderHelper.CardValues values) {
@@ -213,6 +249,15 @@ final class CardGridPanel {
         previewRenderer.render(graphics, font, card, -CardRenderHelper.CARD_WIDTH / 2, -CardRenderHelper.CARD_HEIGHT / 2, selected);
         graphics.pose().popPose();
         graphics.flush();
+    }
+
+    private void renderTitleBand(GuiGraphics graphics, Font font, Layout layout) {
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 240.0F);
+        graphics.fillGradient(0, 0, layout.screenW(), layout.viewY(), MoonSpireUiTextures.CHEST_OVERLAY_TOP, MoonSpireUiTextures.CHEST_OVERLAY_TOP);
+        graphics.drawCenteredString(font, title, layout.screenW() / 2, 18, 0xFFFFEAC2);
+        graphics.drawCenteredString(font, Integer.toString(cards.size()), layout.screenW() / 2, 31, 0xFFE3C48C);
+        graphics.pose().popPose();
     }
 
     private void renderScrollbar(GuiGraphics graphics, Layout layout) {
@@ -241,6 +286,8 @@ final class CardGridPanel {
         int trackRange = Math.max(1, layout.viewH() - thumb.height());
         int thumbY = (int) Math.max(layout.viewY(), Math.min(layout.viewY() + trackRange, mouseY - scrollbarGrabOffset));
         scrollOffset = (thumbY - layout.viewY()) * maxScroll(layout) / (double) trackRange;
+        cachedFirstVisibleIndex = -1;
+        cachedLastVisibleIndex = -1;
         constrainScroll(layout);
     }
 
@@ -255,12 +302,12 @@ final class CardGridPanel {
         CardBounds bounds = cardBounds(layout, index);
         float centerX = bounds.centerX(layout);
         float centerY = bounds.centerY(layout);
-        int maxX = Math.max(PREVIEW_EDGE_MARGIN, layout.screenW() - CardRenderHelper.CARD_WIDTH - PREVIEW_EDGE_MARGIN);
-        int minY = Math.min(layout.screenH() - CardRenderHelper.CARD_HEIGHT - PREVIEW_EDGE_MARGIN, PREVIEW_TOP_RESERVE);
-        int maxY = Math.max(minY, layout.screenH() - layout.bottomReserve() - CardRenderHelper.CARD_HEIGHT - PREVIEW_EDGE_MARGIN);
-        int x = Math.max(PREVIEW_EDGE_MARGIN, Math.min(maxX, Math.round(centerX - CardRenderHelper.CARD_WIDTH / 2.0F)));
-        int y = Math.max(minY, Math.min(maxY, Math.round(centerY - CardRenderHelper.CARD_HEIGHT / 2.0F)));
-        return new PreviewBounds(x, y);
+        float scale = previewScale(layout);
+        int width = Math.round(CardRenderHelper.CARD_WIDTH * scale);
+        int height = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        int x = Math.round(centerX - width / 2.0F);
+        int y = Math.round(centerY - height / 2.0F);
+        return new PreviewBounds(x, y, width, height, scale);
     }
 
     private CardBounds cardBounds(Layout layout, int index) {
@@ -272,12 +319,20 @@ final class CardGridPanel {
     }
 
     private Layout layout(int width, int height, int bottomReserve) {
+        int signature = currentCardSignature;
+        if (cachedLayout != null
+                && cachedLayout.screenW() == width
+                && cachedLayout.screenH() == height
+                && cachedLayout.bottomReserve() == Math.max(0, bottomReserve)
+                && cachedCardSignature == signature) {
+            return cachedLayout;
+        }
         int viewX = 18;
         int viewY = TITLE_RESERVED_HEIGHT;
         int rawViewW = Math.max(CardRenderHelper.CARD_WIDTH + SCROLLBAR_HIT_WIDTH + CARD_GAP_X, width - viewX * 2);
         int contentW = Math.max(CardRenderHelper.CARD_WIDTH, rawViewW - SCROLLBAR_HIT_WIDTH - CARD_GAP_X);
-        float scaleForFiveColumns = (contentW - (GRID_COLUMNS - 1) * CARD_GAP_X) / (float) (GRID_COLUMNS * CardRenderHelper.CARD_WIDTH);
-        float cardScale = Math.max(GRID_MIN_CARD_SCALE, Math.min(GRID_CARD_SCALE, scaleForFiveColumns));
+        float scaleForSevenColumns = (contentW - (GRID_SCALE_COLUMNS - 1) * CARD_GAP_X) / (float) (GRID_SCALE_COLUMNS * CardRenderHelper.CARD_WIDTH);
+        float cardScale = Math.max(GRID_MIN_CARD_SCALE, Math.min(GRID_CARD_SCALE, scaleForSevenColumns));
         int cardW = Math.round(CardRenderHelper.CARD_WIDTH * cardScale);
         int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * cardScale);
         int previewPad = Math.max(0, (CardRenderHelper.CARD_HEIGHT - cardH) / 2 + PREVIEW_EDGE_MARGIN);
@@ -289,7 +344,7 @@ final class CardGridPanel {
         int availableH = pileBottom - cardViewY;
         int layoutH = availableH;
         int viewH = Math.max(cardH, Math.min(availableH, layoutH));
-        int columns = Math.min(GRID_COLUMNS, Math.max(1, (contentW + CARD_GAP_X) / (cardW + CARD_GAP_X)));
+        int columns = Math.min(GRID_VISIBLE_COLUMNS, Math.max(1, (contentW + CARD_GAP_X) / (cardW + CARD_GAP_X)));
         int usedW = columns * cardW + (columns - 1) * CARD_GAP_X;
         int cardsX = viewX + Math.max(0, (contentW - usedW) / 2);
         int rowH = cardH + CARD_GAP_Y;
@@ -299,17 +354,39 @@ final class CardGridPanel {
         int cardContentH = cards.isEmpty() ? 0 : rows * rowH - CARD_GAP_Y;
         int contentH = cards.isEmpty() ? 0 : scrollPadTop + cardContentH + scrollPadBottom;
         int scrollbarX = viewX + viewW - SCROLLBAR_HIT_WIDTH / 2;
-        return new Layout(width, height, reservedBottom, viewX, cardViewY, viewW, viewH, cardsX, scrollbarX, columns, cardW, cardH, rowH, contentH, scrollPadTop, cardScale);
+        cachedLayout = new Layout(width, height, reservedBottom, viewX, cardViewY, viewW, viewH, cardsX, scrollbarX, columns, cardW, cardH, rowH, contentH, scrollPadTop, cardScale);
+        cachedCardSignature = signature;
+        cachedFirstVisibleIndex = -1;
+        cachedLastVisibleIndex = -1;
+        return cachedLayout;
+    }
+
+    private float previewScale(Layout layout) {
+        return Math.max(PREVIEW_MIN_SCALE, Math.min(1.0F, layout.cardScale() / PREVIEW_SCALE_REFERENCE));
     }
 
     private int firstVisibleIndex(Layout layout) {
+        if (layout == cachedLayout && cachedFirstVisibleIndex >= 0) {
+            return cachedFirstVisibleIndex;
+        }
         int firstRow = Math.max(0, (int) Math.floor((Math.max(0.0D, scrollOffset) - layout.scrollPadTop()) / layout.rowH()));
-        return firstRow * layout.columns();
+        int index = firstRow * layout.columns();
+        if (layout == cachedLayout) {
+            cachedFirstVisibleIndex = index;
+        }
+        return index;
     }
 
     private int lastVisibleIndex(Layout layout) {
+        if (layout == cachedLayout && cachedLastVisibleIndex >= 0) {
+            return cachedLastVisibleIndex;
+        }
         int lastRow = Math.max(1, (int) Math.ceil((Math.max(0.0D, scrollOffset) - layout.scrollPadTop() + layout.viewH()) / layout.rowH()) + 1);
-        return lastRow * layout.columns();
+        int index = lastRow * layout.columns();
+        if (layout == cachedLayout) {
+            cachedLastVisibleIndex = index;
+        }
+        return index;
     }
 
     private int maxScroll(Layout layout) {
@@ -322,7 +399,12 @@ final class CardGridPanel {
 
     private void constrainScroll(Layout layout) {
         int maxScroll = maxScroll(layout);
-        scrollOffset = Math.max(0.0D, Math.min(maxScroll, scrollOffset));
+        double next = Math.max(0.0D, Math.min(maxScroll, scrollOffset));
+        if (Math.abs(next - scrollOffset) > 0.01D) {
+            cachedFirstVisibleIndex = -1;
+            cachedLastVisibleIndex = -1;
+        }
+        scrollOffset = next;
     }
 
     private double clampedScrollOffset(Layout layout) {
@@ -336,8 +418,8 @@ final class CardGridPanel {
         }
         if (hoveredIndex >= 0 && hoveredIndex < cards.size()) {
             PreviewBounds preview = previewBounds(layout, hoveredIndex);
-            if (mouseX >= preview.x() && mouseX <= preview.x() + CardRenderHelper.CARD_WIDTH
-                    && mouseY >= preview.y() && mouseY <= preview.y() + CardRenderHelper.CARD_HEIGHT) {
+            if (mouseX >= preview.x() && mouseX <= preview.x() + preview.width()
+                    && mouseY >= preview.y() && mouseY <= preview.y() + preview.height()) {
                 return hoveredIndex;
             }
         }
@@ -355,6 +437,21 @@ final class CardGridPanel {
             }
         }
         return -1;
+    }
+
+    private void invalidateLayout() {
+        cachedLayout = null;
+        cachedFirstVisibleIndex = -1;
+        cachedLastVisibleIndex = -1;
+    }
+
+    private int cardSignature() {
+        int result = cards.size();
+        for (CardInstance card : cards) {
+            result = 31 * result + card.id().hashCode();
+            result = 31 * result + card.cardId().hashCode();
+        }
+        return result;
     }
 
     @FunctionalInterface
@@ -389,13 +486,13 @@ final class CardGridPanel {
         }
     }
 
-    private record PreviewBounds(int x, int y) {
+    private record PreviewBounds(int x, int y, int width, int height, float scale) {
         private float centerX() {
-            return x + CardRenderHelper.CARD_WIDTH / 2.0F;
+            return x + width / 2.0F;
         }
 
         private float centerY() {
-            return y + CardRenderHelper.CARD_HEIGHT / 2.0F;
+            return y + height / 2.0F;
         }
     }
 

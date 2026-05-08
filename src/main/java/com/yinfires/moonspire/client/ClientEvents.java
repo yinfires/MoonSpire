@@ -137,6 +137,7 @@ public final class ClientEvents {
                 event.setCanceled(true);
                 return;
             }
+            event.setSwingHand(false);
             event.setCanceled(true);
         }
 

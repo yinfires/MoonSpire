@@ -17,7 +17,6 @@ import java.util.UUID;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.NeutralMob;
@@ -513,7 +512,6 @@ public class BattleState {
             emitVisual(user.entity(), selectedTarget.entity(), card.sourceStack(), card, new BattleDamageResult(0, 0, 0), 0);
             finishPendingUsedCard();
         }
-        user.entity().swing(InteractionHand.MAIN_HAND, true);
     }
 
     private void addEffectSteps(CombatantState user, CombatantState opponent, CombatantState selectedTarget, CardInstance card, List<CardEffect> effects) {
@@ -551,12 +549,21 @@ public class BattleState {
             case SELF -> List.of(user);
             case SINGLE_ENEMY -> List.of(selectedTarget == opponent ? selectedTarget : opponent);
             case SINGLE_ALLY -> List.of();
-            case ALL_ENEMIES, RANDOM_ENEMY -> List.of(opponent);
+            case ALL_ENEMIES -> List.of(opponent);
+            case RANDOM_ENEMY -> randomTarget(List.of(opponent));
             case ALL_ALLIES -> List.of(user);
             case ALL_UNITS -> List.of(user, opponent);
             case ALL_OTHER_UNITS -> List.of(opponent);
-            case ALL_OTHER_ALLIES, RANDOM_ALLY -> List.of();
+            case ALL_OTHER_ALLIES -> List.of();
+            case RANDOM_ALLY -> randomTarget(List.of());
         };
+    }
+
+    private List<CombatantState> randomTarget(List<CombatantState> candidates) {
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        return List.of(candidates.get(player.getRandom().nextInt(candidates.size())));
     }
 
     private boolean validExplicitTarget(CombatantState user, int targetEntityId, CardInstance card) {

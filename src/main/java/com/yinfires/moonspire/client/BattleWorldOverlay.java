@@ -220,8 +220,8 @@ public final class BattleWorldOverlay {
             }
             int size = blockGainSize(entity);
             int x = -size / 2;
-            int y = blockGainY(entity, progress, size);
-            VertexConsumer consumer = bufferSource.getBuffer(RenderType.text(MoonSpireUiTextures.BLOCK_GAIN_ANIMATION));
+            int y = blockGainY(entity, size);
+            VertexConsumer consumer = bufferSource.getBuffer(RenderType.textSeeThrough(MoonSpireUiTextures.BLOCK_GAIN_ANIMATION));
             MoonSpireUiTextures.drawWorldBillboard(matrix, consumer, x, y, size, size, 0.12F, packedLight, 255, 255, 255, alpha, 0.0F, 0.0F, 1.0F, 1.0F);
         }
     }
@@ -231,11 +231,9 @@ public final class BattleWorldOverlay {
         return Math.max(42, Math.round(bodyScale));
     }
 
-    private static int blockGainY(Entity entity, float progress, int size) {
-        float drop = progress < 0.28F ? easeOutCubic(progress / 0.28F) : 1.0F;
+    private static int blockGainY(Entity entity, int size) {
         int bodyCenterY = Math.round((0.55F + entity.getBbHeight() * 0.5F) / 0.025F);
-        int centerY = bodyCenterY - size / 2;
-        return Math.round(centerY - 22.0F * (1.0F - drop));
+        return bodyCenterY - size / 2;
     }
 
     private static int blockGainAlpha(float progress) {

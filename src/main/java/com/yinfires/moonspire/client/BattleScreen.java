@@ -109,6 +109,7 @@ public class BattleScreen extends NoBlurScreen {
     private float currentFrameTicks;
     private FrameCache frameCache = FrameCache.empty();
     private boolean awaitingUseCardSnapshot;
+    private final Set<UUID> locallyUsedCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
 
     public BattleScreen() {
@@ -232,6 +233,7 @@ public class BattleScreen extends NoBlurScreen {
             }
             if (entityId != -1) {
                 pileOverlay = new CardGridPanel(entityId == snapshot.monster().entityId() ? snapshot.monsterHand() : snapshot.hand(), Component.translatable("screen.moonspire.deck_view"));
+                pileOverlay.warmup(width, height, CARD_GRID_BOTTOM_RESERVE, font, CardRenderHelper.CardValues::original);
             }
             return true;
         }
@@ -1327,11 +1329,13 @@ public class BattleScreen extends NoBlurScreen {
             flyingCards.clear();
             previousSnapshot = BattleSnapshot.inactive();
             awaitingUseCardSnapshot = false;
+            locallyUsedCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
             recordPerf(PerfBucket.SNAPSHOT_SYNC, start);
             return;
         }
-        boolean expectedPlayedRemoval = awaitingUseCardSnapshot || previousSnapshot.resolvingEffects() || snapshot.resolvingEffects();
+        boolean keepLocalUsedCardsHidden = awaitingUseCardSnapshot || snapshot.resolvingEffects();
+        boolean expectedPlayedRemoval = keepLocalUsedCardsHidden || previousSnapshot.resolvingEffects();
         awaitingUseCardSnapshot = false;
         if (!snapshot.pendingHandSelection().active()) {
             handSelectionOverlay.clearIfInactive();
@@ -1339,6 +1343,7 @@ public class BattleScreen extends NoBlurScreen {
         HandLayout layout = handLayout(snapshot);
         boolean firstActiveSnapshot = !previousSnapshot.active();
         Set<UUID> currentIds = currentHandIds(snapshot.hand());
+        locallyUsedCardIds.removeIf(id -> !keepLocalUsedCardsHidden || !currentIds.contains(id));
         Set<UUID> representedFlyingIds = flyingCardIds();
         Set<UUID> discardIds = currentHandIds(snapshot.discardPileCards());
         Set<UUID> exhaustedIds = currentHandIds(snapshot.exhaustPileCards());
@@ -2173,6 +2178,7 @@ public class BattleScreen extends NoBlurScreen {
             }
         }
         awaitingUseCardSnapshot = true;
+        locallyUsedCardIds.add(card.id());
         flyingCards.add(FlyingCardAnimation.played(card, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EXHAUST)));
         PacketDistributor.sendToServer(new UseCardPayload(dragState.handIndex(), targetId));
     }
@@ -2307,6 +2313,7 @@ public class BattleScreen extends NoBlurScreen {
         if (dragState != null) {
             hiddenIds.add(dragState.cardId());
         }
+        hiddenIds.addAll(locallyUsedCardIds);
         if (snapshot.pendingHandSelection().active()) {
             hiddenIds.addAll(handSelectionOverlay.selectedIds());
         }
