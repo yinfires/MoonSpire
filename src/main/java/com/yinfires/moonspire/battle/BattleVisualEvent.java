@@ -13,6 +13,7 @@ public record BattleVisualEvent(
         int blockedDamage,
         int healthDamage,
         int gainedBlock,
+        int healedHealth,
         int delayTicks,
         boolean shieldSound,
         boolean hurtSound,
@@ -32,6 +33,7 @@ public record BattleVisualEvent(
         buf.writeVarInt(event.blockedDamage);
         buf.writeVarInt(event.healthDamage);
         buf.writeVarInt(event.gainedBlock);
+        buf.writeVarInt(event.healedHealth);
         buf.writeVarInt(event.delayTicks);
         buf.writeBoolean(event.shieldSound);
         buf.writeBoolean(event.hurtSound);
@@ -44,6 +46,7 @@ public record BattleVisualEvent(
                 buf.readVarInt(),
                 ItemStack.OPTIONAL_STREAM_CODEC.decode(buf),
                 readOptionalCard(buf),
+                buf.readVarInt(),
                 buf.readVarInt(),
                 buf.readVarInt(),
                 buf.readVarInt(),

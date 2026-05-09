@@ -36,7 +36,15 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
     }
 
     public static CardTarget defaultTarget(Kind kind) {
-        return kind == Kind.BLOCK || kind == Kind.GUARD || kind == Kind.EXHAUST || kind == Kind.EXHAUST_HAND || kind == Kind.DISCARD_HAND ? CardTarget.SELF : CardTarget.SINGLE_ENEMY;
+        return kind == Kind.BLOCK
+                || kind == Kind.HEAL
+                || kind == Kind.GUARD
+                || kind == Kind.STRENGTH
+                || kind == Kind.REGENERATION
+                || kind == Kind.HASTE
+                || kind == Kind.EXHAUST
+                || kind == Kind.EXHAUST_HAND
+                || kind == Kind.DISCARD_HAND ? CardTarget.SELF : CardTarget.SINGLE_ENEMY;
     }
 
     public CardTarget resolvedTarget() {
@@ -53,9 +61,18 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
 
     public enum Kind {
         DAMAGE,
+        HEAL,
         BLOCK,
         BLEED,
         GUARD,
+        STRENGTH,
+        LOSE_STRENGTH,
+        REGENERATION,
+        HASTE,
+        POISON,
+        BURN,
+        WEAKNESS,
+        SLOWNESS,
         EXHAUST,
         EXHAUST_HAND,
         DISCARD_HAND;

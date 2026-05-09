@@ -540,12 +540,12 @@ public class BattleScreen extends NoBlurScreen {
                 List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true, -1, entry.entityId());
                 int totalAmount = Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 if (effect.kind() == CardEffectKind.DAMAGE && targets.contains(snapshot.player().entityId())) {
-                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD)) * Math.max(1, effect.count());
+                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(entry.entityId())) {
                     block += totalAmount;
-                } else if (effect.kind() == CardEffectKind.BLEED && targets.contains(snapshot.player().entityId())) {
+                } else if (negativeEffect(effect.kind()) && targets.contains(snapshot.player().entityId())) {
                     negativeEffects += totalAmount;
-                } else if (effect.kind() == CardEffectKind.GUARD && targets.contains(entry.entityId())) {
+                } else if (positiveEffect(effect.kind()) && targets.contains(entry.entityId())) {
                     positiveEffects += totalAmount;
                 }
             }
@@ -588,7 +588,8 @@ public class BattleScreen extends NoBlurScreen {
                 Component marker = Component.translatable("screen.moonspire.effect_unknown_icon");
                 graphics.drawString(font, marker, ex + (15 - font.width(marker)) / 2, y + 2, 0xFFFFB1C0, false);
             }
-            graphics.drawString(font, amount, ex + 15 - font.width(amount), y + 7, 0xFFFFFFFF, true);
+            int amountColor = effect.type() == BattleEffectType.STRENGTH && effect.amount() < 0 ? 0xFFFF5454 : 0xFFFFFFFF;
+            graphics.drawString(font, amount, ex + 15 - font.width(amount), y + 7, amountColor, true);
             if (mouseX >= ex && mouseX <= ex + 15 && mouseY >= y && mouseY <= y + 15) {
                 hovered = effect;
                 hoveredX = ex;
@@ -1820,23 +1821,48 @@ public class BattleScreen extends NoBlurScreen {
         List<Integer> damageAmounts = new ArrayList<>(card.effects().size());
         List<Integer> blockAmounts = new ArrayList<>(card.effects().size());
         int previewAttackTotal = 0;
+        boolean hasPreviewAttack = false;
         for (CardEffect effect : card.effects()) {
             int damageAmount = effect.amount();
             int blockAmount = effect.amount();
             BattleCombatantSnapshot singleTarget = singlePreviewTarget(card, effect.target(), snapshot, monsterCard);
-            if (effect.kind() == CardEffectKind.DAMAGE && singleTarget.entityId() >= 0) {
-                damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD));
+            if (effect.kind() == CardEffectKind.DAMAGE) {
+                int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
+                boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
+                if (singleTarget.entityId() >= 0) {
+                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak);
+                } else {
+                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), 1, 1, 0, 0, attackerStrength, attackerWeak);
+                }
             }
             damageAmounts.add(damageAmount);
             blockAmounts.add(blockAmount);
             if (effect.kind() == CardEffectKind.DAMAGE && effect.target().targetsEnemy()) {
                 previewAttackTotal += damageAmount * effect.count();
+                hasPreviewAttack = true;
             }
         }
-        if (previewAttackTotal > 0) {
+        if (hasPreviewAttack) {
             attack = previewAttackTotal;
         }
         return new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
+    }
+
+    private static boolean positiveEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.HEAL
+                || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.STRENGTH
+                || kind == CardEffectKind.REGENERATION
+                || kind == CardEffectKind.HASTE;
+    }
+
+    private static boolean negativeEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.BLEED
+                || kind == CardEffectKind.LOSE_STRENGTH
+                || kind == CardEffectKind.POISON
+                || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WEAKNESS
+                || kind == CardEffectKind.SLOWNESS;
     }
 
     private BattleCombatantSnapshot singlePreviewTarget(CardInstance card, CardTarget target, BattleSnapshot snapshot, boolean monsterCard) {

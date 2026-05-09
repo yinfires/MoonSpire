@@ -24,11 +24,13 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -59,6 +61,12 @@ public final class CardRenderHelper {
     private static final int COST_TEXT_COLOR = 0xFFFFF6E0;
     private static final int COST_UNAFFORDABLE_TEXT_COLOR = 0xFFFF5F63;
     private static final int COST_OUTLINE_COLOR = 0xFF46393B;
+    private static final float DETAILED_DESCRIPTION_SCALE = 0.62F;
+    private static final float COMPACT_DESCRIPTION_SCALE = 0.44F;
+    private static final float DETAILED_DESCRIPTION_MIN_SCALE = 0.32F;
+    private static final float COMPACT_DESCRIPTION_MIN_SCALE = 0.28F;
+    private static final float DESCRIPTION_SCALE_STEP = 0.02F;
+    private static final float FITTED_TEXT_MIN_SCALE = 0.25F;
     private static final float CARD_COST_BASE_WIDTH = SMALL_CARD_WIDTH;
     private static final float COST_TEXT_VERTICAL_BIAS = 1.0F;
     private static final float ENERGY_COST_SCREEN_SCALE = 2.0F;
@@ -159,6 +167,9 @@ public final class CardRenderHelper {
     private record TipLayout(List<FormattedCharSequence> titleLines, List<FormattedCharSequence> descLines, int height) {
     }
 
+    private record DescriptionLayout(List<FormattedCharSequence> lines, float scale) {
+    }
+
     public static void invalidateFileTexture(Path path) {
         if (path != null) {
             FILE_TEXTURES.remove(path.toAbsolutePath().normalize().toString());
@@ -175,7 +186,7 @@ public final class CardRenderHelper {
         font.width(Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill"));
         DeveloperCardFace.Area descArea = face.descriptionArea();
         int descWidth = sx(CARD_WIDTH, descArea.width());
-        float scale = 0.62F;
+        float scale = DETAILED_DESCRIPTION_SCALE;
         List<Component> lines = descriptionLines(card, values);
         if (lines.isEmpty()) {
             lines = List.of(card.descriptionComponent());
@@ -247,9 +258,13 @@ public final class CardRenderHelper {
     }
 
     public static int previewAttack(CardInstance card, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard) {
+        return previewAttack(card, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, 0, false);
+    }
+
+    public static int previewAttack(CardInstance card, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, int attackerStrength, boolean attackerWeak) {
         int incoming = card.effects().stream()
                 .filter(effect -> effect.kind() == CardEffectKind.DAMAGE && effect.target().targetsEnemy())
-                .mapToInt(effect -> previewDamageAmount(effect.amount(), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard) * effect.count())
+                .mapToInt(effect -> previewDamageAmount(effect.amount(), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerStrength, attackerWeak) * effect.count())
                 .sum();
         return Math.max(0, incoming);
     }
@@ -259,7 +274,11 @@ public final class CardRenderHelper {
     }
 
     public static int previewDamageAmount(int amount, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard) {
-        return BattleDamageCalculator.directDamage(amount, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard);
+        return previewDamageAmount(amount, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, 0, false);
+    }
+
+    public static int previewDamageAmount(int amount, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, int attackerStrength, boolean attackerWeak) {
+        return BattleDamageCalculator.directDamage(Math.max(0, amount + attackerStrength), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerWeak);
     }
 
     public static List<Component> descriptionLines(CardInstance card, int attackValue, boolean modifiedAttack) {
@@ -276,12 +295,30 @@ public final class CardRenderHelper {
             CardEffect effect = card.effects().get(i);
             if (effect.kind() == CardEffectKind.DAMAGE) {
                 lines.add(withEffectCount(Component.translatable(damageDescriptionKey(effect.target()), statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.HEAL) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "heal", effect.target()), effect.amount()), effect.count()));
             } else if (effect.kind() == CardEffectKind.BLOCK) {
                 lines.add(withEffectCount(Component.translatable(blockDescriptionKey(effect.target()), statNumber(effect.amount(), displayedBlockAmount(effect, values, i)), keyword(Component.translatable("keyword.moonspire.block.name"))), effect.count()));
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 lines.add(withEffectCount(Component.translatable(bleedDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.bleed.name"))), effect.count()));
             } else if (effect.kind() == CardEffectKind.GUARD) {
                 lines.add(withEffectCount(Component.translatable(guardDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.guard.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.STRENGTH) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "strength", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.strength.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "lose_strength", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.strength.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.REGENERATION) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "regeneration", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.regeneration.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.HASTE) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "haste", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.haste.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.POISON) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.poison.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.BURN) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "burn", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.burn.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.WEAKNESS) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "weakness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.weakness.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.SLOWNESS) {
+                lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "slowness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.slowness.name"))), effect.count()));
             } else if (effect.kind() == CardEffectKind.EXHAUST) {
                 lines.add(keyword(Component.translatable("keyword.moonspire.exhaust.name")));
             } else if (effect.kind() == CardEffectKind.EXHAUST_HAND) {
@@ -369,6 +406,10 @@ public final class CardRenderHelper {
     }
 
     private static String handSelectionDescriptionKey(String effect, CardTarget target) {
+        return effectDescriptionKey(effect, target);
+    }
+
+    private static String effectDescriptionKey(String effect, CardTarget target) {
         return "card.moonspire.effect." + effect + switch (target) {
             case SELF -> "";
             case SINGLE_ENEMY -> ".single_enemy";
@@ -381,6 +422,13 @@ public final class CardRenderHelper {
             case RANDOM_ENEMY -> ".random_enemy";
             case RANDOM_ALLY -> ".random_ally";
         };
+    }
+
+    private static String effectDescriptionKey(CardEffectKind kind, String effect, CardTarget target) {
+        if (target == kind.defaultTarget()) {
+            return "card.moonspire.effect." + effect;
+        }
+        return effectDescriptionKey(effect, target);
     }
 
     public static void renderCombatantBar(GuiGraphics graphics, Font font, BattleCombatantSnapshot entry, int x, int y, int width, int height) {
@@ -401,7 +449,7 @@ public final class CardRenderHelper {
     }
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender) {
-        return previewAttack(card, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD));
+        return previewAttack(card, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0);
     }
 
     public static CardLocalArea smallDescriptionArea(CardInstance card) {
@@ -430,12 +478,27 @@ public final class CardRenderHelper {
         if (card.hasSelfEffect(CardEffectKind.BLOCK)) {
             tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.block.name"), Component.translatable("keyword.moonspire.block.description"), x, tipY);
         }
+        Set<String> renderedTips = new HashSet<>();
         for (CardEffect effect : card.effects()) {
-            if (effect.kind() == CardEffectKind.BLEED) {
+            if (effect.kind() == CardEffectKind.BLEED && renderedTips.add("bleed")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.bleed.name"), Component.translatable("effect.moonspire.bleed.description"), x, tipY);
-            } else if (effect.kind() == CardEffectKind.GUARD) {
+            } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description"), x, tipY);
-            } else if (effect.kind() == CardEffectKind.EXHAUST) {
+            } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.REGENERATION && renderedTips.add("regeneration")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.regeneration.name"), Component.translatable("effect.moonspire.regeneration.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.HASTE && renderedTips.add("haste")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.haste.name"), Component.translatable("effect.moonspire.haste.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.POISON && renderedTips.add("poison")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.weakness.name"), Component.translatable("effect.moonspire.weakness.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.SLOWNESS && renderedTips.add("slowness")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.slowness.name"), Component.translatable("effect.moonspire.slowness.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.EXHAUST && renderedTips.add("exhaust")) {
                 tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.exhaust.name"), Component.translatable("keyword.moonspire.exhaust.description"), x, tipY);
             }
         }
@@ -466,8 +529,19 @@ public final class CardRenderHelper {
     }
 
     public static int renderEffectTip(GuiGraphics graphics, Font font, BattleEffectType type, int amount, int x, int y) {
-        Object value = type == BattleEffectType.GUARD ? BattleDamageCalculator.guardReductionPercent(amount) : amount;
-        return renderTip(graphics, font, Component.translatable("screen.moonspire.effect_tip_title", Component.translatable(type.nameKey()), amount), Component.translatable(type.activeDescriptionKey(), value), x, y);
+        Object value = effectTipValue(type, amount);
+        String descriptionKey = type == BattleEffectType.STRENGTH && amount < 0 ? "effect.moonspire.strength.negative_active_description" : type.activeDescriptionKey();
+        return renderTip(graphics, font, Component.translatable("screen.moonspire.effect_tip_title", Component.translatable(type.nameKey()), amount), Component.translatable(descriptionKey, value), x, y);
+    }
+
+    private static Object effectTipValue(BattleEffectType type, int amount) {
+        if (type == BattleEffectType.GUARD) {
+            return BattleDamageCalculator.guardReductionPercent(amount);
+        }
+        if (type == BattleEffectType.STRENGTH && amount < 0) {
+            return -amount;
+        }
+        return amount;
     }
 
     public static int effectAmount(BattleCombatantSnapshot snapshot, BattleEffectType type) {
@@ -484,12 +558,27 @@ public final class CardRenderHelper {
         if (card.hasSelfEffect(CardEffectKind.BLOCK)) {
             height += tipHeight(font, Component.translatable("keyword.moonspire.block.name"), Component.translatable("keyword.moonspire.block.description")) + 4;
         }
+        Set<String> renderedTips = new HashSet<>();
         for (CardEffect effect : card.effects()) {
-            if (effect.kind() == CardEffectKind.BLEED) {
+            if (effect.kind() == CardEffectKind.BLEED && renderedTips.add("bleed")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.bleed.name"), Component.translatable("effect.moonspire.bleed.description")) + 4;
-            } else if (effect.kind() == CardEffectKind.GUARD) {
+            } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description")) + 4;
-            } else if (effect.kind() == CardEffectKind.EXHAUST) {
+            } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.REGENERATION && renderedTips.add("regeneration")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.regeneration.name"), Component.translatable("effect.moonspire.regeneration.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.HASTE && renderedTips.add("haste")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.haste.name"), Component.translatable("effect.moonspire.haste.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.POISON && renderedTips.add("poison")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.weakness.name"), Component.translatable("effect.moonspire.weakness.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.SLOWNESS && renderedTips.add("slowness")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.slowness.name"), Component.translatable("effect.moonspire.slowness.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.EXHAUST && renderedTips.add("exhaust")) {
                 height += tipHeight(font, Component.translatable("keyword.moonspire.exhaust.name"), Component.translatable("keyword.moonspire.exhaust.description")) + 4;
             }
         }
@@ -596,16 +685,11 @@ public final class CardRenderHelper {
         int descY = y + descArea.y();
         int descWidth = descArea.width();
         int descHeight = descArea.height();
-        float scale = detailed ? 0.62F : 0.44F;
-        int lineHeight = scaledLineHeight(font, scale);
-        int maxLines = Math.max(1, Math.min(linesLimit(detailed), Math.max(1, (descHeight + 2) / lineHeight)));
-        List<FormattedCharSequence> wrappedLines = dataOverride == null
-                ? wrappedDescriptionLines(font, card, values, Math.max(1, (int) (descWidth / scale)), scale, maxLines)
-                : buildWrappedDescription(font, card, values, Math.max(1, (int) (descWidth / scale)), scale, maxLines);
+        DescriptionLayout layout = descriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
         if (clipDescription) {
             enablePoseScissor(graphics, descX, descY, descWidth, descHeight);
         }
-        drawCenteredLines(graphics, font, wrappedLines, descX, descY, descWidth, descHeight, CARD_DESCRIPTION_TEXT_COLOR, scale);
+        drawCenteredLines(graphics, font, layout.lines(), descX, descY, descWidth, descHeight, CARD_DESCRIPTION_TEXT_COLOR, layout.scale());
         if (clipDescription) {
             graphics.disableScissor();
         }
@@ -624,21 +708,49 @@ public final class CardRenderHelper {
         graphics.enableScissor((int) Math.floor(minX), (int) Math.floor(minY), (int) Math.ceil(maxX), (int) Math.ceil(maxY));
     }
 
-    private static int linesLimit(boolean detailed) {
-        return detailed ? 8 : 3;
+    private static DescriptionLayout descriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride) {
+        float baseScale = detailed ? DETAILED_DESCRIPTION_SCALE : COMPACT_DESCRIPTION_SCALE;
+        float minScale = detailed ? DETAILED_DESCRIPTION_MIN_SCALE : COMPACT_DESCRIPTION_MIN_SCALE;
+        for (float scale = baseScale; scale >= minScale - 0.001F; scale -= DESCRIPTION_SCALE_STEP) {
+            float normalizedScale = Math.max(minScale, scale);
+            List<FormattedCharSequence> lines = descriptionLinesAtScale(font, card, values, descWidth, normalizedScale, dataOverride);
+            if (descriptionFits(font, lines, normalizedScale, descHeight)) {
+                return new DescriptionLayout(lines, normalizedScale);
+            }
+        }
+        List<FormattedCharSequence> fallbackLines = descriptionLinesAtScale(font, card, values, descWidth, minScale, dataOverride);
+        int maxVisibleLines = Math.max(1, (descHeight + 2) / scaledLineHeight(font, minScale));
+        if (fallbackLines.size() > maxVisibleLines) {
+            fallbackLines = List.copyOf(fallbackLines.subList(0, maxVisibleLines));
+        }
+        return new DescriptionLayout(fallbackLines, minScale);
     }
 
-    private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, CardValues values, int width, float scale, int maxLines) {
+    private static boolean descriptionFits(Font font, List<FormattedCharSequence> lines, float scale, int descHeight) {
+        if (lines.isEmpty()) {
+            return true;
+        }
+        return lines.size() * scaledLineHeight(font, scale) - 2 <= descHeight;
+    }
+
+    private static List<FormattedCharSequence> descriptionLinesAtScale(Font font, CardInstance card, CardValues values, int descWidth, float scale, DeveloperData dataOverride) {
+        int wrapWidth = Math.max(1, (int) (descWidth / Math.max(0.01F, scale)));
+        return dataOverride == null
+                ? wrappedDescriptionLines(font, card, values, wrapWidth)
+                : buildWrappedDescription(font, card, values, wrapWidth);
+    }
+
+    private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, CardValues values, int width) {
         long revision = DeveloperDataManager.cacheRevision();
         if (descriptionCacheRevision != revision) {
             DESCRIPTION_WRAP_CACHE.clear();
             descriptionCacheRevision = revision;
         }
-        String key = card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense() + "|" + values.damageAmounts() + "|" + values.blockAmounts() + "|" + width + "|" + maxLines + "|" + scale;
-        return DESCRIPTION_WRAP_CACHE.computeIfAbsent(key, ignored -> buildWrappedDescription(font, card, values, width, scale, maxLines));
+        String key = card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense() + "|" + values.damageAmounts() + "|" + values.blockAmounts() + "|" + width;
+        return DESCRIPTION_WRAP_CACHE.computeIfAbsent(key, ignored -> buildWrappedDescription(font, card, values, width));
     }
 
-    private static List<FormattedCharSequence> buildWrappedDescription(Font font, CardInstance card, CardValues values, int width, float scale, int maxLines) {
+    private static List<FormattedCharSequence> buildWrappedDescription(Font font, CardInstance card, CardValues values, int width) {
         List<FormattedCharSequence> wrappedLines = new ArrayList<>();
         List<Component> lines = descriptionLines(card, values);
         if (lines.isEmpty()) {
@@ -646,13 +758,7 @@ public final class CardRenderHelper {
         }
         for (Component line : lines) {
             for (FormattedCharSequence wrapped : font.split(line, width)) {
-                if (wrappedLines.size() >= maxLines) {
-                    break;
-                }
                 wrappedLines.add(wrapped);
-            }
-            if (wrappedLines.size() >= maxLines) {
-                break;
             }
         }
         return List.copyOf(wrappedLines);
@@ -976,8 +1082,10 @@ public final class CardRenderHelper {
     }
 
     private static void drawCenteredFit(GuiGraphics graphics, Font font, String text, int x, int y, int width, int height, int color, float maxScale) {
-        float scale = Math.min(maxScale, width / (float) Math.max(1, font.width(text)));
-        scale = Math.max(0.55F, scale);
+        float widthScale = width / (float) Math.max(1, font.width(text));
+        float heightScale = height / (float) Math.max(1, font.lineHeight);
+        float scale = Math.min(maxScale, Math.min(widthScale, heightScale));
+        scale = Math.max(FITTED_TEXT_MIN_SCALE, scale);
         int scaledWidth = (int) (font.width(text) * scale);
         int scaledHeight = (int) (font.lineHeight * scale);
         drawScaled(graphics, font, text, x + (width - scaledWidth) / 2, y + (height - scaledHeight) / 2, color, scale);

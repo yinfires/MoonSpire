@@ -10,11 +10,15 @@ public final class BattleDamageCalculator {
     }
 
     public static int directDamage(int baseDamage, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard) {
+        return directDamage(baseDamage, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, false);
+    }
+
+    public static int directDamage(int baseDamage, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, boolean weakened) {
         int incoming = Math.max(0, baseDamage);
         if (incoming <= 0) {
             return 0;
         }
-        return Math.round(incoming * speedFactor(attackerSpeed, defenderSpeed, defenderBlock) * guardFactor(defenderGuard));
+        return Math.round(incoming * weaknessFactor(weakened) * speedFactor(attackerSpeed, defenderSpeed, defenderBlock) * guardFactor(defenderGuard));
     }
 
     public static int guardReductionPercent(int stacks) {
@@ -40,5 +44,9 @@ public final class BattleDamageCalculator {
     private static float guardFactor(int stacks) {
         int reduction = guardReductionPercent(stacks);
         return Math.max(0.0F, 1.0F - reduction / 100.0F);
+    }
+
+    private static float weaknessFactor(boolean weakened) {
+        return weakened ? 0.75F : 1.0F;
     }
 }

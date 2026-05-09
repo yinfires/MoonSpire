@@ -87,7 +87,7 @@ public class CombatantState {
     }
 
     public int roundSpeed() {
-        return roundSpeed;
+        return Math.max(1, roundSpeed + effectAmount(BattleEffectType.HASTE) - effectAmount(BattleEffectType.SLOWNESS));
     }
 
     public boolean endedTurn() {
@@ -136,8 +136,8 @@ public class CombatantState {
     }
 
     public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill) {
-        int incoming = Math.max(0, amount);
-        int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), roundSpeed, defense, effectAmount(BattleEffectType.GUARD));
+        int incoming = Math.max(0, amount + attacker.effectAmount(BattleEffectType.STRENGTH));
+        int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), this.roundSpeed(), defense, effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0);
         return applyBlockableDamage(incoming, modifiedIncoming, creditedPlayerKill);
     }
 
@@ -152,15 +152,43 @@ public class CombatantState {
         return new BattleDamageResult(0, damage, damage);
     }
 
+    public int heal(int amount) {
+        if (fakeDead || amount <= 0 || battleHealth >= maxBattleHealth) {
+            return 0;
+        }
+        float before = battleHealth;
+        battleHealth = Math.min(maxBattleHealth, battleHealth + amount);
+        return Math.round(battleHealth - before);
+    }
+
     public void addEffect(BattleEffectType type, int amount) {
-        if (amount <= 0) {
+        if (type == null || (!type.allowsNegativeStacks() && amount <= 0) || (type.allowsNegativeStacks() && amount == 0)) {
             return;
         }
-        effects.merge(type, amount, Integer::sum);
+        int next = effects.getOrDefault(type, 0) + amount;
+        if (next == 0) {
+            effects.remove(type);
+        } else if (type.allowsNegativeStacks() || next > 0) {
+            effects.put(type, next);
+        } else {
+            effects.remove(type);
+        }
     }
 
     public int effectAmount(BattleEffectType type) {
         return effects.getOrDefault(type, 0);
+    }
+
+    public void reduceEffect(BattleEffectType type, int amount) {
+        if (type == null || amount <= 0 || !effects.containsKey(type)) {
+            return;
+        }
+        int next = effects.get(type) - amount;
+        if (next > 0 || (type.allowsNegativeStacks() && next != 0)) {
+            effects.put(type, next);
+        } else {
+            effects.remove(type);
+        }
     }
 
     public void decayEndOfTurnEffects() {
@@ -184,7 +212,7 @@ public class CombatantState {
                 energyLeft(),
                 maxEnergy,
                 baseSpeed,
-                roundSpeed,
+                roundSpeed(),
                 endedTurn,
                 fakeDead,
                 fakeDeathTicks,
@@ -244,7 +272,7 @@ public class CombatantState {
     private List<BattleEffectSnapshot> effectSnapshots() {
         List<BattleEffectSnapshot> snapshots = new ArrayList<>();
         for (Map.Entry<BattleEffectType, Integer> entry : effects.entrySet()) {
-            if (entry.getValue() > 0) {
+            if (entry.getValue() > 0 || (entry.getKey().allowsNegativeStacks() && entry.getValue() < 0)) {
                 snapshots.add(BattleEffectSnapshot.of(entry.getKey(), entry.getValue()));
             }
         }

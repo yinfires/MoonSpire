@@ -293,7 +293,7 @@ public class BattleState {
         state.setEndedTurn(true);
         if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
             for (CombatantState playerState : alivePlayers()) {
-                playerState.decayEndOfTurnEffects();
+                applyOwnTurnEndEffects(playerState);
                 playerState.deck().discardHand();
             }
             beginMonsterTurn();
@@ -411,6 +411,10 @@ public class BattleState {
         for (CombatantState state : playerStates) {
             if (!state.fakeDead()) {
                 state.clearDefense();
+                applyOwnTurnStartEffects(state);
+                if (state.fakeDead()) {
+                    continue;
+                }
                 state.resetEnergy();
                 state.setEndedTurn(false);
                 state.deck().startTurn(leader.getRandom());
@@ -432,6 +436,10 @@ public class BattleState {
         for (CombatantState state : enemyStates) {
             if (!state.fakeDead()) {
                 state.clearDefense();
+                applyOwnTurnStartEffects(state);
+                if (state.fakeDead()) {
+                    continue;
+                }
                 state.resetEnergy();
             }
         }
@@ -442,7 +450,7 @@ public class BattleState {
         phase = BattlePhase.ROUND_END;
         phaseTicks = 0;
         for (CombatantState state : aliveEnemies()) {
-            state.decayEndOfTurnEffects();
+            applyOwnTurnEndEffects(state);
             state.deck().discardHand();
         }
         resetParticipantsToStart();
@@ -739,10 +747,14 @@ public class BattleState {
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int delayTicks) {
-        emitVisual(attacker, target, stack, playedCard, result, 0, delayTicks);
+        emitVisual(attacker, target, stack, playedCard, result, 0, 0, delayTicks);
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int delayTicks) {
+        emitVisual(attacker, target, stack, playedCard, result, gainedBlock, 0, delayTicks);
+    }
+
+    private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks) {
         pendingVisualEvents.add(new BattleVisualEvent(
                 attacker.getId(),
                 target.getId(),
@@ -751,6 +763,7 @@ public class BattleState {
                 result.blockedDamage(),
                 result.healthDamage(),
                 Math.max(0, gainedBlock),
+                Math.max(0, healedHealth),
                 Math.max(0, delayTicks),
                 result.blockedDamage() > 0,
                 result.healthDamage() > 0,
@@ -865,6 +878,7 @@ public class BattleState {
     private void applyPendingCardBatch(PendingCardBatch batch) {
         Map<CombatantState, BattleDamageResult> damageResults = new LinkedHashMap<>();
         Map<CombatantState, Integer> blockGains = new LinkedHashMap<>();
+        Map<CombatantState, Integer> heals = new LinkedHashMap<>();
         Set<CombatantState> knockbackTargets = new LinkedHashSet<>();
         Set<CombatantState> effectOnlyTargets = new LinkedHashSet<>();
         UUID killCredit = playerKillCredit(batch.user());
@@ -884,11 +898,41 @@ public class BattleState {
                 effect.target().addDefense(effect.amount());
                 blockGains.merge(effect.target(), Math.max(0, effect.amount()), Integer::sum);
                 effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.HEAL) {
+                int healed = effect.target().heal(effect.amount());
+                if (healed > 0) {
+                    heals.merge(effect.target(), healed, Integer::sum);
+                }
+                effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 effect.target().addEffect(BattleEffectType.BLEED, effect.amount());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.GUARD) {
                 effect.target().addEffect(BattleEffectType.GUARD, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.STRENGTH) {
+                effect.target().addEffect(BattleEffectType.STRENGTH, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH) {
+                effect.target().addEffect(BattleEffectType.STRENGTH, -effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.REGENERATION) {
+                effect.target().addEffect(BattleEffectType.REGENERATION, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.HASTE) {
+                effect.target().addEffect(BattleEffectType.HASTE, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.POISON) {
+                effect.target().addEffect(BattleEffectType.POISON, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.BURN) {
+                effect.target().addEffect(BattleEffectType.BURN, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.WEAKNESS) {
+                effect.target().addEffect(BattleEffectType.WEAKNESS, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.SLOWNESS) {
+                effect.target().addEffect(BattleEffectType.SLOWNESS, effect.amount());
                 effectOnlyTargets.add(effect.target());
             }
         }
@@ -898,14 +942,14 @@ public class BattleState {
         boolean emittedCardVisual = false;
         for (Map.Entry<CombatantState, BattleDamageResult> entry : damageResults.entrySet()) {
             CombatantState target = entry.getKey();
-            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
             emittedCardVisual = true;
         }
         for (CombatantState target : effectOnlyTargets) {
             if (damageResults.containsKey(target)) {
                 continue;
             }
-            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
             emittedCardVisual = true;
         }
         if (!emittedCardVisual && batch.card() != null) {
@@ -918,6 +962,34 @@ public class BattleState {
                 first.blockedDamage() + second.blockedDamage(),
                 first.baseHealthDamage() + second.baseHealthDamage(),
                 first.healthDamage() + second.healthDamage());
+    }
+
+    private void applyOwnTurnStartEffects(CombatantState state) {
+        int poison = state.effectAmount(BattleEffectType.POISON);
+        if (poison > 0) {
+            BattleDamageResult result = state.applyEffectDamage(poison, null);
+            emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
+            state.reduceEffect(BattleEffectType.POISON, 1);
+        }
+    }
+
+    private void applyOwnTurnEndEffects(CombatantState state) {
+        int regeneration = state.effectAmount(BattleEffectType.REGENERATION);
+        if (regeneration > 0) {
+            int healed = state.heal(regeneration);
+            if (healed > 0) {
+                emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, new BattleDamageResult(0, 0, 0), 0, healed, 0);
+            }
+            state.reduceEffect(BattleEffectType.REGENERATION, 1);
+        }
+        int burn = state.effectAmount(BattleEffectType.BURN);
+        if (burn > 0) {
+            BattleDamageResult result = state.applyEffectDamage(burn, null);
+            emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
+            state.reduceEffect(BattleEffectType.BURN, 1);
+        }
+        state.reduceEffect(BattleEffectType.WEAKNESS, 1);
+        state.decayEndOfTurnEffects();
     }
 
     private UUID playerKillCredit(CombatantState user) {

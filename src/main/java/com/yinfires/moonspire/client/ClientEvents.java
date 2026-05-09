@@ -348,7 +348,8 @@ public final class ClientEvents {
             for (BattleVisualEvent event : ClientBattleState.consumeVisualEvents()) {
                 Entity attacker = minecraft.level.getEntity(event.attackerId());
                 Entity target = minecraft.level.getEntity(event.targetId());
-                if (attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
+                if (playedCardVisual && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (target != null) {

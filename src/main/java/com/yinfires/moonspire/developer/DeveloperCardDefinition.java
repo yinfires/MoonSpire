@@ -95,9 +95,18 @@ public record DeveloperCardDefinition(
     private static CardEffectKind cardEffectKind(DeveloperCardEffect.Kind kind) {
         return switch (kind) {
             case DAMAGE -> CardEffectKind.DAMAGE;
+            case HEAL -> CardEffectKind.HEAL;
             case BLOCK -> CardEffectKind.BLOCK;
             case BLEED -> CardEffectKind.BLEED;
             case GUARD -> CardEffectKind.GUARD;
+            case STRENGTH -> CardEffectKind.STRENGTH;
+            case LOSE_STRENGTH -> CardEffectKind.LOSE_STRENGTH;
+            case REGENERATION -> CardEffectKind.REGENERATION;
+            case HASTE -> CardEffectKind.HASTE;
+            case POISON -> CardEffectKind.POISON;
+            case BURN -> CardEffectKind.BURN;
+            case WEAKNESS -> CardEffectKind.WEAKNESS;
+            case SLOWNESS -> CardEffectKind.SLOWNESS;
             case EXHAUST -> CardEffectKind.EXHAUST;
             case EXHAUST_HAND -> CardEffectKind.EXHAUST_HAND;
             case DISCARD_HAND -> CardEffectKind.DISCARD_HAND;

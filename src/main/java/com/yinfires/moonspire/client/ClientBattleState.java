@@ -409,6 +409,9 @@ public final class ClientBattleState {
         if (event.healthDamage() > 0) {
             damageNumbers.add(new DamageNumber(event.targetId(), event.healthDamage(), false, event.delayTicks() + damageNumbers.size() * 2 + 4));
         }
+        if (event.healedHealth() > 0) {
+            damageNumbers.add(new DamageNumber(event.targetId(), event.healedHealth(), false, true, event.delayTicks() + damageNumbers.size() * 2 + 4));
+        }
     }
 
     private static void updateFakeDeathStarts(BattleSnapshot next) {
@@ -524,13 +527,19 @@ public final class ClientBattleState {
         private final int entityId;
         private final int amount;
         private final boolean block;
+        private final boolean healing;
         private final int delay;
         private int age;
 
         private DamageNumber(int entityId, int amount, boolean block, int delay) {
+            this(entityId, amount, block, false, delay);
+        }
+
+        private DamageNumber(int entityId, int amount, boolean block, boolean healing, int delay) {
             this.entityId = entityId;
             this.amount = amount;
             this.block = block;
+            this.healing = healing;
             this.delay = delay;
         }
 
@@ -544,6 +553,10 @@ public final class ClientBattleState {
 
         public boolean block() {
             return block;
+        }
+
+        public boolean healing() {
+            return healing;
         }
 
         public int age() {

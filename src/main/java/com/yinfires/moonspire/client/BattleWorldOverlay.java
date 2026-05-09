@@ -151,7 +151,9 @@ public final class BattleWorldOverlay {
                     block += Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.BLEED && effect.target().targetsEnemy()) {
                     negative += Math.max(0, effect.amount()) * Math.max(1, effect.count());
-                } else if (effect.kind() == CardEffectKind.GUARD && effect.target().targetsSelf()) {
+                } else if (negativeEffect(effect.kind()) && effect.target().targetsEnemy()) {
+                    negative += Math.max(0, effect.amount()) * Math.max(1, effect.count());
+                } else if (positiveEffect(effect.kind()) && effect.target().targetsSelf()) {
                     positive += Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 }
             }
@@ -193,9 +195,26 @@ public final class BattleWorldOverlay {
                 font.drawInBatch(marker, iconX + (iconSize - font.width(marker)) / 2.0F, iconY + 4, 0xFFFFB1C0, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
             }
             Component text = Component.translatable("screen.moonspire.effect_short", effect.amount());
-            font.drawInBatch(text, iconX + iconSize - font.width(text), iconY + iconSize - 9, 0xFFFFFFFF, true, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            int amountColor = effect.type() == BattleEffectType.STRENGTH && effect.amount() < 0 ? 0xFFFF5454 : 0xFFFFFFFF;
+            font.drawInBatch(text, iconX + iconSize - font.width(text), iconY + iconSize - 9, amountColor, true, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
             x += 18;
         }
+    }
+
+    private static boolean positiveEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.HEAL
+                || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.STRENGTH
+                || kind == CardEffectKind.REGENERATION
+                || kind == CardEffectKind.HASTE;
+    }
+
+    private static boolean negativeEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.LOSE_STRENGTH
+                || kind == CardEffectKind.POISON
+                || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WEAKNESS
+                || kind == CardEffectKind.SLOWNESS;
     }
 
     private static ResourceLocation effectIconTexture(BattleEffectType type) {
@@ -211,8 +230,8 @@ public final class BattleWorldOverlay {
                 continue;
             }
             int y = -24 - number.visibleAge();
-            int color = number.block() ? 0xFF66BFFF : 0xFFFF5454;
-            String text = Integer.toString(number.amount());
+            int color = number.healing() ? 0xFF70E083 : number.block() ? 0xFF66BFFF : 0xFFFF5454;
+            String text = number.healing() ? "+" + number.amount() : Integer.toString(number.amount());
             font.drawInBatch(text, -font.width(text) / 2.0F, y, color, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
         }
     }
