@@ -90,7 +90,6 @@ public class BattleScreen extends NoBlurScreen {
     private static final float PILE_HOVER_SCALE = 1.18F;
     private static final float PILE_COUNT_TEXT_SCALE = 2.0F;
     private static final int EXHAUST_COUNT_TEXT_COLOR = 0xFFE07CFF;
-    private static final int HAND_HOVER_STICKY_MARGIN = 18;
     private final Map<UUID, HandCardAnimation> handAnimations = new HashMap<>();
     private final List<FlyingCardAnimation> flyingCards = new ArrayList<>();
     private final PreviewCardAnimation monsterIntentPreview = new PreviewCardAnimation();
@@ -154,7 +153,7 @@ public class BattleScreen extends NoBlurScreen {
             boolean handSelectionWaiting = handSelectionConfirmation.active();
             boolean handSelectionModalActive = handSelectionActive && !handSelectionWaiting;
             boolean modalInputBlocked = pileModalActive || handSelectionModalActive || handSelectionWaiting;
-            frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY);
+            frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY, partialTick);
             if (pileModalActive || handSelectionModalActive) {
                 dragState = null;
                 rotatingCamera = false;
@@ -299,10 +298,11 @@ public class BattleScreen extends NoBlurScreen {
             if (clickEndTurn(mouseX, mouseY, snapshot)) {
                 return true;
             }
-            int handIndex = handPreviewIndexAt(mouseX, mouseY, snapshot);
-            if (handIndex < 0) {
-                handIndex = handIndexAt(mouseX, mouseY, snapshot);
+            int visibleHandIndex = handPreviewIndexAt(mouseX, mouseY, snapshot);
+            if (visibleHandIndex < 0) {
+                visibleHandIndex = handIndexAt(mouseX, mouseY, snapshot);
             }
+            int handIndex = handSnapshotIndexForVisibleIndex(snapshot, visibleHandIndex);
             if (handIndex >= 0) {
                 ClientBattleState.selectHandIndex(handIndex);
                 if (!cardActionsLocked(snapshot)) {
@@ -1068,7 +1068,11 @@ public class BattleScreen extends NoBlurScreen {
         long start = perfStart();
         HandLayout layout = handLayout(visibleCards);
         int selectedIndex = ClientBattleState.selectedHandIndex();
-        int hoveredIndex = hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout);
+        int hoveredIndex = hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
+        if (hoveredIndex >= count) {
+            hoveredHandIndex = -1;
+            hoveredIndex = -1;
+        }
         syncHandAnimationTargets(snapshot, layout, visibleCards, hoveredIndex);
         for (HandCardAnimation animation : handAnimations.values()) {
             animation.advance(currentFrameTicks);
@@ -1407,7 +1411,7 @@ public class BattleScreen extends NoBlurScreen {
             CardInstance card = snapshot.hand().get(hoveredIndex);
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHandSelectionHoveredCard(graphics, snapshot, card, animation, partialTick);
+                renderHandSelectionHoveredCard(graphics, snapshot, hoveredIndex, card, partialTick);
             }
         }
     }
@@ -1420,7 +1424,7 @@ public class BattleScreen extends NoBlurScreen {
         CardInstance card = snapshot.hand().get(hoveredIndex);
         HandCardAnimation animation = handAnimations.get(card.id());
         if (animation != null) {
-            renderHandSelectionHoveredCard(graphics, snapshot, card, animation, partialTick);
+            renderHandSelectionHoveredCard(graphics, snapshot, hoveredIndex, card, partialTick);
         }
     }
 
@@ -1428,16 +1432,22 @@ public class BattleScreen extends NoBlurScreen {
         if (dragState != null || handSelectionOverlay.confirming()) {
             return -1;
         }
+        int directHover = handSelectionCardIndexAt(mouseX, mouseY, snapshot, partialTick);
         if (hoveredHandIndex >= 0 && hoveredHandIndex < snapshot.hand().size()) {
             CardInstance hoveredCard = snapshot.hand().get(hoveredHandIndex);
-            if ((snapshot.pendingHandSelection().candidateCardIds().contains(hoveredCard.id()) || handSelectionOverlay.isSelected(hoveredCard.id()))
-                    && handSelectionStickyAt(mouseX, mouseY, snapshot, hoveredHandIndex, partialTick)) {
+            boolean currentSelectable = snapshot.pendingHandSelection().candidateCardIds().contains(hoveredCard.id()) || handSelectionOverlay.isSelected(hoveredCard.id());
+            boolean currentSticky = currentSelectable && handSelectionStickyAt(mouseX, mouseY, snapshot, hoveredHandIndex, partialTick);
+            if (directHover >= 0 && directHover != hoveredHandIndex && isSelectableHandSelectionCard(snapshot, directHover)) {
+                if (!currentSticky) {
+                    hoveredHandIndex = directHover;
+                    return directHover;
+                }
+            }
+            if (currentSticky) {
                 return hoveredHandIndex;
             }
         }
-        int directHover = handSelectionCardIndexAt(mouseX, mouseY, snapshot, partialTick);
-        if (directHover >= 0 && (snapshot.pendingHandSelection().candidateCardIds().contains(snapshot.hand().get(directHover).id())
-                || handSelectionOverlay.isSelected(snapshot.hand().get(directHover).id()))) {
+        if (directHover >= 0 && directHover != hoveredHandIndex && isSelectableHandSelectionCard(snapshot, directHover)) {
             hoveredHandIndex = directHover;
             return directHover;
         }
@@ -1445,37 +1455,28 @@ public class BattleScreen extends NoBlurScreen {
         return -1;
     }
 
-    private boolean handSelectionStickyAt(double mouseX, double mouseY, BattleSnapshot snapshot, int index, float partialTick) {
-        CardInstance card = snapshot.hand().get(index);
-        HandCardAnimation animation = handAnimations.get(card.id());
-        if (animation == null) {
+    private boolean isSelectableHandSelectionCard(BattleSnapshot snapshot, int index) {
+        if (index < 0 || index >= snapshot.hand().size()) {
             return false;
         }
-        List<CardInstance> visibleCards = visibleHandCards(snapshot);
-        int visibleIndex = visibleCardsIndex(visibleCards, card.id());
-        if (visibleIndex >= 0) {
-            HandLayout visibleLayout = handLayout(visibleCards);
-            if (visibleLayout.card(visibleIndex).expanded(HAND_HOVER_STICKY_MARGIN).contains(mouseX, mouseY)) {
-                return true;
-            }
-        }
-        return handSelectionCardScreenBounds(animation, partialTick, handSelectionOverlay.isSelected(card.id())).expanded(HAND_HOVER_STICKY_MARGIN).contains(mouseX, mouseY)
-                || handSelectionPreviewBounds(animation, partialTick).expanded(HAND_HOVER_STICKY_MARGIN).contains(mouseX, mouseY);
+        CardInstance card = snapshot.hand().get(index);
+        return snapshot.pendingHandSelection().candidateCardIds().contains(card.id()) || handSelectionOverlay.isSelected(card.id());
     }
 
-    private void renderHandSelectionHoveredCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick) {
+    private boolean handSelectionStickyAt(double mouseX, double mouseY, BattleSnapshot snapshot, int index, float partialTick) {
+        return handSelectionPreviewBounds(snapshot, index, partialTick).contains(mouseX, mouseY);
+    }
+
+    private void renderHandSelectionHoveredCard(GuiGraphics graphics, BattleSnapshot snapshot, int handIndex, CardInstance card, float partialTick) {
         boolean unaffordable = card.cost() > snapshot.player().energyLeft();
         float detailedScale = HAND_PREVIEW_SCALE;
-        float centerX = clampPreviewCenterX(animation.x(partialTick), detailedScale);
-        float centerY = clampPreviewCenterY(animation.y(partialTick), detailedScale);
+        CardPreviewBounds bounds = handSelectionPreviewBounds(snapshot, handIndex, partialTick);
+        float centerX = bounds.centerX();
+        float centerY = bounds.centerY();
         renderDetailedPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, detailedScale, 0.0F);
         renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, detailedScale, 0.0F, unaffordable, true);
         renderDetailedPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, detailedScale, 0.0F);
-        int x = Math.round(centerX - CardRenderHelper.CARD_WIDTH * detailedScale / 2.0F);
-        int y = Math.round(centerY - CardRenderHelper.CARD_HEIGHT * detailedScale / 2.0F);
-        int cardW = Math.round(CardRenderHelper.CARD_WIDTH * detailedScale);
-        int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * detailedScale);
-        CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, x, y, cardW, cardH, width, height);
+        CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, bounds.x(), bounds.y(), bounds.width(), bounds.height(), width, height);
     }
 
     private float clampPreviewCenterX(float centerX, float scale) {
@@ -2209,29 +2210,18 @@ public class BattleScreen extends NoBlurScreen {
         if (frameCache.matches(snapshot, mouseX, mouseY)) {
             return frameCache.handIndex();
         }
-        return directHandIndexAt(mouseX, mouseY, snapshot);
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        return directVisibleHandIndexAt(mouseX, mouseY, visibleCards, handLayout(visibleCards));
     }
 
     private int directHandIndexAt(double mouseX, double mouseY, BattleSnapshot snapshot) {
-        int count = snapshot.hand().size();
-        if (count <= 0) {
-            return -1;
-        }
-        for (int i = count - 1; i >= 0; i--) {
-            CardInstance card = snapshot.hand().get(i);
-            HandCardAnimation animation = handAnimations.get(card.id());
-            if (animation != null && animation.contains(mouseX, mouseY)) {
-                return i;
-            }
-        }
-        return -1;
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        return directVisibleHandIndexAt(mouseX, mouseY, visibleCards, handLayout(visibleCards));
     }
 
-    private int directVisibleHandIndexAt(double mouseX, double mouseY, List<CardInstance> visibleCards) {
+    private int directVisibleHandIndexAt(double mouseX, double mouseY, List<CardInstance> visibleCards, HandLayout layout) {
         for (int i = visibleCards.size() - 1; i >= 0; i--) {
-            CardInstance card = visibleCards.get(i);
-            HandCardAnimation animation = handAnimations.get(card.id());
-            if (animation != null && animation.contains(mouseX, mouseY)) {
+            if (layout.card(i).contains(mouseX, mouseY)) {
                 return i;
             }
         }
@@ -2247,25 +2237,43 @@ public class BattleScreen extends NoBlurScreen {
             return -1;
         }
         HandLayout layout = handLayout(visibleCards);
-        return previewBounds(layout.card(hoveredHandIndex)).contains(mouseX, mouseY) ? hoveredHandIndex : -1;
+        return hoveredHandPreviewBounds(visibleCards, layout, hoveredHandIndex, 1.0F).contains(mouseX, mouseY) ? hoveredHandIndex : -1;
     }
 
     private int handSelectionCardIndexAt(double mouseX, double mouseY, BattleSnapshot snapshot, float partialTick) {
-        for (int i = snapshot.hand().size() - 1; i >= 0; i--) {
-            CardInstance card = snapshot.hand().get(i);
-            HandCardAnimation animation = handAnimations.get(card.id());
-            if (animation == null) {
-                continue;
+        if (hoveredHandIndex >= 0 && hoveredHandIndex < snapshot.hand().size()
+                && handSelectionPreviewBounds(snapshot, hoveredHandIndex, partialTick).contains(mouseX, mouseY)) {
+            return hoveredHandIndex;
+        }
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        HandLayout visibleLayout = handLayout(visibleCards);
+        for (int i = visibleCards.size() - 1; i >= 0; i--) {
+            if (visibleLayout.card(i).contains(mouseX, mouseY)) {
+                return handIndexForCardId(snapshot, visibleCards.get(i).id());
             }
-            HandCardScreenBounds bounds = handSelectionCardScreenBounds(animation, partialTick, handSelectionOverlay.isSelected(card.id()));
-            if (bounds.contains(mouseX, mouseY)) {
-                return i;
+        }
+        for (UUID selectedId : handSelectionOverlay.selectedIds()) {
+            int selectedIndex = handSelectionOverlay.selectedIndex(selectedId);
+            HandCardBounds selectedBounds = handSelectionSelectedBounds(selectedIndex, handSelectionOverlay.selectedCount());
+            if (selectedBounds.contains(mouseX, mouseY)) {
+                return handIndexForCardId(snapshot, selectedId);
             }
         }
         return -1;
     }
 
-    private int hoveredHandIndex(double mouseX, double mouseY, BattleSnapshot snapshot, List<CardInstance> visibleCards, HandLayout layout) {
+    private int handSnapshotIndexForVisibleIndex(BattleSnapshot snapshot, int visibleIndex) {
+        if (visibleIndex < 0) {
+            return -1;
+        }
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        if (visibleIndex >= visibleCards.size()) {
+            return -1;
+        }
+        return handIndexForCardId(snapshot, visibleCards.get(visibleIndex).id());
+    }
+
+    private int hoveredHandIndex(double mouseX, double mouseY, BattleSnapshot snapshot, List<CardInstance> visibleCards, HandLayout layout, float partialTick) {
         if (frameCache.matches(snapshot, mouseX, mouseY)) {
             hoveredHandIndex = frameCache.hoveredIndex();
             return hoveredHandIndex;
@@ -2277,10 +2285,20 @@ public class BattleScreen extends NoBlurScreen {
         if (hoveredHandIndex >= visibleCards.size()) {
             hoveredHandIndex = -1;
         }
-        if (hoveredHandIndex >= 0 && handHoverStickyAt(mouseX, mouseY, visibleCards, layout, hoveredHandIndex)) {
-            return hoveredHandIndex;
+        int directHover = directVisibleHandIndexAt(mouseX, mouseY, visibleCards, layout);
+        if (hoveredHandIndex >= 0) {
+            int previousHover = hoveredHandIndex;
+            boolean currentSticky = handHoverStickyAt(mouseX, mouseY, visibleCards, layout, previousHover, partialTick);
+            if (currentSticky) {
+                return previousHover;
+            }
+            if (directHover >= 0 && directHover != previousHover) {
+                hoveredHandIndex = directHover;
+                return hoveredHandIndex;
+            }
+            hoveredHandIndex = -1;
+            return -1;
         }
-        int directHover = directVisibleHandIndexAt(mouseX, mouseY, visibleCards);
         if (directHover >= 0) {
             hoveredHandIndex = directHover;
             return hoveredHandIndex;
@@ -2289,16 +2307,30 @@ public class BattleScreen extends NoBlurScreen {
         return -1;
     }
 
-    private boolean handHoverStickyAt(double mouseX, double mouseY, List<CardInstance> visibleCards, HandLayout layout, int index) {
+    private boolean handHoverStickyAt(double mouseX, double mouseY, List<CardInstance> visibleCards, HandLayout layout, int index, float partialTick) {
         if (index < 0 || index >= visibleCards.size()) {
             return false;
         }
-        HandCardBounds base = layout.card(index);
-        CardInstance card = visibleCards.get(index);
-        HandCardAnimation animation = handAnimations.get(card.id());
-        boolean baseContains = base.expanded(HAND_HOVER_STICKY_MARGIN).contains(mouseX, mouseY);
-        boolean animationContains = animation != null && animation.containsExpanded(mouseX, mouseY, HAND_HOVER_STICKY_MARGIN);
-        return baseContains || animationContains || previewBounds(base).expanded(HAND_HOVER_STICKY_MARGIN).contains(mouseX, mouseY);
+        return hoveredHandPreviewBounds(visibleCards, layout, index, partialTick).contains(mouseX, mouseY);
+    }
+
+    private CardPreviewBounds hoveredHandPreviewBounds(List<CardInstance> visibleCards, HandLayout layout, int index, float partialTick) {
+        HandCardBounds baseBounds = layout.card(index);
+        HandCardAnimation animation = handAnimations.get(visibleCards.get(index).id());
+        if (animation == null) {
+            return previewBounds(baseBounds);
+        }
+        float progress = smoothStep(animation.hover(partialTick));
+        CardPreviewBounds preview = previewBounds(baseBounds);
+        float baseScale = animation.scale(partialTick) * (CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH);
+        float scale = lerp(baseScale, HAND_PREVIEW_SCALE, progress);
+        float centerX = lerp(animation.x(partialTick), preview.centerX(), progress);
+        float centerY = lerp(animation.y(partialTick), preview.centerY(), progress);
+        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * scale);
+        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        int x = Math.round(centerX - previewW / 2.0F);
+        int y = Math.round(centerY - previewH / 2.0F);
+        return new CardPreviewBounds(x, y, previewW, previewH);
     }
 
     private HandCardBounds centerTargetingHandBounds(HandLayout layout) {
@@ -2328,14 +2360,36 @@ public class BattleScreen extends NoBlurScreen {
         return new CardPreviewBounds(x, y, previewW, previewH);
     }
 
-    private CardPreviewBounds handSelectionPreviewBounds(HandCardAnimation animation, float partialTick) {
+    private CardPreviewBounds handSelectionPreviewBounds(BattleSnapshot snapshot, int handIndex, float partialTick) {
         int previewW = Math.round(CardRenderHelper.CARD_WIDTH * HAND_PREVIEW_SCALE);
         int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * HAND_PREVIEW_SCALE);
-        float centerX = clampPreviewCenterX(animation.x(partialTick), HAND_PREVIEW_SCALE);
-        float centerY = clampPreviewCenterY(animation.y(partialTick), HAND_PREVIEW_SCALE);
+        HandCardBounds base = handSelectionStableBounds(snapshot, handIndex);
+        float centerX = clampPreviewCenterX(base.centerX(), HAND_PREVIEW_SCALE);
+        float centerY = clampPreviewCenterY(base.centerY(), HAND_PREVIEW_SCALE);
         int x = Math.round(centerX - previewW / 2.0F);
         int y = Math.round(centerY - previewH / 2.0F);
         return new CardPreviewBounds(x, y, previewW, previewH);
+    }
+
+    private HandCardBounds handSelectionStableBounds(BattleSnapshot snapshot, int handIndex) {
+        if (handIndex < 0 || handIndex >= snapshot.hand().size()) {
+            return new HandCardBounds(width / 2.0F, height / 2.0F, 0.0F, HAND_SELECTION_CARD_SCALE);
+        }
+        CardInstance card = snapshot.hand().get(handIndex);
+        int selectedIndex = handSelectionOverlay.selectedIndex(card.id());
+        if (selectedIndex >= 0) {
+            return handSelectionSelectedBounds(selectedIndex, handSelectionOverlay.selectedCount());
+        }
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        int visibleIndex = visibleCardsIndex(visibleCards, card.id());
+        if (visibleIndex >= 0) {
+            return handLayout(visibleCards).card(visibleIndex);
+        }
+        HandCardAnimation animation = handAnimations.get(card.id());
+        if (animation != null) {
+            return new HandCardBounds(animation.currentX(), animation.currentY(), 0.0F, animation.currentScale());
+        }
+        return new HandCardBounds(width / 2.0F, height / 2.0F, 0.0F, HAND_SELECTION_CARD_SCALE);
     }
 
     private int combatantEntryUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
@@ -2404,7 +2458,7 @@ public class BattleScreen extends NoBlurScreen {
         List<CardInstance> visibleCards = visibleHandCards(snapshot);
         return pileOverlay != null
                 || dragState != null
-                || directVisibleHandIndexAt(mouseX, mouseY, visibleCards) >= 0
+                || directVisibleHandIndexAt(mouseX, mouseY, visibleCards, handLayout(visibleCards)) >= 0
                 || handPreviewAt(mouseX, mouseY, snapshot)
                 || drawPileAt(mouseX, mouseY)
                 || discardPileAt(mouseX, mouseY)
@@ -2848,6 +2902,15 @@ public class BattleScreen extends NoBlurScreen {
         return -1;
     }
 
+    private int handIndexForCardId(BattleSnapshot snapshot, UUID cardId) {
+        for (int i = 0; i < snapshot.hand().size(); i++) {
+            if (snapshot.hand().get(i).id().equals(cardId)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private UUID selectedHandCardId(BattleSnapshot snapshot, int selectedIndex) {
         if (selectedIndex < 0 || selectedIndex >= snapshot.hand().size()) {
             return null;
@@ -2860,24 +2923,32 @@ public class BattleScreen extends NoBlurScreen {
         return Math.max(112, height - handRect.y() + 8);
     }
 
-    private FrameCache createFrameCache(BattleSnapshot snapshot, double mouseX, double mouseY) {
-        HandLayout layout = handLayout(snapshot);
-        int directHandIndex = directHandIndexAt(mouseX, mouseY, snapshot);
+    private FrameCache createFrameCache(BattleSnapshot snapshot, double mouseX, double mouseY, float partialTick) {
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        HandLayout layout = handLayout(visibleCards);
+        int directHandIndex = directVisibleHandIndexAt(mouseX, mouseY, visibleCards, layout);
         int previewIndex = -1;
         int nextHovered = hoveredHandIndex;
-        if (dragState != null || snapshot.hand().isEmpty()) {
+        if (dragState != null || visibleCards.isEmpty()) {
             nextHovered = -1;
-        } else if (nextHovered >= snapshot.hand().size()) {
+        } else if (nextHovered >= visibleCards.size()) {
             nextHovered = -1;
-        } else if (handHoverStickyAt(mouseX, mouseY, snapshot.hand(), layout, nextHovered)) {
-            previewIndex = nextHovered;
-        } else if (directHandIndex >= 0) {
-            nextHovered = directHandIndex;
         } else {
-            nextHovered = -1;
+            int previousHover = nextHovered;
+            if (handHoverStickyAt(mouseX, mouseY, visibleCards, layout, previousHover, partialTick)) {
+                previewIndex = previousHover;
+            } else if (directHandIndex >= 0 && directHandIndex != previousHover) {
+                nextHovered = directHandIndex;
+            } else {
+                nextHovered = -1;
+            }
         }
-        if (previewIndex < 0 && nextHovered >= 0 && directHandIndex < 0 && handHoverStickyAt(mouseX, mouseY, snapshot.hand(), layout, nextHovered)) {
-            previewIndex = nextHovered;
+        if (previewIndex < 0) {
+            if (nextHovered >= 0 && handHoverStickyAt(mouseX, mouseY, visibleCards, layout, nextHovered, partialTick)) {
+                previewIndex = nextHovered;
+            } else if (nextHovered < 0 && directHandIndex >= 0) {
+                nextHovered = directHandIndex;
+            }
         }
         CardInstance dragged = draggedCard(snapshot);
         boolean draggingAttack = dragged != null && dragged.requiresExplicitTarget();
@@ -3081,7 +3152,7 @@ public class BattleScreen extends NoBlurScreen {
         private boolean contains(double mouseX, double mouseY) {
             float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F;
             float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F;
-            return mouseX >= centerX - halfW && mouseX <= centerX + halfW && mouseY >= centerY - halfH - 12 && mouseY <= centerY + halfH;
+            return mouseX >= centerX - halfW && mouseX <= centerX + halfW && mouseY >= centerY - halfH && mouseY <= centerY + halfH;
         }
 
         private HandCardBounds expanded(float margin) {
@@ -3240,13 +3311,13 @@ public class BattleScreen extends NoBlurScreen {
         private boolean contains(double mouseX, double mouseY) {
             float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F;
             float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F;
-            return mouseX >= x - halfW && mouseX <= x + halfW && mouseY >= y - halfH - 12.0F && mouseY <= y + halfH;
+            return mouseX >= x - halfW && mouseX <= x + halfW && mouseY >= y - halfH && mouseY <= y + halfH;
         }
 
         private boolean containsExpanded(double mouseX, double mouseY, float margin) {
             float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F + margin;
             float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F + margin;
-            return mouseX >= x - halfW && mouseX <= x + halfW && mouseY >= y - halfH - 12.0F - margin && mouseY <= y + halfH + margin;
+            return mouseX >= x - halfW && mouseX <= x + halfW && mouseY >= y - halfH && mouseY <= y + halfH;
         }
 
         private float x(float partialTick) {

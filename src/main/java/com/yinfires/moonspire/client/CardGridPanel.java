@@ -19,7 +19,6 @@ final class CardGridPanel {
     private static final int CARD_GAP_X = 18;
     private static final int CARD_GAP_Y = 20;
     private static final int PREVIEW_EDGE_MARGIN = 12;
-    private static final int HOVER_STICKY_MARGIN = 18;
     private static final int PREVIEW_TOP_RESERVE = 54;
     private static final int TITLE_RESERVED_HEIGHT = 42;
     private static final int SCROLLBAR_WIDTH = 7;
@@ -431,19 +430,32 @@ final class CardGridPanel {
     }
 
     private int hoveredCardIndex(Layout layout, double mouseX, double mouseY) {
-        if (hoveredIndex >= 0 && hoveredIndex < cards.size()) {
-            PreviewBounds preview = previewBounds(layout, hoveredIndex);
-            CardBounds bounds = cardBounds(layout, hoveredIndex);
-            if (preview.expanded(HOVER_STICKY_MARGIN).contains(mouseX, mouseY)
-                    || bounds.contains(layout, mouseX, mouseY, HOVER_STICKY_MARGIN)) {
-                return hoveredIndex;
-            }
-        }
         int direct = cardIndexAt(layout, mouseX, mouseY);
+        if (hoveredIndex >= 0 && hoveredIndex < cards.size()) {
+            int previousHover = hoveredIndex;
+            boolean currentSticky = currentPreviewContains(previousHover, mouseX, mouseY);
+            if (currentSticky) {
+                return previousHover;
+            }
+            if (direct >= 0 && direct != previousHover) {
+                return direct;
+            }
+            return -1;
+        }
         if (direct >= 0) {
             return direct;
         }
         return -1;
+    }
+
+    private boolean currentPreviewContains(int index, double mouseX, double mouseY) {
+        if (index < 0 || index >= cards.size()) {
+            return false;
+        }
+        if (!cards.get(index).id().equals(previewAnimation.cardId())) {
+            return false;
+        }
+        return previewAnimation.contains(mouseX, mouseY);
     }
 
     private int cardIndexAt(Layout layout, double mouseX, double mouseY) {
@@ -505,10 +517,6 @@ final class CardGridPanel {
             return y + layout.cardH() / 2.0F;
         }
 
-        private boolean contains(Layout layout, double mouseX, double mouseY, int margin) {
-            return mouseX >= x - margin && mouseX <= x + layout.cardW() + margin
-                    && mouseY >= y - margin && mouseY <= y + layout.cardH() + margin;
-        }
     }
 
     private record PreviewBounds(int x, int y, int width, int height, float scale) {
@@ -524,9 +532,6 @@ final class CardGridPanel {
             return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
         }
 
-        private PreviewBounds expanded(int margin) {
-            return new PreviewBounds(x - margin, y - margin, width + margin * 2, height + margin * 2, scale);
-        }
     }
 
     private record ScrollbarThumb(int y, int height) {
@@ -625,6 +630,15 @@ final class CardGridPanel {
 
         private float progress() {
             return progress;
+        }
+
+        private boolean contains(double mouseX, double mouseY) {
+            if (cardId == null) {
+                return false;
+            }
+            float halfW = CardRenderHelper.CARD_WIDTH * scale / 2.0F;
+            float halfH = CardRenderHelper.CARD_HEIGHT * scale / 2.0F;
+            return mouseX >= centerX - halfW && mouseX <= centerX + halfW && mouseY >= centerY - halfH && mouseY <= centerY + halfH;
         }
 
         private static float approach(float current, float target, float amount) {
