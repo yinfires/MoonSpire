@@ -220,7 +220,7 @@
   "debug.moonspire.done": "完成",
   "screen.moonspire.developer_face_apply": "卡面应用选择器",
   "debug.moonspire.face_delete_confirm": "确定删除当前卡面模板吗？使用它的卡牌会回退到默认卡面。",
-  "debug.moonspire.monster_actions": "怪物搜索会同时显示译名和实体 id；卡组通过“打开卡组”编辑。",
+  "debug.moonspire.monster_actions": "生物搜索会同时显示译名和实体 id；卡组通过“打开卡组”编辑，无卡组内容的生物不能被挑战。",
   "screen.moonspire.developer_monster_deck": "怪物卡组",
   "screen.moonspire.developer_monster_deck_for": "%s 的怪物卡组",
   "screen.moonspire.developer_monster_deck_add": "添加卡牌到怪物卡组",

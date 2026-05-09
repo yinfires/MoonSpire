@@ -3,6 +3,7 @@ package com.yinfires.moonspire.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.yinfires.moonspire.MoonSpire;
 import com.yinfires.moonspire.battle.BattlePhase;
+import com.yinfires.moonspire.battle.MonsterDeckProfile;
 import com.yinfires.moonspire.battle.BattleVisualEvent;
 import com.yinfires.moonspire.client.ui.MoonSpireBattleLayoutEditor;
 import com.yinfires.moonspire.client.ui.MoonSpireClientConfig;
@@ -26,7 +27,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -381,7 +381,7 @@ public final class ClientEvents {
         LivingEntity best = null;
         double bestDistance = Double.MAX_VALUE;
         for (LivingEntity entity : minecraft.level.getEntitiesOfClass(LivingEntity.class, search)) {
-            if (entity == minecraft.player || !entity.isAlive() || entity.getType().getCategory() != MobCategory.MONSTER) {
+            if (entity == minecraft.player || !entity.isAlive() || !MonsterDeckProfile.hasBattleDeck(entity)) {
                 continue;
             }
             var hit = entity.getBoundingBox().inflate(0.25D).clip(start, end);

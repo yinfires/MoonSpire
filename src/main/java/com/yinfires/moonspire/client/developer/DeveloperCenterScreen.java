@@ -42,6 +42,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import javax.imageio.ImageIO;
 import net.minecraft.client.Minecraft;
@@ -1273,7 +1274,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                     Math.abs(health - defaults.health()) < 0.0001F ? 0.0F : health,
                     energy == defaults.energy() ? 0 : energy,
                     speed == defaults.speed() ? 0 : speed,
-                    new ArrayList<>(previous.deckCardIds()));
+                    new ArrayList<>(previous.deckCardIds()),
+                    previous.hasDeckOverride());
             replaceMonster(previousId, next);
             selectedMonsterId = id;
         }
@@ -1576,15 +1578,18 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private DeveloperMonsterDefinition selectedMonsterEffective() {
         String id = selectedMonsterId.isBlank() ? "minecraft:zombie" : selectedMonsterId;
-        DeveloperMonsterDefinition current = monsterDefinition(id).orElseGet(() -> DeveloperMonsterDefinition.empty(id));
+        Optional<DeveloperMonsterDefinition> currentDefinition = monsterDefinition(id);
+        DeveloperMonsterDefinition current = currentDefinition.orElseGet(() -> DeveloperMonsterDefinition.empty(id));
         MonsterDefaults defaults = monsterDefaults(id);
         List<String> defaultDeck = defaultMonsterDeckCardIds(id);
+        boolean hasDeckOverride = currentDefinition.map(DeveloperMonsterDefinition::hasDeckOverride).orElse(false);
         return new DeveloperMonsterDefinition(
                 current.entityTypeId(),
                 current.hasHealthOverride() ? current.maxHealth() : defaults.health(),
                 current.hasEnergyOverride() ? current.energy() : defaults.energy(),
                 current.hasSpeedOverride() ? current.speed() : defaults.speed(),
-                current.deckCardIds().isEmpty() ? defaultDeck : current.deckCardIds());
+                hasDeckOverride || !MonsterDeckProfile.hasDefaultDeck(monsterEntityType(id)) ? current.deckCardIds() : defaultDeck,
+                hasDeckOverride);
     }
 
     private void replaceCard(DeveloperCardDefinition previous, DeveloperCardDefinition next) {
@@ -1624,7 +1629,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private boolean hasMonsterOverride(DeveloperMonsterDefinition monster) {
-        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || !monster.deckCardIds().isEmpty();
+        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || monster.hasDeckOverride();
     }
 
     private MonsterDefaults monsterDefaults(String entityTypeId) {
@@ -2429,8 +2434,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return savedData.monsters.stream()
                 .filter(monster -> id.equals(monster.entityTypeId()))
                 .findFirst()
+                .filter(DeveloperMonsterDefinition::hasDeckOverride)
                 .map(monster -> List.copyOf(monster.deckCardIds()))
-                .filter(deck -> !deck.isEmpty())
                 .orElseGet(() -> defaultMonsterDeckCardIds(id));
     }
 
@@ -2442,7 +2447,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 current.maxHealth(),
                 current.energy(),
                 current.speed(),
-                new ArrayList<>(deckCardIds)));
+                new ArrayList<>(deckCardIds),
+                true));
         status = Component.translatable("debug.moonspire.monster_deck_updated");
         statusTicks = 120;
         refreshFields();
@@ -2626,7 +2632,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         List<MonsterRow> rows = new ArrayList<>();
         BuiltInRegistries.ENTITY_TYPE.entrySet().stream()
-                .filter(entry -> entry.getValue().getCategory() == net.minecraft.world.entity.MobCategory.MONSTER)
+                .filter(entry -> canCustomizeMonster(entry.getValue()))
                 .sorted(Comparator.comparing(entry -> entry.getKey().location().toString()))
                 .forEach(entry -> {
                     EntityType<?> type = entry.getValue();
@@ -2644,6 +2650,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         filteredMonstersCacheKey = cacheKey;
         filteredMonstersCache = List.copyOf(rows);
         return filteredMonstersCache;
+    }
+
+    private boolean canCustomizeMonster(EntityType<?> type) {
+        return type != EntityType.PLAYER && createSampleMonster(type) != null;
     }
 
     private void invalidateFilteredCaches() {

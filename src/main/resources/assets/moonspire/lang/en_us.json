@@ -223,7 +223,7 @@
   "debug.moonspire.done": "Done",
   "screen.moonspire.developer_face_apply": "Card Face Application",
   "debug.moonspire.face_delete_confirm": "Delete the current face template? Cards using it will fall back to the default face.",
-  "debug.moonspire.monster_actions": "Monster search includes translated names and entity ids. Use Open Deck to edit cards.",
+  "debug.moonspire.monster_actions": "Creature search includes translated names and entity ids. Use Open Deck to edit cards; creatures with no cards cannot be challenged.",
   "screen.moonspire.developer_monster_deck": "Monster Deck",
   "screen.moonspire.developer_monster_deck_for": "Monster Deck for %s",
   "screen.moonspire.developer_monster_deck_add": "Add Cards to Monster Deck",

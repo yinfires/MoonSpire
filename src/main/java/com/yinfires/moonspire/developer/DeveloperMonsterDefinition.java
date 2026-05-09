@@ -8,9 +8,21 @@ public record DeveloperMonsterDefinition(
         float maxHealth,
         int energy,
         int speed,
-        List<String> deckCardIds) {
+        List<String> deckCardIds,
+        boolean deckOverride) {
+    public DeveloperMonsterDefinition {
+        if (deckCardIds == null) {
+            deckCardIds = new ArrayList<>();
+        }
+        deckOverride = deckOverride || !deckCardIds.isEmpty();
+    }
+
+    public DeveloperMonsterDefinition(String entityTypeId, float maxHealth, int energy, int speed, List<String> deckCardIds) {
+        this(entityTypeId, maxHealth, energy, speed, deckCardIds, deckCardIds != null && !deckCardIds.isEmpty());
+    }
+
     public static DeveloperMonsterDefinition empty(String entityTypeId) {
-        return new DeveloperMonsterDefinition(entityTypeId, 0.0F, 0, 0, new ArrayList<>());
+        return new DeveloperMonsterDefinition(entityTypeId, 0.0F, 0, 0, new ArrayList<>(), false);
     }
 
     public boolean hasHealthOverride() {
@@ -23,5 +35,9 @@ public record DeveloperMonsterDefinition(
 
     public boolean hasSpeedOverride() {
         return speed > 0;
+    }
+
+    public boolean hasDeckOverride() {
+        return deckOverride;
     }
 }

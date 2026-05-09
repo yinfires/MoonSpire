@@ -5,8 +5,10 @@ import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 
 public final class MonsterDeckProfile {
@@ -14,13 +16,27 @@ public final class MonsterDeckProfile {
     }
 
     public static List<CardInstance> createDeck(LivingEntity monster) {
-        List<CardInstance> overrideCards = DeveloperDataManager.monsterOverride(monster)
-                .map(definition -> DeveloperDataManager.cardsByIds(definition.deckCardIds()))
-                .orElse(List.of());
-        if (!overrideCards.isEmpty()) {
-            return copyAll(overrideCards);
+        Optional<List<CardInstance>> overrideCards = DeveloperDataManager.monsterOverride(monster)
+                .filter(definition -> definition.hasDeckOverride())
+                .map(definition -> DeveloperDataManager.cardsByIds(definition.deckCardIds()));
+        if (overrideCards.isPresent()) {
+            return copyAll(overrideCards.get());
+        }
+        if (!hasDefaultDeck(monster.getType())) {
+            return List.of();
         }
         return createDefaultDeck(monster);
+    }
+
+    public static boolean hasBattleDeck(LivingEntity monster) {
+        return DeveloperDataManager.monsterOverride(monster)
+                .filter(definition -> definition.hasDeckOverride())
+                .map(definition -> !DeveloperDataManager.cardsByIds(definition.deckCardIds()).isEmpty())
+                .orElseGet(() -> hasDefaultDeck(monster.getType()));
+    }
+
+    public static boolean hasDefaultDeck(EntityType<?> type) {
+        return type.getCategory() == MobCategory.MONSTER;
     }
 
     public static List<CardInstance> createDefaultDeck(LivingEntity monster) {
@@ -53,6 +69,9 @@ public final class MonsterDeckProfile {
     }
 
     public static List<String> defaultDeckCardIds(EntityType<?> type) {
+        if (!hasDefaultDeck(type)) {
+            return List.of();
+        }
         if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
             return List.of("builtin_monster_claw", "builtin_monster_rotten_guard", "builtin_monster_lunge", "builtin_monster_claw", "builtin_monster_rotten_guard");
         }

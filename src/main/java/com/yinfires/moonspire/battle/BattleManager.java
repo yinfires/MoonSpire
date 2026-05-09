@@ -20,7 +20,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -230,7 +229,7 @@ public final class BattleManager {
     }
 
     private static boolean canChallenge(ServerPlayer player, LivingEntity target) {
-        if (!target.isAlive() || target == player || target.getType().getCategory() != MobCategory.MONSTER) {
+        if (!target.isAlive() || target == player || !MonsterDeckProfile.hasBattleDeck(target)) {
             player.displayClientMessage(Component.translatable("message.moonspire.invalid_target"), true);
             return false;
         }
@@ -268,7 +267,7 @@ public final class BattleManager {
             area = area.minmax(player.getBoundingBox().inflate(CHALLENGE_RANGE));
         }
         for (Mob mob : challengedTarget.level().getEntitiesOfClass(Mob.class, area)) {
-            if (mob == challengedTarget || !mob.isAlive() || isInBattle(mob) || mob.getType().getCategory() != MobCategory.MONSTER) {
+            if (mob == challengedTarget || !mob.isAlive() || isInBattle(mob) || !MonsterDeckProfile.hasBattleDeck(mob)) {
                 continue;
             }
             if (players.stream().anyMatch(player -> mob.distanceToSqr(player) <= CHALLENGE_RANGE_SQR && hostileTo(mob, player))) {
