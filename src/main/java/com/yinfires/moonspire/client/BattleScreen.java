@@ -54,6 +54,7 @@ public class BattleScreen extends NoBlurScreen {
     private static final int ENTRY_SCROLL_STEP = 28;
     private static final int ENTRY_AREA_BOTTOM_MARGIN = 8;
     private static final int ENTRY_INTENT_GUTTER = 60;
+    private static final float MODAL_CONTENT_Z = 1100.0F;
     private static final int HUD_TIP_WIDTH = 182;
     private static final int HUD_TIP_PAD = 6;
     private static final int HUD_TIP_PARAGRAPH_GAP = 10;
@@ -817,6 +818,8 @@ public class BattleScreen extends NoBlurScreen {
             label = Component.translatable("screen.moonspire.end_turn.dead");
         } else if (waitingForOtherPlayers(snapshot)) {
             label = Component.translatable("screen.moonspire.end_turn.waiting_players");
+        } else if (snapshot.phase() == BattlePhase.MONSTER_TURN) {
+            label = Component.translatable("screen.moonspire.turn.monster");
         } else {
             label = Component.translatable("screen.moonspire.end_turn", snapshot.round());
         }
@@ -1250,22 +1253,25 @@ public class BattleScreen extends NoBlurScreen {
             return;
         }
         handSelectionOverlay.sync(selection, snapshot);
-        if (handSelectionOverlay.confirming()) {
-            return;
-        }
         MoonSpireModalLayer.drawTopmostOverlay(graphics, width, height);
-        renderHandSelectionCards(graphics, snapshot, mouseX, mouseY, partialTick, false);
-        Component title = handSelectionOverlay.ready(selection)
-                ? Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.confirm_exhaust" : "screen.moonspire.hand_selection.confirm_discard")
-                : Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.choose_exhaust" : "screen.moonspire.hand_selection.choose_discard", selection.requiredCount());
-        CardRenderHelper.drawOutlinedScreenText(graphics, font, title, width / 2, Math.max(34, height / 5), 1.45F, 0xFFFFFFFF, 0xFF101010);
-        ButtonRect confirm = handSelectionConfirmButton();
-        boolean ready = handSelectionOverlay.ready(selection);
-        boolean hovered = ready && confirm.contains(mouseX, mouseY) && !handSelectionOverlay.confirming();
-        MoonSpireUiTextures.drawButton(graphics, confirm.x(), confirm.y(), confirm.w(), confirm.h(), hovered, ready && !handSelectionOverlay.confirming());
-        Component label = Component.translatable("screen.moonspire.hand_selection.confirm_button");
-        CardRenderHelper.drawOutlinedScreenText(graphics, font, label, confirm.x() + confirm.w() / 2, confirm.y() + confirm.h() / 2, 1.0F, ready && !handSelectionOverlay.confirming() ? 0xFFFFFFFF : 0xFF8E989A, 0xFF313638);
-        renderHandSelectionHoveredPreview(graphics, snapshot, mouseX, mouseY, partialTick);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, MODAL_CONTENT_Z);
+        try {
+            renderHandSelectionCards(graphics, snapshot, mouseX, mouseY, partialTick, false);
+            Component title = handSelectionOverlay.ready(selection)
+                    ? Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.confirm_exhaust" : "screen.moonspire.hand_selection.confirm_discard")
+                    : Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.choose_exhaust" : "screen.moonspire.hand_selection.choose_discard", selection.requiredCount());
+            CardRenderHelper.drawOutlinedScreenText(graphics, font, title, width / 2, Math.max(34, height / 5), 1.45F, 0xFFFFFFFF, 0xFF101010);
+            ButtonRect confirm = handSelectionConfirmButton();
+            boolean ready = handSelectionOverlay.ready(selection);
+            boolean hovered = ready && confirm.contains(mouseX, mouseY) && !handSelectionOverlay.confirming();
+            MoonSpireUiTextures.drawButton(graphics, confirm.x(), confirm.y(), confirm.w(), confirm.h(), hovered, ready && !handSelectionOverlay.confirming());
+            Component label = Component.translatable("screen.moonspire.hand_selection.confirm_button");
+            CardRenderHelper.drawOutlinedScreenText(graphics, font, label, confirm.x() + confirm.w() / 2, confirm.y() + confirm.h() / 2, 1.0F, ready && !handSelectionOverlay.confirming() ? 0xFFFFFFFF : 0xFF8E989A, 0xFF313638);
+            renderHandSelectionHoveredPreview(graphics, snapshot, mouseX, mouseY, partialTick);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     private void renderHandSelectionCards(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean drawHoveredPreview) {
@@ -1500,11 +1506,9 @@ public class BattleScreen extends NoBlurScreen {
             }
         }
         if (firstActiveSnapshot) {
-            turnBannerPhase = snapshot.phase();
-            turnBannerTicks = TURN_BANNER_TICKS;
+            showTurnBanner(snapshot.phase());
         } else if (snapshot.phase() != previousSnapshot.phase()) {
-            turnBannerPhase = snapshot.phase();
-            turnBannerTicks = TURN_BANNER_TICKS;
+            showTurnBanner(snapshot.phase());
         }
         for (CardInstance oldCard : previousSnapshot.hand()) {
             if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id())) {
@@ -1916,6 +1920,15 @@ public class BattleScreen extends NoBlurScreen {
             case MONSTER_TURN -> Component.translatable("screen.moonspire.turn.monster");
             default -> Component.translatable(phase.translationKey());
         };
+    }
+
+    private void showTurnBanner(BattlePhase phase) {
+        if (phase == BattlePhase.PLAYER_TURN || phase == BattlePhase.MONSTER_TURN) {
+            turnBannerPhase = phase;
+            turnBannerTicks = TURN_BANNER_TICKS;
+        } else {
+            turnBannerTicks = 0;
+        }
     }
 
     private static float clamp(float value, float min, float max) {
@@ -2827,7 +2840,7 @@ public class BattleScreen extends NoBlurScreen {
         }
 
         private boolean ready(PendingHandSelectionSnapshot selection) {
-            return selectedIds.size() == selection.requiredCount();
+            return selectedIds.size() >= selection.requiredCount();
         }
 
         private boolean isSelected(UUID cardId) {

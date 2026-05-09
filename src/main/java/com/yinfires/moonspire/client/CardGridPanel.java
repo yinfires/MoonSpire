@@ -27,6 +27,7 @@ final class CardGridPanel {
     private static final float PREVIEW_SCALE_REFERENCE = 0.72F;
     private static final float PREVIEW_MIN_SCALE = 0.58F;
     private static final float GRID_SELECTED_SCALE_BONUS = 0.06F;
+    private static final float MODAL_CONTENT_Z = 1100.0F;
 
     private final Component title;
     private final List<CardInstance> cards = new ArrayList<>();
@@ -90,49 +91,57 @@ final class CardGridPanel {
         warmupVisibleCards(font, layout, values);
         MoonSpireUiTextures.drawOverlay(graphics, width, height);
 
-        hoveredIndex = hoveredCardIndex(layout, mouseX, mouseY);
-        graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
-        for (int i = firstVisibleIndex(layout); i < Math.min(cards.size(), lastVisibleIndex(layout)); i++) {
-            if (i == hoveredIndex) {
-                continue;
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, MODAL_CONTENT_Z);
+        try {
+            hoveredIndex = hoveredCardIndex(layout, mouseX, mouseY);
+            graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
+            try {
+                for (int i = firstVisibleIndex(layout); i < Math.min(cards.size(), lastVisibleIndex(layout)); i++) {
+                    if (i == hoveredIndex) {
+                        continue;
+                    }
+                    CardBounds bounds = cardBounds(layout, i);
+                    CardInstance card = cards.get(i);
+                    renderGridCard(graphics, font, card, bounds.x(), bounds.y(), layout.cardW(), layout.cardH(), layout.cardScale(), selected.test(card), values.apply(card));
+                }
+            } finally {
+                graphics.disableScissor();
             }
-            CardBounds bounds = cardBounds(layout, i);
-            CardInstance card = cards.get(i);
-            renderGridCard(graphics, font, card, bounds.x(), bounds.y(), layout.cardW(), layout.cardH(), layout.cardScale(), selected.test(card), values.apply(card));
-        }
-        graphics.disableScissor();
 
-        renderScrollbar(graphics, layout);
-        if (hoveredIndex >= 0) {
-            CardInstance card = cards.get(hoveredIndex);
-            CardBounds cardBounds = cardBounds(layout, hoveredIndex);
-            PreviewBounds preview = previewBounds(layout, hoveredIndex);
-            previewAnimation.setOpenTarget(card.id(), cardBounds.centerX(layout), cardBounds.centerY(layout), preview.centerX(), preview.centerY(), layout.cardScale(), preview.scale());
-            if (scrolledSinceLastFrame) {
-                previewAnimation.snapPositionToTarget();
-            }
-            previewAnimation.advance(animationFrameTicks());
-            CardRenderHelper.warmupCard(font, card, values.apply(card));
-            renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
-            if (previewAnimation.progress() > 0.86F) {
-                int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());
-                int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewAnimation.scale());
-                int previewX = Math.round(previewAnimation.centerX() - previewW / 2.0F);
-                int previewY = Math.round(previewAnimation.centerY() - previewH / 2.0F);
-                CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, previewX, previewY, previewW, previewH, width, height);
-            }
-        } else {
-            previewAnimation.setClosingTarget();
-            previewAnimation.advance(animationFrameTicks());
-            CardInstance closingCard = previewAnimation.card(cards);
-            if (closingCard != null && previewAnimation.visible()) {
-                renderAnimatedPreview(graphics, font, closingCard, selected.test(closingCard), previewAnimation, previewRenderer);
+            renderScrollbar(graphics, layout);
+            if (hoveredIndex >= 0) {
+                CardInstance card = cards.get(hoveredIndex);
+                CardBounds cardBounds = cardBounds(layout, hoveredIndex);
+                PreviewBounds preview = previewBounds(layout, hoveredIndex);
+                previewAnimation.setOpenTarget(card.id(), cardBounds.centerX(layout), cardBounds.centerY(layout), preview.centerX(), preview.centerY(), layout.cardScale(), preview.scale());
+                if (scrolledSinceLastFrame) {
+                    previewAnimation.snapPositionToTarget();
+                }
+                previewAnimation.advance(animationFrameTicks());
+                renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
+                if (previewAnimation.progress() > 0.86F) {
+                    int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());
+                    int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewAnimation.scale());
+                    int previewX = Math.round(previewAnimation.centerX() - previewW / 2.0F);
+                    int previewY = Math.round(previewAnimation.centerY() - previewH / 2.0F);
+                    CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, previewX, previewY, previewW, previewH, width, height);
+                }
             } else {
-                previewAnimation.clear();
-                lastAnimationNanos = 0L;
+                previewAnimation.setClosingTarget();
+                previewAnimation.advance(animationFrameTicks());
+                CardInstance closingCard = previewAnimation.card(cards);
+                if (closingCard != null && previewAnimation.visible()) {
+                    renderAnimatedPreview(graphics, font, closingCard, selected.test(closingCard), previewAnimation, previewRenderer);
+                } else {
+                    previewAnimation.clear();
+                    lastAnimationNanos = 0L;
+                }
             }
+            renderTitleBand(graphics, font, layout);
+        } finally {
+            graphics.pose().popPose();
         }
-        renderTitleBand(graphics, font, layout);
     }
 
     boolean mouseClicked(int width, int height, int bottomReserve, double mouseX, double mouseY, int button) {
