@@ -164,6 +164,9 @@ public final class ClientEvents {
             if (!ClientBattleState.active()) {
                 return;
             }
+            if (Minecraft.getInstance().screen instanceof BattleScreen) {
+                return;
+            }
             if (event.getKey() == GLFW.GLFW_KEY_Q && event.getAction() == InputConstants.PRESS) {
                 var snapshot = ClientBattleState.snapshot();
                 if (snapshot.phase() == BattlePhase.PLAYER_TURN && !snapshot.localPlayerEndedTurn() && !snapshot.localPlayerFakeDead()) {

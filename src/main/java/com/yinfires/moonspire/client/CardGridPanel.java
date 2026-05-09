@@ -19,6 +19,7 @@ final class CardGridPanel {
     private static final int CARD_GAP_X = 18;
     private static final int CARD_GAP_Y = 20;
     private static final int PREVIEW_EDGE_MARGIN = 12;
+    private static final int HOVER_STICKY_MARGIN = 18;
     private static final int PREVIEW_TOP_RESERVE = 54;
     private static final int TITLE_RESERVED_HEIGHT = 42;
     private static final int SCROLLBAR_WIDTH = 7;
@@ -430,16 +431,17 @@ final class CardGridPanel {
     }
 
     private int hoveredCardIndex(Layout layout, double mouseX, double mouseY) {
+        if (hoveredIndex >= 0 && hoveredIndex < cards.size()) {
+            PreviewBounds preview = previewBounds(layout, hoveredIndex);
+            CardBounds bounds = cardBounds(layout, hoveredIndex);
+            if (preview.expanded(HOVER_STICKY_MARGIN).contains(mouseX, mouseY)
+                    || bounds.contains(layout, mouseX, mouseY, HOVER_STICKY_MARGIN)) {
+                return hoveredIndex;
+            }
+        }
         int direct = cardIndexAt(layout, mouseX, mouseY);
         if (direct >= 0) {
             return direct;
-        }
-        if (hoveredIndex >= 0 && hoveredIndex < cards.size()) {
-            PreviewBounds preview = previewBounds(layout, hoveredIndex);
-            if (mouseX >= preview.x() && mouseX <= preview.x() + preview.width()
-                    && mouseY >= preview.y() && mouseY <= preview.y() + preview.height()) {
-                return hoveredIndex;
-            }
         }
         return -1;
     }
@@ -502,6 +504,11 @@ final class CardGridPanel {
         private float centerY(Layout layout) {
             return y + layout.cardH() / 2.0F;
         }
+
+        private boolean contains(Layout layout, double mouseX, double mouseY, int margin) {
+            return mouseX >= x - margin && mouseX <= x + layout.cardW() + margin
+                    && mouseY >= y - margin && mouseY <= y + layout.cardH() + margin;
+        }
     }
 
     private record PreviewBounds(int x, int y, int width, int height, float scale) {
@@ -511,6 +518,14 @@ final class CardGridPanel {
 
         private float centerY() {
             return y + height / 2.0F;
+        }
+
+        private boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
+        }
+
+        private PreviewBounds expanded(int margin) {
+            return new PreviewBounds(x - margin, y - margin, width + margin * 2, height + margin * 2, scale);
         }
     }
 
