@@ -93,7 +93,7 @@ public final class ClientBattleState {
             blockGainAnimations.clear();
             pendingVisualEvents.clear();
             visualStates.clear();
-            fakeDeathStarts.clear();
+            clearFakeDeathStarts();
             monsterPlayedCard = null;
             monsterPlayedCardTicks = 0.0F;
             monsterPlayedCardEventSequence = 0L;
@@ -424,9 +424,33 @@ public final class ClientBattleState {
                 fakeDeadIds.add(enemy.entityId());
             }
         }
-        fakeDeathStarts.keySet().removeIf(id -> !fakeDeadIds.contains(id));
+        Iterator<Integer> iterator = fakeDeathStarts.keySet().iterator();
+        while (iterator.hasNext()) {
+            int entityId = iterator.next();
+            if (!fakeDeadIds.contains(entityId)) {
+                resetFakeDeathAnimation(entityId);
+                iterator.remove();
+            }
+        }
         for (int entityId : fakeDeadIds) {
             fakeDeathStarts.putIfAbsent(entityId, now);
+        }
+    }
+
+    private static void clearFakeDeathStarts() {
+        for (int entityId : fakeDeathStarts.keySet()) {
+            resetFakeDeathAnimation(entityId);
+        }
+        fakeDeathStarts.clear();
+    }
+
+    private static void resetFakeDeathAnimation(int entityId) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return;
+        }
+        if (minecraft.level.getEntity(entityId) instanceof net.minecraft.world.entity.LivingEntity living && living.isAlive()) {
+            living.deathTime = 0;
         }
     }
 

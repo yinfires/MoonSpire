@@ -315,7 +315,7 @@
   - 代码实现：`CardBalance.MAX_HAND_SIZE` 定义上限，`BattleDeck.draw()` 在每次抽牌后检查 `hand.size()`，超过上限的抽牌结果加入 `discardPile`。
   - 变更记录：新增手牌上限与超额抽牌丢弃规则。
 - 玩法描述：假死亡的生物在战斗中不再显示战斗条目、世界头顶血条/意图/状态/伤害数字，也不能再被选中或作为卡牌指向目标；死亡动画仍会播放。若玩家假死亡后的真实死亡被其它机制抵挡或取消，战斗收尾会清除假死亡并恢复玩家控制和战斗前状态，避免玩家永久停留在假死观战状态。
-  - 代码实现：`BattleScreen`、`BattleWorldOverlay` 的条目渲染、世界命中检测和目标高亮都过滤 `fakeDead`；`CombatantState.clearFakeDeath()` 与 `BattleState.recoverBlockedPlayerDeath()` 在真实死亡结算未使玩家死亡时恢复状态。
+  - 代码实现：`BattleScreen`、`BattleWorldOverlay` 的条目渲染、世界命中检测和目标高亮都过滤 `fakeDead`；`CombatantState.clearFakeDeath()` 与 `BattleState.recoverBlockedPlayerDeath()` 在真实死亡结算未使玩家死亡时恢复状态；客户端 `ClientBattleState` 在快照显示实体不再 `fakeDead` 或战斗关闭时清除该实体残留的 `deathTime`，让被抵挡/取消真实死亡后仍存活的玩家立即退出死亡动画。
   - 变更记录：修复死亡目标仍可选、仍显示世界信息，以及外部死亡保护导致玩家永久假死的问题。
 - 玩法描述：多种怪物同时参战时，当前选中或指向哪只怪物，就显示哪只怪物自己的意图；不同怪物不再共用第一只怪物的意图和预览数值。多人战斗中右键查看参战玩家或怪物条目时，显示被查看实体自己的手牌/卡组信息，而不是固定显示本地玩家或第一只怪物。
   - 代码实现：`BattleSnapshot` 新增 `BattleEntityCardsSnapshot` 列表并提供 `handCardsFor(entityId)`；`BattleState.entityHandSnapshots()` 同步所有参战实体当前手牌；`BattleScreen.currentIntentEntityId()`、`intentCardsFor()` 和 `renderIntentSummary()` 按实体 id 读取对应怪物意图。
