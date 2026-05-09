@@ -14,6 +14,7 @@
 - Prefer a small complete patch once enough context is known, then compile or run the narrowest useful verification.
 - If exploration takes more than a couple of tool calls, give a short status update before continuing.
 - Do not wait until every detail is understood before making low-risk layout, documentation, or narrowly scoped changes.
+- When investigating battle confirmation or synchronization delays, do not stop at client-side modal visibility or local animations. Check the authoritative server chain and sync cadence first: payload handler thread, `BattleManager` mutation, `BattleState` pending flags, snapshot size/frequency, and stale snapshot ordering. Large `BattleSnapshot` payloads must not be sent every tick while a pending player choice is idle; repeated old pending snapshots can queue ahead of the confirmation result and look like delayed server resolution.
 
 ## Video References
 

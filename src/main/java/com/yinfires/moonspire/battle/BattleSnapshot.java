@@ -3,10 +3,13 @@ package com.yinfires.moonspire.battle;
 import com.yinfires.moonspire.card.CardInstance;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
 public record BattleSnapshot(
+        UUID battleId,
+        long sequence,
         boolean active,
         BattlePhase phase,
         boolean resolvingEffects,
@@ -33,8 +36,10 @@ public record BattleSnapshot(
     public static final StreamCodec<RegistryFriendlyByteBuf, BattleSnapshot> STREAM_CODEC = StreamCodec.of(
             BattleSnapshot::write,
             BattleSnapshot::read);
+    public static final UUID INACTIVE_BATTLE_ID = new UUID(0L, 0L);
 
     public BattleSnapshot {
+        battleId = battleId == null ? INACTIVE_BATTLE_ID : battleId;
         players = List.copyOf(players == null ? List.of() : players);
         enemies = List.copyOf(enemies == null ? List.of() : enemies);
         hand = List.copyOf(hand == null ? List.of() : hand);
@@ -50,7 +55,13 @@ public record BattleSnapshot(
     }
 
     public static BattleSnapshot inactive() {
+        return inactive(INACTIVE_BATTLE_ID, 0L);
+    }
+
+    public static BattleSnapshot inactive(UUID battleId, long sequence) {
         return new BattleSnapshot(
+                battleId,
+                sequence,
                 false,
                 BattlePhase.PLAYER_TURN,
                 false,
@@ -175,6 +186,8 @@ public record BattleSnapshot(
     }
 
     private static void write(RegistryFriendlyByteBuf buf, BattleSnapshot snapshot) {
+        buf.writeUUID(snapshot.battleId);
+        buf.writeVarLong(snapshot.sequence);
         buf.writeBoolean(snapshot.active);
         buf.writeEnum(snapshot.phase);
         buf.writeBoolean(snapshot.resolvingEffects);
@@ -210,6 +223,8 @@ public record BattleSnapshot(
     }
 
     private static BattleSnapshot read(RegistryFriendlyByteBuf buf) {
+        UUID battleId = buf.readUUID();
+        long sequence = buf.readVarLong();
         boolean active = buf.readBoolean();
         BattlePhase phase = buf.readEnum(BattlePhase.class);
         boolean resolvingEffects = buf.readBoolean();
@@ -245,7 +260,7 @@ public record BattleSnapshot(
         for (int i = 0; i < visualCount; i++) {
             visualEvents.add(BattleVisualEvent.STREAM_CODEC.decode(buf));
         }
-        return new BattleSnapshot(active, phase, resolvingEffects, round, selectedTargetId, localPlayerEntityId, localPlayerEndedTurn, players, enemies, drawPile, discardPile, exhaustPile, hand, drawPileCards, discardPileCards, exhaustPileCards, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, enemyIntents, entityHands, visualEvents);
+        return new BattleSnapshot(battleId, sequence, active, phase, resolvingEffects, round, selectedTargetId, localPlayerEntityId, localPlayerEndedTurn, players, enemies, drawPile, discardPile, exhaustPile, hand, drawPileCards, discardPileCards, exhaustPileCards, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, enemyIntents, entityHands, visualEvents);
     }
 
     private static void writeCombatants(RegistryFriendlyByteBuf buf, List<BattleCombatantSnapshot> combatants) {

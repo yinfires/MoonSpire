@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
@@ -29,6 +30,8 @@ import net.minecraft.world.phys.Vec3;
 public final class ClientBattleState {
     private static BattleSnapshot snapshot = BattleSnapshot.inactive();
     private static long snapshotVersion;
+    private static UUID serverBattleId = BattleSnapshot.INACTIVE_BATTLE_ID;
+    private static long serverSnapshotSequence;
     private static int selectedHandIndex = -1;
     private static int hoveredEntityId = -1;
     private static final Set<Integer> hoveredEntityIds = new HashSet<>();
@@ -62,6 +65,20 @@ public final class ClientBattleState {
 
     public static void setSnapshot(BattleSnapshot next) {
         BattleSnapshot previous = snapshot;
+        if (next == null) {
+            next = BattleSnapshot.inactive();
+        }
+        if (previous.active() && !next.active() && !next.battleId().equals(serverBattleId)) {
+            return;
+        }
+        if (next.battleId().equals(serverBattleId) && next.sequence() < serverSnapshotSequence) {
+            return;
+        }
+        if (!next.battleId().equals(serverBattleId)) {
+            serverBattleId = next.battleId();
+            serverSnapshotSequence = 0L;
+        }
+        serverSnapshotSequence = Math.max(serverSnapshotSequence, next.sequence());
         snapshot = next;
         snapshotVersion++;
         if (!previous.active() && next.active()) {

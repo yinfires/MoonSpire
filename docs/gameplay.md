@@ -297,7 +297,7 @@
 - 选择界面确认后不会在客户端长时间停留在禁用状态；如果服务端拒绝或返回仍需选择的新快照，客户端会重新显示选择界面并允许再次确认。如果等待期间候选手牌发生变化，服务端会重新按当前仍有效的候选手牌校验，无法继续选择且剩余候选数量不大于需求时自动完成处理，避免丢弃/消耗流程卡在选择界面。
 - 开发者自定义里允许修改这两类效果的目标，但次数固定为 1。
 
-代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck`、`BattleScreen.HandSelectionOverlay`、`BattleScreen.HandSelectionConfirmation` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。`HandSelectionConfirmation` 只负责客户端确认后的本地等待、输入锁和快照回包协调，不改变服务端权威结算规则。
+代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck`、`BattleScreen.HandSelectionOverlay`、`BattleScreen.HandSelectionConfirmation` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。`SelectHandCardsPayload` 会把确认操作排入服务端主线程，确认通过后由 `BattleState.confirmHandSelection()` 立即移除所选手牌并放入对应牌堆，再通过 `BattleManager.sync()` 同步权威快照；等待玩家选择或等待后续动画批次时，服务端不再每 tick 反复发送完整旧快照，只在确认、视觉事件或常规空闲节奏中同步，避免旧 pending 快照堆积造成确认结算延迟。`BattleManager.sync()` 为每次权威快照写入递增序号，客户端 `ClientBattleState` 会忽略同一场战斗中倒序到达的旧快照，避免已确认的手牌选择被旧 pending 状态覆盖。`HandSelectionConfirmation` 只负责客户端确认后的本地等待、输入锁和快照回包协调，不改变服务端权威结算规则。
 
 ## 卡组与列表性能
 
@@ -309,8 +309,8 @@
 ## 本次多人战斗修正规则补充
 
 - 玩法描述：玩家在玩家方回合按下结束回合后，立即进入等待状态，不能继续出牌，也不能再次通过快捷键重复结束回合；只有当前阶段仍是玩家方回合且本地玩家未结束、未假死亡时，结束回合按钮和 Q 快捷键才会生效。怪物方回合不会显示“等待其他玩家结束回合”。
-  - 代码实现：`BattleScreen` 使用 `canEndTurn()`、`awaitingEndTurnSnapshot` 和 `cardActionsLocked()` 在本地立刻锁定出牌与结束回合输入；`ClientEvents.keyInput()` 只在 `BattlePhase.PLAYER_TURN` 且本地玩家未结束、未假死亡时发送 `EndTurnPayload`；服务端 `BattleState.usePlayerCard()` 仍保留 `endedTurn()` 校验作为最终保护。
-  - 变更记录：修复多人回合中自己已结束但其他玩家未结束时仍能继续出牌的问题，并修复怪物方回合显示等待玩家文案的问题。
+  - 代码实现：`BattleScreen` 使用 `canEndTurn()`、`awaitingEndTurnSnapshot` 和 `cardActionsLocked()` 在本地立刻锁定出牌与结束回合输入；本地等待结束回合回包时会记录发起回合号，并在收到怪物回合、本地已结束或新玩家回合快照时清除，避免上一回合的禁用态残留到下一回合。`ClientEvents.keyInput()` 只在 `BattlePhase.PLAYER_TURN` 且本地玩家未结束、未假死亡时发送 `EndTurnPayload`；服务端 `BattleState.usePlayerCard()` 仍保留 `endedTurn()` 校验作为最终保护。
+  - 变更记录：修复多人回合中自己已结束但其他玩家未结束时仍能继续出牌的问题，并修复怪物方回合显示等待玩家文案的问题；本次修复新玩家回合开始时结束回合按钮文案已显示可结束、但按钮仍沿用上一回合本地等待禁用态的问题。
 - 玩法描述：手牌上限为 10。抽牌时如果手牌已经达到 10 张，之后抽到的卡牌不会进入手牌，而是直接进入弃牌堆。
   - 代码实现：`CardBalance.MAX_HAND_SIZE` 定义上限，`BattleDeck.draw()` 在每次抽牌后检查 `hand.size()`，超过上限的抽牌结果加入 `discardPile`。
   - 变更记录：新增手牌上限与超额抽牌丢弃规则。

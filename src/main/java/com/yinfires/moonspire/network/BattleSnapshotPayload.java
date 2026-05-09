@@ -19,6 +19,6 @@ public record BattleSnapshotPayload(BattleSnapshot snapshot) implements CustomPa
     }
 
     public static void handle(BattleSnapshotPayload payload, IPayloadContext context) {
-        ClientBattleState.setSnapshot(payload.snapshot);
+        context.enqueueWork(() -> ClientBattleState.setSnapshot(payload.snapshot));
     }
 }

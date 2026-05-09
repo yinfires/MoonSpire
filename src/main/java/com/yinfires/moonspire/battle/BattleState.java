@@ -54,6 +54,7 @@ public class BattleState {
     private boolean started;
     private boolean endingAfterAnimations;
     private int syncCooldownTicks;
+    private long snapshotSequence;
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
     private final List<PendingCardStep> pendingCardSteps = new ArrayList<>();
@@ -320,6 +321,8 @@ public class BattleState {
         }
         List<BattleVisualEvent> visualEvents = List.copyOf(pendingVisualEvents);
         return new BattleSnapshot(
+                id,
+                snapshotSequence,
                 true,
                 phase,
                 hasPendingCardBatches(),
@@ -345,8 +348,28 @@ public class BattleState {
                 visualEvents);
     }
 
+    public long nextSnapshotSequence() {
+        return ++snapshotSequence;
+    }
+
     public boolean shouldSyncNow() {
-        if (!pendingVisualEvents.isEmpty() || hasPendingCardBatches() || pendingHandSelection != null || endingAfterAnimations) {
+        if (pendingHandSelection != null) {
+            if (!pendingVisualEvents.isEmpty()) {
+                syncCooldownTicks = 0;
+                return true;
+            }
+            syncCooldownTicks = 0;
+            return false;
+        }
+        if (!pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingUsedCard != null) {
+            if (!pendingVisualEvents.isEmpty()) {
+                syncCooldownTicks = 0;
+                return true;
+            }
+            syncCooldownTicks = 0;
+            return false;
+        }
+        if (!pendingVisualEvents.isEmpty() || endingAfterAnimations) {
             syncCooldownTicks = 0;
             return true;
         }

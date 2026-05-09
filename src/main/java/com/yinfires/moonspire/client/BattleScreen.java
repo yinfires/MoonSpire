@@ -121,6 +121,7 @@ public class BattleScreen extends NoBlurScreen {
     private FrameCache frameCache = FrameCache.empty();
     private boolean awaitingUseCardSnapshot;
     private boolean awaitingEndTurnSnapshot;
+    private int awaitingEndTurnRound = -1;
     private final Set<UUID> locallyUsedCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
     private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
@@ -146,9 +147,7 @@ public class BattleScreen extends NoBlurScreen {
                 syncSnapshotAnimations(snapshot);
                 syncedSnapshotVersion = ClientBattleState.snapshotVersion();
             }
-            if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerEndedTurn()) {
-                awaitingEndTurnSnapshot = false;
-            }
+            reconcileEndTurnAwaiting(snapshot);
             boolean pileModalActive = pileOverlay != null;
             boolean handSelectionActive = snapshot.pendingHandSelection().active();
             boolean handSelectionWaiting = handSelectionConfirmation.active();
@@ -439,8 +438,9 @@ public class BattleScreen extends NoBlurScreen {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_Q) {
-            if (canEndTurn(ClientBattleState.snapshot())) {
-                awaitingEndTurnSnapshot = true;
+            BattleSnapshot snapshot = ClientBattleState.snapshot();
+            if (canEndTurn(snapshot)) {
+                beginAwaitingEndTurnSnapshot(snapshot);
                 PacketDistributor.sendToServer(new EndTurnPayload());
             }
             return true;
@@ -820,6 +820,25 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean canEndTurn(BattleSnapshot snapshot) {
         return snapshot.phase() == BattlePhase.PLAYER_TURN && !snapshot.localPlayerEndedTurn() && !snapshot.localPlayerFakeDead() && !awaitingEndTurnSnapshot;
+    }
+
+    private void beginAwaitingEndTurnSnapshot(BattleSnapshot snapshot) {
+        awaitingEndTurnSnapshot = true;
+        awaitingEndTurnRound = snapshot.round();
+    }
+
+    private void clearAwaitingEndTurnSnapshot() {
+        awaitingEndTurnSnapshot = false;
+        awaitingEndTurnRound = -1;
+    }
+
+    private void reconcileEndTurnAwaiting(BattleSnapshot snapshot) {
+        if (!awaitingEndTurnSnapshot) {
+            return;
+        }
+        if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerEndedTurn() || snapshot.round() != awaitingEndTurnRound) {
+            clearAwaitingEndTurnSnapshot();
+        }
     }
 
     private void renderEndTurnButton(GuiGraphics graphics, BattleSnapshot snapshot, MoonSpireUiRect rect, int mouseX, int mouseY, float partialTick) {
@@ -1499,6 +1518,7 @@ public class BattleScreen extends NoBlurScreen {
             flyingCards.clear();
             previousSnapshot = BattleSnapshot.inactive();
             awaitingUseCardSnapshot = false;
+            clearAwaitingEndTurnSnapshot();
             locallyUsedCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
             handSelectionConfirmation = HandSelectionConfirmation.empty();
@@ -2091,7 +2111,7 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean clickEndTurn(double mouseX, double mouseY, BattleSnapshot snapshot) {
         if (canEndTurn(snapshot) && endTurnButtonAt(mouseX, mouseY)) {
-            awaitingEndTurnSnapshot = true;
+            beginAwaitingEndTurnSnapshot(snapshot);
             PacketDistributor.sendToServer(new EndTurnPayload());
             return true;
         }

@@ -283,6 +283,7 @@ public final class BattleManager {
     }
 
     private static void sync(BattleState battle) {
+        battle.nextSnapshotSequence();
         for (ServerPlayer player : battle.players()) {
             PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(battle.snapshotFor(player)));
         }
@@ -298,8 +299,9 @@ public final class BattleManager {
             BY_ENTITY_ID.remove(entity.getId());
         }
         battle.finish();
+        long sequence = battle.nextSnapshotSequence();
         for (ServerPlayer player : battle.players()) {
-            PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(BattleSnapshot.inactive()));
+            PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(BattleSnapshot.inactive(battle.id(), sequence)));
         }
     }
 }

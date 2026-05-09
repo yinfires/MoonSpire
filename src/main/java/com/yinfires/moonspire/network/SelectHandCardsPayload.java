@@ -29,7 +29,7 @@ public record SelectHandCardsPayload(List<UUID> cardIds) implements CustomPacket
 
     public static void handle(SelectHandCardsPayload payload, IPayloadContext context) {
         if (context.player() instanceof ServerPlayer player) {
-            BattleManager.confirmHandSelection(player, payload.cardIds);
+            context.enqueueWork(() -> BattleManager.confirmHandSelection(player, payload.cardIds));
         }
     }
 
