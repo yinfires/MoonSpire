@@ -16,10 +16,12 @@ public class DeckScreen extends NoBlurScreen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        cardPanel.setCards(ClientCardState.cards().collection());
-        cardPanel.render(graphics, font, width, height, mouseX, mouseY, BOTTOM_RESERVE, card -> false,
-                (previewGraphics, previewFont, card, x, y, selectedCard) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false));
-        renderWidgets(graphics, mouseX, mouseY, partialTick);
+        try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
+            cardPanel.setCards(ClientCardState.cards().collection());
+            cardPanel.render(graphics, font, width, height, mouseX, mouseY, BOTTOM_RESERVE, card -> false,
+                    (previewGraphics, previewFont, card, x, y, selectedCard) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false));
+            renderWidgets(graphics, mouseX, mouseY, partialTick);
+        }
     }
 
     @Override

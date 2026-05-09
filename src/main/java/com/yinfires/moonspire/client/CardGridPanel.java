@@ -3,7 +3,9 @@ package com.yinfires.moonspire.client;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Function;
@@ -28,6 +30,7 @@ final class CardGridPanel {
     private static final float PREVIEW_MIN_SCALE = 0.58F;
     private static final float GRID_SELECTED_SCALE_BONUS = 0.06F;
     private static final float MODAL_CONTENT_Z = 1100.0F;
+    private static final int WARMUP_CARDS_PER_FRAME = 3;
 
     private final Component title;
     private final List<CardInstance> cards = new ArrayList<>();
@@ -43,7 +46,7 @@ final class CardGridPanel {
     private int cachedLastVisibleIndex = -1;
     private int cachedCardSignature;
     private int currentCardSignature;
-    private boolean needsWarmup = true;
+    private final Set<String> warmedCardKeys = new HashSet<>();
 
     CardGridPanel(List<CardInstance> cards, Component title) {
         this.title = title;
@@ -58,7 +61,7 @@ final class CardGridPanel {
         this.cards.addAll(cards);
         currentCardSignature = cardSignature();
         invalidateLayout();
-        needsWarmup = true;
+        warmedCardKeys.clear();
         if (previewAnimation.cardId() != null && this.cards.stream().noneMatch(card -> card.id().equals(previewAnimation.cardId()))) {
             previewAnimation.clear();
         }
@@ -229,14 +232,20 @@ final class CardGridPanel {
     }
 
     private void warmupVisibleCards(Font font, Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
-        if (!needsWarmup) {
-            return;
-        }
-        needsWarmup = false;
         int end = Math.min(cards.size(), lastVisibleIndex(layout));
+        int warmedThisFrame = 0;
         for (int i = firstVisibleIndex(layout); i < end; i++) {
             CardInstance card = cards.get(i);
-            CardRenderHelper.warmupCard(font, card, values.apply(card));
+            CardRenderHelper.CardValues cardValues = values.apply(card);
+            String key = CardRenderHelper.warmupKey(card, cardValues);
+            if (!warmedCardKeys.add(key)) {
+                continue;
+            }
+            CardRenderHelper.warmupCard(font, card, cardValues);
+            warmedThisFrame++;
+            if (warmedThisFrame >= WARMUP_CARDS_PER_FRAME) {
+                return;
+            }
         }
     }
 
@@ -258,7 +267,6 @@ final class CardGridPanel {
         graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
         previewRenderer.render(graphics, font, card, -CardRenderHelper.CARD_WIDTH / 2, -CardRenderHelper.CARD_HEIGHT / 2, selected);
         graphics.pose().popPose();
-        graphics.flush();
     }
 
     private void renderTitleBand(GuiGraphics graphics, Font font, Layout layout) {

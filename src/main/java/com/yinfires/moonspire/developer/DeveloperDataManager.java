@@ -20,6 +20,7 @@ public final class DeveloperDataManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static DeveloperData cached;
     private static long cachedStamp = Long.MIN_VALUE;
+    private static long cacheRevision;
     private static final Map<String, String> LIVE_DISPLAY_NAMES = new HashMap<>();
 
     private DeveloperDataManager() {
@@ -33,7 +34,20 @@ public final class DeveloperDataManager {
         }
         cached = readData(file);
         cachedStamp = stamp;
+        cacheRevision++;
         return cached;
+    }
+
+    public static long cachedStamp() {
+        return cachedStamp;
+    }
+
+    public static long cacheRevision() {
+        return cacheRevision;
+    }
+
+    public static DeveloperData cachedOrLoad() {
+        return cached == null ? load() : cached;
     }
 
     public static void save(DeveloperData data) throws IOException {
@@ -43,6 +57,7 @@ public final class DeveloperDataManager {
         writeSplitFiles(data);
         cached = data;
         cachedStamp = safeStamp(dataFile());
+        cacheRevision++;
     }
 
     public static void setClientData(DeveloperData data) {
@@ -52,6 +67,7 @@ public final class DeveloperDataManager {
         data.ensureDefaults();
         cached = data;
         cachedStamp = safeStamp(dataFile());
+        cacheRevision++;
     }
 
     public static Path dataFile() {

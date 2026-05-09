@@ -25,8 +25,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -64,8 +66,21 @@ public final class CardRenderHelper {
     private static final int TEXTURE_WIDTH = 128;
     private static final int TEXTURE_HEIGHT = 158;
     private static final Map<String, TextureRef> FILE_TEXTURES = new HashMap<>();
+    private static final Map<String, TextureLookup> FILE_TEXTURE_LOOKUPS = new HashMap<>();
+    private static final Map<String, ItemStack> ART_ITEMS = new HashMap<>();
+    private static final Map<String, List<FormattedCharSequence>> DESCRIPTION_WRAP_CACHE = new LinkedHashMap<>(128, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<FormattedCharSequence>> eldest) {
+            return size() > 512;
+        }
+    };
+    private static long descriptionCacheRevision = Long.MIN_VALUE;
+    private static final ThreadLocal<CardRenderContext> FRAME_CONTEXT = new ThreadLocal<>();
 
     private record TextureRef(ResourceLocation location, int width, int height) {
+    }
+
+    private record TextureLookup(TextureRef texture) {
     }
 
     public record CardValues(int attack, int defense, List<Integer> damageAmounts, List<Integer> blockAmounts) {
@@ -89,9 +104,65 @@ public final class CardRenderHelper {
     public record CardLocalArea(int x, int y, int width, int height) {
     }
 
+    public static CardRenderContext openFrameContext() {
+        CardRenderContext context = new CardRenderContext(FRAME_CONTEXT.get());
+        FRAME_CONTEXT.set(context);
+        return context;
+    }
+
+    public static String warmupKey(CardInstance card, CardValues values) {
+        return dataVersionKey() + "|" + card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense();
+    }
+
+    public static final class CardRenderContext implements AutoCloseable {
+        private static final int MAX_CACHE_ENTRIES = 256;
+
+        private final CardRenderContext previous;
+        private final DeveloperData data;
+        private final long dataVersion;
+        private final Map<String, DeveloperCardFace> faceCache = boundedMap();
+        private boolean closed;
+
+        private CardRenderContext(CardRenderContext previous) {
+            this.previous = previous;
+            this.data = DeveloperDataManager.cachedOrLoad();
+            this.dataVersion = DeveloperDataManager.cachedStamp();
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (previous == null) {
+                FRAME_CONTEXT.remove();
+            } else {
+                FRAME_CONTEXT.set(previous);
+            }
+        }
+
+        private DeveloperCardFace cardFace(CardInstance card) {
+            return faceCache.computeIfAbsent(faceCacheKey(card, dataVersion), ignored -> resolveCardFace(card, data));
+        }
+
+        private static <T> Map<String, T> boundedMap() {
+            return new LinkedHashMap<>(32, 0.75F, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, T> eldest) {
+                    return size() > MAX_CACHE_ENTRIES;
+                }
+            };
+        }
+    }
+
+    private record TipLayout(List<FormattedCharSequence> titleLines, List<FormattedCharSequence> descLines, int height) {
+    }
+
     public static void invalidateFileTexture(Path path) {
         if (path != null) {
             FILE_TEXTURES.remove(path.toAbsolutePath().normalize().toString());
+            FILE_TEXTURE_LOOKUPS.remove(path.toAbsolutePath().normalize().toString());
         }
     }
 
@@ -196,6 +267,10 @@ public final class CardRenderHelper {
     }
 
     public static List<Component> descriptionLines(CardInstance card, CardValues values) {
+        return buildDescriptionLines(card, values);
+    }
+
+    private static List<Component> buildDescriptionLines(CardInstance card, CardValues values) {
         List<Component> lines = new ArrayList<>();
         for (int i = 0; i < card.effects().size(); i++) {
             CardEffect effect = card.effects().get(i);
@@ -215,7 +290,7 @@ public final class CardRenderHelper {
                 lines.add(withEffectCount(Component.translatable(handSelectionDescriptionKey("discard_hand", effect.target()), effect.amount()), 1));
             }
         }
-        return lines;
+        return List.copyOf(lines);
     }
 
     private static int displayedDamageAmount(CardEffect effect, CardValues values, int effectIndex) {
@@ -422,32 +497,39 @@ public final class CardRenderHelper {
     }
 
     private static int tipHeight(Font font, Component title, Component description) {
-        int pad = 6;
-        List<FormattedCharSequence> titleLines = font.split(title, TIP_WIDTH - pad * 2);
-        List<FormattedCharSequence> descLines = font.split(description, TIP_WIDTH - pad * 2);
-        return pad * 2 + titleLines.size() * 10 + 3 + descLines.size() * 10;
+        return tipLayout(font, title, description).height();
     }
 
     public static int renderTip(GuiGraphics graphics, Font font, Component title, Component description, int x, int y) {
         int pad = 6;
-        List<FormattedCharSequence> titleLines = font.split(title, TIP_WIDTH - pad * 2);
-        List<FormattedCharSequence> descLines = font.split(description, TIP_WIDTH - pad * 2);
-        int height = tipHeight(font, title, description);
+        TipLayout layout = tipLayout(font, title, description);
+        int height = layout.height();
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 400.0F);
         MoonSpireUiTextures.drawTooltip(graphics, x, y, TIP_WIDTH, height);
         int lineY = y + pad;
-        for (FormattedCharSequence line : titleLines) {
+        for (FormattedCharSequence line : layout.titleLines()) {
             graphics.drawString(font, line, x + pad, lineY, 0xFF000000 | KEYWORD_TEXT_COLOR, false);
             lineY += 10;
         }
         lineY += 3;
-        for (FormattedCharSequence line : descLines) {
+        for (FormattedCharSequence line : layout.descLines()) {
             graphics.drawString(font, line, x + pad, lineY, 0xFFF2E6D2, false);
             lineY += 10;
         }
         graphics.pose().popPose();
         return y + height + 4;
+    }
+
+    private static TipLayout tipLayout(Font font, Component title, Component description) {
+        return buildTipLayout(font, title, description);
+    }
+
+    private static TipLayout buildTipLayout(Font font, Component title, Component description) {
+        int pad = 6;
+        List<FormattedCharSequence> titleLines = font.split(title, TIP_WIDTH - pad * 2);
+        List<FormattedCharSequence> descLines = font.split(description, TIP_WIDTH - pad * 2);
+        return new TipLayout(List.copyOf(titleLines), List.copyOf(descLines), pad * 2 + titleLines.size() * 10 + 3 + descLines.size() * 10);
     }
 
     private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values) {
@@ -495,7 +577,7 @@ public final class CardRenderHelper {
         if (!showDescription) {
             return;
         }
-        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true);
+        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true, face);
     }
 
     private static CardLocalArea descriptionArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
@@ -504,7 +586,12 @@ public final class CardRenderHelper {
     }
 
     private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription) {
-        CardLocalArea descArea = descriptionArea(card, width, height, dataOverride);
+        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, clipDescription, cardFace(card, dataOverride));
+    }
+
+    private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription, DeveloperCardFace face) {
+        DeveloperCardFace.Area faceDescArea = face.descriptionArea();
+        CardLocalArea descArea = new CardLocalArea(sx(width, faceDescArea.x()), sy(height, faceDescArea.y()), sx(width, faceDescArea.width()), sy(height, faceDescArea.height()));
         int descX = x + descArea.x();
         int descY = y + descArea.y();
         int descWidth = descArea.width();
@@ -512,22 +599,9 @@ public final class CardRenderHelper {
         float scale = detailed ? 0.62F : 0.44F;
         int lineHeight = scaledLineHeight(font, scale);
         int maxLines = Math.max(1, Math.min(linesLimit(detailed), Math.max(1, (descHeight + 2) / lineHeight)));
-        List<FormattedCharSequence> wrappedLines = new ArrayList<>();
-        List<Component> lines = descriptionLines(card, values);
-        if (lines.isEmpty()) {
-            lines = List.of(card.descriptionComponent());
-        }
-        for (Component line : lines) {
-            for (FormattedCharSequence wrapped : font.split(line, Math.max(1, (int) (descWidth / scale)))) {
-                if (wrappedLines.size() >= maxLines) {
-                    break;
-                }
-                wrappedLines.add(wrapped);
-            }
-            if (wrappedLines.size() >= maxLines) {
-                break;
-            }
-        }
+        List<FormattedCharSequence> wrappedLines = dataOverride == null
+                ? wrappedDescriptionLines(font, card, values, Math.max(1, (int) (descWidth / scale)), scale, maxLines)
+                : buildWrappedDescription(font, card, values, Math.max(1, (int) (descWidth / scale)), scale, maxLines);
         if (clipDescription) {
             enablePoseScissor(graphics, descX, descY, descWidth, descHeight);
         }
@@ -554,12 +628,52 @@ public final class CardRenderHelper {
         return detailed ? 8 : 3;
     }
 
+    private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, CardValues values, int width, float scale, int maxLines) {
+        long revision = DeveloperDataManager.cacheRevision();
+        if (descriptionCacheRevision != revision) {
+            DESCRIPTION_WRAP_CACHE.clear();
+            descriptionCacheRevision = revision;
+        }
+        String key = card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense() + "|" + values.damageAmounts() + "|" + values.blockAmounts() + "|" + width + "|" + maxLines + "|" + scale;
+        return DESCRIPTION_WRAP_CACHE.computeIfAbsent(key, ignored -> buildWrappedDescription(font, card, values, width, scale, maxLines));
+    }
+
+    private static List<FormattedCharSequence> buildWrappedDescription(Font font, CardInstance card, CardValues values, int width, float scale, int maxLines) {
+        List<FormattedCharSequence> wrappedLines = new ArrayList<>();
+        List<Component> lines = descriptionLines(card, values);
+        if (lines.isEmpty()) {
+            lines = List.of(card.descriptionComponent());
+        }
+        for (Component line : lines) {
+            for (FormattedCharSequence wrapped : font.split(line, width)) {
+                if (wrappedLines.size() >= maxLines) {
+                    break;
+                }
+                wrappedLines.add(wrapped);
+            }
+            if (wrappedLines.size() >= maxLines) {
+                break;
+            }
+        }
+        return List.copyOf(wrappedLines);
+    }
+
     private static DeveloperCardFace cardFace(CardInstance card) {
         return cardFace(card, null);
     }
 
     private static DeveloperCardFace cardFace(CardInstance card, DeveloperData dataOverride) {
+        if (dataOverride == null) {
+            CardRenderContext context = FRAME_CONTEXT.get();
+            if (context != null) {
+                return context.cardFace(card);
+            }
+        }
         DeveloperData data = dataOverride == null ? DeveloperDataManager.load() : dataOverride;
+        return resolveCardFace(card, data);
+    }
+
+    private static DeveloperCardFace resolveCardFace(CardInstance card, DeveloperData data) {
         String faceId = currentRegisteredFaceId(card, data);
         if (faceId.isBlank()) {
             faceId = card.faceId() == null || card.faceId().isBlank() ? data.activeFaceId : card.faceId();
@@ -569,6 +683,23 @@ public final class CardRenderHelper {
         }
         String resolvedFaceId = faceId;
         return data.cardFaces.stream().filter(face -> face.id().equals(resolvedFaceId)).findFirst().orElse(DeveloperCardFace.defaultFace());
+    }
+
+    private static long dataVersionKey() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null) {
+            return context.dataVersion;
+        }
+        DeveloperDataManager.cachedOrLoad();
+        return DeveloperDataManager.cachedStamp();
+    }
+
+    private static String faceCacheKey(CardInstance card, long dataVersion) {
+        return dataVersion + "|" + card.cardId() + "|" + nullSafe(card.faceId());
+    }
+
+    private static String nullSafe(String value) {
+        return Objects.toString(value, "");
     }
 
     private static String currentRegisteredFaceId(CardInstance card, DeveloperData data) {
@@ -696,12 +827,18 @@ public final class CardRenderHelper {
             if (!resolved.isAbsolute()) {
                 resolved = relativeDirectory.resolve(path);
             }
+            String key = resolved.toAbsolutePath().normalize().toString();
+            TextureLookup lookup = FILE_TEXTURE_LOOKUPS.get(key);
+            if (lookup != null) {
+                return lookup.texture();
+            }
             if (!java.nio.file.Files.isRegularFile(resolved)) {
+                FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(null));
                 return null;
             }
-            String key = resolved.toAbsolutePath().normalize().toString();
             TextureRef cached = FILE_TEXTURES.get(key);
             if (cached != null) {
+                FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(cached));
                 return cached;
             }
             NativeImage image;
@@ -714,6 +851,7 @@ public final class CardRenderHelper {
             Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
             TextureRef ref = new TextureRef(id, width, height);
             FILE_TEXTURES.put(key, ref);
+            FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(ref));
             return ref;
         } catch (RuntimeException ignored) {
             return null;
@@ -726,10 +864,17 @@ public final class CardRenderHelper {
         if (itemId == null || itemId.isBlank()) {
             return ItemStack.EMPTY;
         }
+        ItemStack cached = ART_ITEMS.get(itemId);
+        if (cached != null) {
+            return cached;
+        }
         try {
             var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
-            return item == net.minecraft.world.item.Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
+            ItemStack stack = item == net.minecraft.world.item.Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
+            ART_ITEMS.put(itemId, stack);
+            return stack;
         } catch (RuntimeException ignored) {
+            ART_ITEMS.put(itemId, ItemStack.EMPTY);
             return ItemStack.EMPTY;
         }
     }

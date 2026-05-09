@@ -290,14 +290,14 @@
 - 玩家可以在卡牌中配置“消耗 X 张手牌”和“丢弃 X 张手牌”两类效果。
 - 这两类效果严格按卡牌效果列表从上往下结算，不能被后续重排打乱。
 - 触发时，当前打出的牌不计入可选手牌。
-- 如果可选手牌数量大于需求，会打开阻塞式手牌选择界面；选够后确认，客户端会立即本地关闭选择层并播放所选牌的丢弃/消耗动画，服务端仍会按当前权威手牌和 pending selection 校验 UUID，校验通过后所选牌分别进入消耗堆或弃牌堆，然后继续后续效果。
+- 如果可选手牌数量大于需求，会打开阻塞式手牌选择界面；选够后确认，客户端会立即本地关闭选择层、隐藏所选手牌并播放所选牌的丢弃/消耗动画，同时继续锁住底层出牌、结束回合、目标选择和牌堆入口。服务端仍会按当前权威手牌和 pending selection 校验 UUID，校验通过后所选牌分别进入消耗堆或弃牌堆，然后继续后续效果；确认后客户端会把服务端继续回传的同一个选择要求视为尚未处理完成的旧状态并保持本地等待，不会弹回确认界面，只有服务端清除 pending 或返回不同的选择要求时才结束等待或重建界面。
 - 如果可选手牌数量不足，或刚好等于需求，则不打开选择界面，直接按当前手牌顺序处理所有需要的牌并继续结算。
 - 对玩家目标时，选择界面会阻塞底层战斗输入；对怪物或不可交互目标时，服务端会自动按当前手牌顺序处理，不等待客户端选择。
-- 选中的手牌在原地播放对应消耗/丢弃动画，不再飞入对应牌堆。
+- 选中的手牌会按效果播放对应表现：丢弃牌从手牌位置飞向弃牌堆，消耗牌在原地淡出，不飞向消耗堆。
 - 选择界面确认后不会在客户端长时间停留在禁用状态；如果服务端拒绝或返回仍需选择的新快照，客户端会重新显示选择界面并允许再次确认。如果等待期间候选手牌发生变化，服务端会重新按当前仍有效的候选手牌校验，无法继续选择且剩余候选数量不大于需求时自动完成处理，避免丢弃/消耗流程卡在选择界面。
 - 开发者自定义里允许修改这两类效果的目标，但次数固定为 1。
 
-代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck`、`BattleScreen.HandSelectionOverlay` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。
+代码上由 `CardEffectKind.EXHAUST_HAND`、`CardEffectKind.DISCARD_HAND`、`BattleState.queueCard()`、`PendingHandSelectionSnapshot`、`SelectHandCardsPayload`、`BattleDeck`、`BattleScreen.HandSelectionOverlay`、`BattleScreen.HandSelectionConfirmation` 和开发者编辑器共同实现；卡牌描述与翻译键也已补齐。`HandSelectionConfirmation` 只负责客户端确认后的本地等待、输入锁和快照回包协调，不改变服务端权威结算规则。
 
 ## 卡组与列表性能
 

@@ -123,6 +123,7 @@ public class BattleScreen extends NoBlurScreen {
     private boolean awaitingEndTurnSnapshot;
     private final Set<UUID> locallyUsedCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
+    private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
     private long cachedBattleDeckSnapshotVersion = -1L;
     private List<CardInstance> cachedBattleDeckCards = List.of();
 
@@ -139,76 +140,81 @@ public class BattleScreen extends NoBlurScreen {
             onClose();
             return;
         }
-        currentFrameTicks = animationFrameTicks();
-        if (syncedSnapshotVersion != ClientBattleState.snapshotVersion()) {
-            syncSnapshotAnimations(snapshot);
-            syncedSnapshotVersion = ClientBattleState.snapshotVersion();
-        }
-        if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerEndedTurn()) {
-            awaitingEndTurnSnapshot = false;
-        }
-        boolean pileModalActive = pileOverlay != null;
-        boolean handSelectionActive = snapshot.pendingHandSelection().active();
-        boolean modalInputBlocked = pileModalActive || handSelectionActive;
-        frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY);
-        if (pileModalActive || handSelectionActive) {
-            dragState = null;
-            rotatingCamera = false;
-            pendingTargetClickId = -1;
-            hoveredHandIndex = -1;
-            hoveredMonsterIntentIndex = -1;
-            hoveredMonsterIntentEntityId = -1;
-            monsterIntentPreview.clear();
-            ClientBattleState.setHoveredEntityId(-1);
-            renderModalBackground(graphics, snapshot, partialTick);
-            if (pileModalActive) {
-                renderPileOverlay(graphics, mouseX, mouseY);
-            } else {
-                renderHandSelectionOverlay(graphics, snapshot, mouseX, mouseY, partialTick);
+        try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
+            currentFrameTicks = animationFrameTicks();
+            if (syncedSnapshotVersion != ClientBattleState.snapshotVersion()) {
+                syncSnapshotAnimations(snapshot);
+                syncedSnapshotVersion = ClientBattleState.snapshotVersion();
             }
-            return;
+            if (snapshot.phase() != BattlePhase.PLAYER_TURN || snapshot.localPlayerEndedTurn()) {
+                awaitingEndTurnSnapshot = false;
+            }
+            boolean pileModalActive = pileOverlay != null;
+            boolean handSelectionActive = snapshot.pendingHandSelection().active();
+            boolean handSelectionWaiting = handSelectionConfirmation.active();
+            boolean handSelectionModalActive = handSelectionActive && !handSelectionWaiting;
+            boolean modalInputBlocked = pileModalActive || handSelectionModalActive || handSelectionWaiting;
+            frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY);
+            if (pileModalActive || handSelectionModalActive) {
+                dragState = null;
+                rotatingCamera = false;
+                pendingTargetClickId = -1;
+                hoveredHandIndex = -1;
+                hoveredMonsterIntentIndex = -1;
+                hoveredMonsterIntentEntityId = -1;
+                monsterIntentPreview.clear();
+                ClientBattleState.setHoveredEntityId(-1);
+                renderModalBackground(graphics, snapshot, partialTick);
+                if (pileModalActive) {
+                    renderPileOverlay(graphics, mouseX, mouseY);
+                } else {
+                    renderHandSelectionOverlay(graphics, snapshot, mouseX, mouseY, partialTick);
+                }
+                return;
+            }
+            int hoveredTarget = interactiveTargetUnderMouse(mouseX, mouseY, snapshot);
+            CardInstance draggedCard = draggedCard(snapshot);
+            List<Integer> draggedTargets = highlightedTargetsForDraggedCard(draggedCard, snapshot, mouseX, mouseY);
+            if (!draggedTargets.isEmpty()) {
+                ClientBattleState.setHoveredEntityIds(draggedTargets);
+                hoveredTarget = draggedTargets.get(0);
+            } else if (modalInputBlocked) {
+                hoveredTarget = -1;
+                ClientBattleState.setHoveredEntityId(-1);
+            } else if (hoveredTarget == -1 && monsterIntentCardAt(mouseX, mouseY, snapshot)) {
+                hoveredTarget = currentIntentEntityId(snapshot);
+                ClientBattleState.setHoveredEntityId(hoveredTarget);
+            } else {
+                ClientBattleState.setHoveredEntityId(hoveredTarget);
+            }
+            renderBattleBase(graphics, snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY, partialTick, handSelectionWaiting);
         }
-        int hoveredTarget = interactiveTargetUnderMouse(mouseX, mouseY, snapshot);
-        CardInstance draggedCard = draggedCard(snapshot);
-        List<Integer> draggedTargets = highlightedTargetsForDraggedCard(draggedCard, snapshot, mouseX, mouseY);
-        if (!draggedTargets.isEmpty()) {
-            ClientBattleState.setHoveredEntityIds(draggedTargets);
-            hoveredTarget = draggedTargets.get(0);
-        } else if (handSelectionActive) {
-            hoveredTarget = -1;
-            ClientBattleState.setHoveredEntityId(-1);
-        } else if (hoveredTarget == -1 && monsterIntentCardAt(mouseX, mouseY, snapshot)) {
-            hoveredTarget = currentIntentEntityId(snapshot);
-            ClientBattleState.setHoveredEntityId(hoveredTarget);
-        } else {
-            ClientBattleState.setHoveredEntityId(hoveredTarget);
-        }
-        renderBattleBase(graphics, snapshot, mouseX, mouseY, partialTick, false);
     }
 
     private void renderBattleBase(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean modalBackground) {
-        if (modalBackground) {
-            hoveredMonsterIntentIndex = -1;
-            hoveredMonsterIntentEntityId = -1;
-            monsterIntentPreview.clear();
-            return;
+        boolean hideBaseForLocalHandSelection = modalBackground && handSelectionConfirmation.active();
+        if (!hideBaseForLocalHandSelection) {
+            renderEntries(graphics, snapshot, mouseX, mouseY);
         }
-        renderEntries(graphics, snapshot, mouseX, mouseY);
         if (!modalBackground && shouldRenderMonsterIntent(snapshot, mouseX, mouseY)) {
             renderMonsterIntent(graphics, snapshot, mouseX, mouseY);
         } else {
             hoveredMonsterIntentIndex = -1;
             monsterIntentPreview.clear();
         }
-        renderBottomBar(graphics, snapshot, mouseX, mouseY, partialTick, !snapshot.pendingHandSelection().active());
+        renderBottomBar(graphics, snapshot, mouseX, mouseY, partialTick, !snapshot.pendingHandSelection().active() || handSelectionConfirmation.active());
         renderFlyingCards(graphics, snapshot, partialTick, modalBackground);
-        renderDraggedCard(graphics, snapshot, mouseX, mouseY, partialTick);
-        renderMonsterPlayedCard(graphics, snapshot, modalBackground);
+        if (!hideBaseForLocalHandSelection) {
+            renderDraggedCard(graphics, snapshot, mouseX, mouseY, partialTick);
+            renderMonsterPlayedCard(graphics, snapshot, modalBackground);
+        }
         renderTurnBanner(graphics, partialTick);
         MoonSpireBattleLayoutEditor.render(graphics, font, width, height, mouseX, mouseY);
         renderWidgets(graphics, mouseX, mouseY, partialTick);
-        renderExhaustTooltip(graphics, snapshot, mouseX, mouseY);
-        renderHudTooltip(graphics, snapshot, mouseX, mouseY);
+        if (!hideBaseForLocalHandSelection) {
+            renderExhaustTooltip(graphics, snapshot, mouseX, mouseY);
+            renderHudTooltip(graphics, snapshot, mouseX, mouseY);
+        }
     }
 
     private void renderModalBackground(GuiGraphics graphics, BattleSnapshot snapshot, float partialTick) {
@@ -228,11 +234,30 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
+    private boolean handSelectionInputBlocked(BattleSnapshot snapshot) {
+        return handSelectionConfirmation.active() || snapshot.pendingHandSelection().active();
+    }
+
+    private void clearBaseInteractions() {
+        dragState = null;
+        rotatingCamera = false;
+        pendingTargetClickId = -1;
+        hoveredHandIndex = -1;
+        hoveredMonsterIntentIndex = -1;
+        hoveredMonsterIntentEntityId = -1;
+        monsterIntentPreview.clear();
+        ClientBattleState.setHoveredEntityId(-1);
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         if (!snapshot.active()) {
             return false;
+        }
+        if (handSelectionConfirmation.active()) {
+            clearBaseInteractions();
+            return true;
         }
         if (snapshot.pendingHandSelection().active()) {
             return clickHandSelectionOverlay(mouseX, mouseY, button, snapshot);
@@ -300,10 +325,8 @@ public class BattleScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (ClientBattleState.snapshot().pendingHandSelection().active()) {
-            dragState = null;
-            rotatingCamera = false;
-            pendingTargetClickId = -1;
+        if (handSelectionInputBlocked(ClientBattleState.snapshot())) {
+            clearBaseInteractions();
             return true;
         }
         if (pileOverlay != null) {
@@ -335,10 +358,8 @@ public class BattleScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (ClientBattleState.snapshot().pendingHandSelection().active()) {
-            dragState = null;
-            rotatingCamera = false;
-            pendingTargetClickId = -1;
+        if (handSelectionInputBlocked(ClientBattleState.snapshot())) {
+            clearBaseInteractions();
             return true;
         }
         if (pileOverlay != null) {
@@ -365,7 +386,7 @@ public class BattleScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (ClientBattleState.snapshot().pendingHandSelection().active()) {
+        if (handSelectionInputBlocked(ClientBattleState.snapshot())) {
             return true;
         }
         if (pileOverlay != null && scrollY != 0.0D) {
@@ -391,7 +412,7 @@ public class BattleScreen extends NoBlurScreen {
         if (ClientEvents.UI_DEBUG.matches(keyCode, scanCode)) {
             return ClientEvents.handleUiDebugKey(Minecraft.getInstance());
         }
-        if (ClientBattleState.snapshot().pendingHandSelection().active()) {
+        if (handSelectionInputBlocked(ClientBattleState.snapshot())) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 Minecraft.getInstance().setScreen(new PauseScreen(true));
                 return true;
@@ -1382,7 +1403,9 @@ public class BattleScreen extends NoBlurScreen {
         if (confirm.contains(mouseX, mouseY)) {
             if (handSelectionOverlay.ready(selection)) {
                 handSelectionOverlay.confirm();
-                for (UUID cardId : handSelectionOverlay.selectedIds()) {
+                List<UUID> selectedIds = handSelectionOverlay.selectedIds();
+                handSelectionConfirmation = HandSelectionConfirmation.of(selection, selectedIds);
+                for (UUID cardId : selectedIds) {
                     CardInstance card = cardById(snapshot.hand(), cardId);
                     HandCardAnimation animation = handAnimations.get(cardId);
                     if (card != null && animation != null) {
@@ -1393,7 +1416,8 @@ public class BattleScreen extends NoBlurScreen {
                         }
                     }
                 }
-                PacketDistributor.sendToServer(new SelectHandCardsPayload(handSelectionOverlay.selectedIds()));
+                handSelectionOverlay.clearConfirmed();
+                PacketDistributor.sendToServer(new SelectHandCardsPayload(selectedIds));
             }
             return true;
         }
@@ -1477,6 +1501,7 @@ public class BattleScreen extends NoBlurScreen {
             awaitingUseCardSnapshot = false;
             locallyUsedCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
+            handSelectionConfirmation = HandSelectionConfirmation.empty();
             cachedBattleDeckSnapshotVersion = -1L;
             cachedBattleDeckCards = List.of();
             recordPerf(PerfBucket.SNAPSHOT_SYNC, start);
@@ -1488,6 +1513,7 @@ public class BattleScreen extends NoBlurScreen {
         if (!snapshot.pendingHandSelection().active()) {
             handSelectionOverlay.clearIfInactive();
         }
+        reconcileHandSelectionConfirmation(snapshot);
         HandLayout layout = handLayout(snapshot);
         boolean firstActiveSnapshot = !previousSnapshot.active();
         Set<UUID> currentIds = currentHandIds(snapshot.hand());
@@ -1547,6 +1573,28 @@ public class BattleScreen extends NoBlurScreen {
         handAnimations.keySet().removeIf(id -> !currentIds.contains(id));
         previousSnapshot = snapshot;
         recordPerf(PerfBucket.SNAPSHOT_SYNC, start);
+    }
+
+    private void reconcileHandSelectionConfirmation(BattleSnapshot snapshot) {
+        if (!handSelectionConfirmation.active()) {
+            return;
+        }
+        PendingHandSelectionSnapshot selection = snapshot.pendingHandSelection();
+        if (!selection.active()) {
+            handSelectionConfirmation = HandSelectionConfirmation.empty();
+            handSelectionOverlay.clearIfInactive();
+            return;
+        }
+        if (!handSelectionConfirmation.matches(selection)) {
+            handSelectionConfirmation = HandSelectionConfirmation.empty();
+            handSelectionOverlay.sync(selection, snapshot);
+            return;
+        }
+        if (handSelectionConfirmation.matches(selection)) {
+            return;
+        }
+        handSelectionConfirmation = HandSelectionConfirmation.empty();
+        handSelectionOverlay.sync(selection, snapshot);
     }
 
     private void syncHandAnimationTargets(BattleSnapshot snapshot, HandLayout layout, List<CardInstance> visibleCards, int hoveredIndex) {
@@ -2476,7 +2524,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private boolean cardActionsLocked(BattleSnapshot snapshot) {
-        return snapshot.resolvingEffects() || snapshot.pendingHandSelection().active() || awaitingUseCardSnapshot || awaitingEndTurnSnapshot || snapshot.localPlayerEndedTurn();
+        return snapshot.resolvingEffects() || snapshot.pendingHandSelection().active() || handSelectionConfirmation.active() || awaitingUseCardSnapshot || awaitingEndTurnSnapshot || snapshot.localPlayerEndedTurn();
     }
 
     private CardInstance draggedCard(BattleSnapshot snapshot) {
@@ -2656,6 +2704,7 @@ public class BattleScreen extends NoBlurScreen {
         if (snapshot.pendingHandSelection().active()) {
             hiddenIds.addAll(handSelectionOverlay.selectedIds());
         }
+        hiddenIds.addAll(handSelectionConfirmation.selectedIds());
         for (CardInstance card : snapshot.hand()) {
             if (!hiddenIds.contains(card.id())) {
                 visibleCards.add(card);
@@ -2827,6 +2876,19 @@ public class BattleScreen extends NoBlurScreen {
             confirming = false;
         }
 
+        private void clearConfirmed() {
+            selectedIds.clear();
+            confirming = false;
+        }
+
+        private void resetForRetry(PendingHandSelectionSnapshot selection, BattleSnapshot snapshot) {
+            action = selection.action();
+            candidates = List.copyOf(selection.candidateCardIds());
+            selectedIds.clear();
+            confirming = false;
+            selectedIds.removeIf(id -> !candidates.contains(id) || snapshot.hand().stream().noneMatch(card -> card.id().equals(id)));
+        }
+
         private void toggle(UUID cardId, int requiredCount) {
             if (confirming) {
                 return;
@@ -2866,6 +2928,21 @@ public class BattleScreen extends NoBlurScreen {
         private boolean confirming() {
             return confirming;
         }
+    }
+
+    private record HandSelectionConfirmation(boolean active, PendingHandSelectionSnapshot.Action action, List<UUID> candidates, List<UUID> selectedIds) {
+        private static HandSelectionConfirmation empty() {
+            return new HandSelectionConfirmation(false, PendingHandSelectionSnapshot.Action.NONE, List.of(), List.of());
+        }
+
+        private static HandSelectionConfirmation of(PendingHandSelectionSnapshot selection, List<UUID> selectedIds) {
+            return new HandSelectionConfirmation(true, selection.action(), List.copyOf(selection.candidateCardIds()), List.copyOf(selectedIds));
+        }
+
+        private boolean matches(PendingHandSelectionSnapshot selection) {
+            return active && selection.active() && action == selection.action() && candidates.equals(selection.candidateCardIds());
+        }
+
     }
 
     private record HandLayout(List<HandCardBounds> cards) {
