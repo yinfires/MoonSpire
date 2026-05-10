@@ -25,6 +25,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public final class ClientBattleState {
@@ -43,6 +44,19 @@ public final class ClientBattleState {
     private static float cameraYaw = 35.0F;
     private static float cameraPitch = 24.0F;
     private static float cameraDistance = 9.0F;
+    private static final double CAMERA_CENTER_CLEARANCE = 0.32D;
+    private static final double[] CAMERA_CENTER_VERTICAL_OFFSETS = {0.0D, 0.5D, 1.0D, 1.5D, 2.0D, -0.5D};
+    private static final double[] CAMERA_CENTER_HORIZONTAL_OFFSETS = {0.0D, 0.5D, 1.0D, 1.5D, 2.0D};
+    private static final int[][] CAMERA_CENTER_DIRECTIONS = {
+            {1, 0},
+            {-1, 0},
+            {0, 1},
+            {0, -1},
+            {1, 1},
+            {1, -1},
+            {-1, 1},
+            {-1, -1}
+    };
     private static final List<DamageNumber> damageNumbers = new ArrayList<>();
     private static final List<BlockGainAnimation> blockGainAnimations = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
@@ -237,7 +251,8 @@ public final class ClientBattleState {
         var monsterEntity = minecraft.level.getEntity(snapshot.monster().entityId());
         if (playerEntity != null && monsterEntity != null) {
             if (lockedCameraCenter == null) {
-                lockedCameraCenter = playerEntity.getBoundingBox().getCenter().add(monsterEntity.getBoundingBox().getCenter()).scale(0.5D);
+                Vec3 midpoint = playerEntity.getBoundingBox().getCenter().add(monsterEntity.getBoundingBox().getCenter()).scale(0.5D);
+                lockedCameraCenter = resolveCameraCenter(minecraft.level, midpoint);
             }
             return lockedCameraCenter;
         }
@@ -245,6 +260,38 @@ public final class ClientBattleState {
             return minecraft.player.position();
         }
         return Vec3.ZERO;
+    }
+
+    private static Vec3 resolveCameraCenter(Level level, Vec3 midpoint) {
+        for (double verticalOffset : CAMERA_CENTER_VERTICAL_OFFSETS) {
+            for (double radius : CAMERA_CENTER_HORIZONTAL_OFFSETS) {
+                if (radius == 0.0D) {
+                    Vec3 candidate = midpoint.add(0.0D, verticalOffset, 0.0D);
+                    if (clearCameraCenter(level, candidate)) {
+                        return candidate;
+                    }
+                    continue;
+                }
+                for (int[] direction : CAMERA_CENTER_DIRECTIONS) {
+                    Vec3 candidate = midpoint.add(direction[0] * radius, verticalOffset, direction[1] * radius);
+                    if (clearCameraCenter(level, candidate)) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return midpoint;
+    }
+
+    private static boolean clearCameraCenter(Level level, Vec3 center) {
+        AABB clearance = new AABB(
+                center.x - CAMERA_CENTER_CLEARANCE,
+                center.y - CAMERA_CENTER_CLEARANCE,
+                center.z - CAMERA_CENTER_CLEARANCE,
+                center.x + CAMERA_CENTER_CLEARANCE,
+                center.y + CAMERA_CENTER_CLEARANCE,
+                center.z + CAMERA_CENTER_CLEARANCE);
+        return level.noCollision(clearance);
     }
 
     public static List<DamageNumber> damageNumbers() {
