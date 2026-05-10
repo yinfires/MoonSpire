@@ -46,6 +46,7 @@ final class CardGridPanel {
     private int cachedLastVisibleIndex = -1;
     private int cachedCardSignature;
     private int currentCardSignature;
+    private int displayCountOverride = -1;
     private final Set<String> warmedCardKeys = new HashSet<>();
 
     CardGridPanel(List<CardInstance> cards, Component title) {
@@ -65,6 +66,10 @@ final class CardGridPanel {
         if (previewAnimation.cardId() != null && this.cards.stream().noneMatch(card -> card.id().equals(previewAnimation.cardId()))) {
             previewAnimation.clear();
         }
+    }
+
+    void setDisplayCountOverride(int displayCountOverride) {
+        this.displayCountOverride = displayCountOverride;
     }
 
     private boolean sameCards(List<CardInstance> nextCards) {
@@ -274,7 +279,8 @@ final class CardGridPanel {
         graphics.pose().translate(0.0F, 0.0F, 240.0F);
         graphics.fillGradient(0, 0, layout.screenW(), layout.viewY(), MoonSpireUiTextures.CHEST_OVERLAY_TOP, MoonSpireUiTextures.CHEST_OVERLAY_TOP);
         graphics.drawCenteredString(font, title, layout.screenW() / 2, 18, 0xFFFFEAC2);
-        graphics.drawCenteredString(font, Integer.toString(cards.size()), layout.screenW() / 2, 31, 0xFFE3C48C);
+        int displayCount = displayCountOverride >= 0 ? displayCountOverride : cards.size();
+        graphics.drawCenteredString(font, Integer.toString(displayCount), layout.screenW() / 2, 31, 0xFFE3C48C);
         graphics.pose().popPose();
     }
 

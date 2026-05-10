@@ -1,8 +1,10 @@
 package com.yinfires.moonspire.client;
 
 import com.yinfires.moonspire.battle.BattlePhase;
+import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
 import com.yinfires.moonspire.battle.BattleVisualEvent;
+import com.yinfires.moonspire.battle.CombatantState;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireBattleLayoutEditor;
@@ -65,6 +67,7 @@ public final class ClientBattleState {
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
     private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
+    private static final Map<PileContentsKey, PileContents> pileContents = new HashMap<>();
     private static CardInstance monsterPlayedCard;
     private static float monsterPlayedCardTicks;
     private static long monsterPlayedCardEventSequence;
@@ -112,6 +115,7 @@ public final class ClientBattleState {
             pendingVisualEvents.clear();
             clearVisualStates();
             clearFakeDeathStarts();
+            pileContents.clear();
             monsterPlayedCard = null;
             monsterPlayedCardTicks = 0.0F;
             monsterPlayedCardEventSequence = 0L;
@@ -131,6 +135,22 @@ public final class ClientBattleState {
 
     public static void clear() {
         setSnapshot(BattleSnapshot.inactive(serverBattleId, serverSnapshotSequence + 1L));
+    }
+
+    public static void setPileContents(UUID battleId, BattlePileSource source, long deckVersion, int expectedCount, List<CardInstance> cards) {
+        if (battleId == null || source == null || cards == null || !battleId.equals(serverBattleId)) {
+            return;
+        }
+        pileContents.put(new PileContentsKey(battleId, source, deckVersion), new PileContents(expectedCount, cards));
+    }
+
+    public static List<CardInstance> pileContents(UUID battleId, BattlePileSource source, long deckVersion) {
+        PileContents contents = pileContents.get(new PileContentsKey(battleId, source, deckVersion));
+        return contents == null ? List.of() : contents.cards();
+    }
+
+    public static boolean hasPileContents(UUID battleId, BattlePileSource source, long deckVersion) {
+        return pileContents.containsKey(new PileContentsKey(battleId, source, deckVersion));
     }
 
     public static boolean active() {
@@ -399,7 +419,7 @@ public final class ClientBattleState {
         if (start == null) {
             return 0;
         }
-        return Math.min(20, (int) ((System.nanoTime() - start) / 50_000_000L));
+        return Math.min(CombatantState.FAKE_DEATH_ANIMATION_TICKS, (int) ((System.nanoTime() - start) / 50_000_000L));
     }
 
     public static void tickDamageNumbers() {
@@ -700,6 +720,15 @@ public final class ClientBattleState {
 
         private boolean done(long nowNanos) {
             return nowNanos - startNanos > TOTAL_NANOS;
+        }
+    }
+
+    private record PileContentsKey(UUID battleId, BattlePileSource source, long deckVersion) {
+    }
+
+    private record PileContents(int expectedCount, List<CardInstance> cards) {
+        private PileContents {
+            cards = List.copyOf(cards == null ? List.of() : cards);
         }
     }
 

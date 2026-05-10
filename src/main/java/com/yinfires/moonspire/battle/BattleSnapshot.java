@@ -22,10 +22,8 @@ public record BattleSnapshot(
         int drawPile,
         int discardPile,
         int exhaustPile,
+        long localDeckVersion,
         List<CardInstance> hand,
-        List<CardInstance> drawPileCards,
-        List<CardInstance> discardPileCards,
-        List<CardInstance> exhaustPileCards,
         PendingHandSelectionSnapshot pendingHandSelection,
         List<CardInstance> monsterHand,
         CardInstance monsterIntent,
@@ -43,9 +41,6 @@ public record BattleSnapshot(
         players = List.copyOf(players == null ? List.of() : players);
         enemies = List.copyOf(enemies == null ? List.of() : enemies);
         hand = List.copyOf(hand == null ? List.of() : hand);
-        drawPileCards = List.copyOf(drawPileCards == null ? List.of() : drawPileCards);
-        discardPileCards = List.copyOf(discardPileCards == null ? List.of() : discardPileCards);
-        exhaustPileCards = List.copyOf(exhaustPileCards == null ? List.of() : exhaustPileCards);
         pendingHandSelection = pendingHandSelection == null ? PendingHandSelectionSnapshot.NONE : pendingHandSelection;
         monsterHand = List.copyOf(monsterHand == null ? List.of() : monsterHand);
         monsterIntentCards = List.copyOf(monsterIntentCards == null ? List.of() : monsterIntentCards);
@@ -74,9 +69,7 @@ public record BattleSnapshot(
                 0,
                 0,
                 0,
-                List.of(),
-                List.of(),
-                List.of(),
+                0L,
                 List.of(),
                 PendingHandSelectionSnapshot.NONE,
                 List.of(),
@@ -200,10 +193,8 @@ public record BattleSnapshot(
         buf.writeVarInt(snapshot.drawPile);
         buf.writeVarInt(snapshot.discardPile);
         buf.writeVarInt(snapshot.exhaustPile);
+        buf.writeVarLong(snapshot.localDeckVersion);
         writeCards(buf, snapshot.hand);
-        writeCards(buf, snapshot.drawPileCards);
-        writeCards(buf, snapshot.discardPileCards);
-        writeCards(buf, snapshot.exhaustPileCards);
         PendingHandSelectionSnapshot.STREAM_CODEC.encode(buf, snapshot.pendingHandSelection);
         writeCards(buf, snapshot.monsterHand);
         writeOptionalCard(buf, snapshot.monsterIntent);
@@ -237,10 +228,8 @@ public record BattleSnapshot(
         int drawPile = buf.readVarInt();
         int discardPile = buf.readVarInt();
         int exhaustPile = buf.readVarInt();
+        long localDeckVersion = buf.readVarLong();
         List<CardInstance> hand = readCards(buf);
-        List<CardInstance> drawPileCards = readCards(buf);
-        List<CardInstance> discardPileCards = readCards(buf);
-        List<CardInstance> exhaustPileCards = readCards(buf);
         PendingHandSelectionSnapshot pendingHandSelection = PendingHandSelectionSnapshot.STREAM_CODEC.decode(buf);
         List<CardInstance> monsterHand = readCards(buf);
         CardInstance monsterIntent = readOptionalCard(buf);
@@ -260,7 +249,7 @@ public record BattleSnapshot(
         for (int i = 0; i < visualCount; i++) {
             visualEvents.add(BattleVisualEvent.STREAM_CODEC.decode(buf));
         }
-        return new BattleSnapshot(battleId, sequence, active, phase, resolvingEffects, round, selectedTargetId, localPlayerEntityId, localPlayerEndedTurn, players, enemies, drawPile, discardPile, exhaustPile, hand, drawPileCards, discardPileCards, exhaustPileCards, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, enemyIntents, entityHands, visualEvents);
+        return new BattleSnapshot(battleId, sequence, active, phase, resolvingEffects, round, selectedTargetId, localPlayerEntityId, localPlayerEndedTurn, players, enemies, drawPile, discardPile, exhaustPile, localDeckVersion, hand, pendingHandSelection, monsterHand, monsterIntent, monsterIntentCards, enemyIntents, entityHands, visualEvents);
     }
 
     private static void writeCombatants(RegistryFriendlyByteBuf buf, List<BattleCombatantSnapshot> combatants) {

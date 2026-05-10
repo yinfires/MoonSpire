@@ -16,10 +16,11 @@ public class BattleDeck {
     private final List<CardInstance> exhaustPile = new ArrayList<>();
     private final List<CardInstance> hand = new ArrayList<>();
     private boolean firstTurn = true;
+    private long version;
 
     public BattleDeck(List<CardInstance> cards, RandomSource random) {
         for (CardInstance card : cards) {
-            drawPile.add(card.copyForBattle());
+            drawPile.add(card);
         }
         shuffle(drawPile, random);
     }
@@ -40,6 +41,10 @@ public class BattleDeck {
         return hand;
     }
 
+    public long version() {
+        return version;
+    }
+
     public void startTurn(RandomSource random) {
         int innateInHand = firstTurn ? moveInnateCardsToOpeningHand() : 0;
         firstTurn = false;
@@ -51,9 +56,13 @@ public class BattleDeck {
     }
 
     public void discardHand(boolean handleEndOfTurnKeywords) {
+        if (hand.isEmpty()) {
+            return;
+        }
         if (!handleEndOfTurnKeywords) {
             discardPile.addAll(hand);
             hand.clear();
+            markChanged();
             return;
         }
         List<CardInstance> retained = new ArrayList<>();
@@ -68,6 +77,7 @@ public class BattleDeck {
         }
         hand.clear();
         hand.addAll(retained);
+        markChanged();
     }
 
     public void draw(int count, RandomSource random) {
@@ -86,6 +96,7 @@ public class BattleDeck {
             } else {
                 hand.add(drawn);
             }
+            markChanged();
         }
     }
 
@@ -101,24 +112,28 @@ public class BattleDeck {
             return null;
         }
         CardInstance card = hand.remove(index);
+        markChanged();
         return card;
     }
 
     public void replaceHandCard(int index, CardInstance card) {
         if (card != null && index >= 0 && index < hand.size()) {
             hand.set(index, card);
+            markChanged();
         }
     }
 
     public void discard(CardInstance card) {
         if (card != null) {
             discardPile.add(card);
+            markChanged();
         }
     }
 
     public void exhaust(CardInstance card) {
         if (card != null) {
             exhaustPile.add(card);
+            markChanged();
         }
     }
 
@@ -133,6 +148,9 @@ public class BattleDeck {
                 removed.add(0, hand.remove(i));
             }
         }
+        if (!removed.isEmpty()) {
+            markChanged();
+        }
         return removed;
     }
 
@@ -142,18 +160,23 @@ public class BattleDeck {
         for (int i = 0; i < capped; i++) {
             removed.add(hand.remove(0));
         }
+        if (!removed.isEmpty()) {
+            markChanged();
+        }
         return removed;
     }
 
     public void discardAll(List<CardInstance> cards) {
-        if (cards != null) {
+        if (cards != null && !cards.isEmpty()) {
             discardPile.addAll(cards);
+            markChanged();
         }
     }
 
     public void exhaustAll(List<CardInstance> cards) {
-        if (cards != null) {
+        if (cards != null && !cards.isEmpty()) {
             exhaustPile.addAll(cards);
+            markChanged();
         }
     }
 
@@ -171,6 +194,7 @@ public class BattleDeck {
             } else {
                 discardPile.add(card);
             }
+            markChanged();
         }
         return movedToHand;
     }
@@ -211,5 +235,9 @@ public class BattleDeck {
 
     private static void shuffle(List<CardInstance> cards, RandomSource random) {
         Collections.shuffle(cards, new java.util.Random(random.nextLong()));
+    }
+
+    private void markChanged() {
+        version++;
     }
 }

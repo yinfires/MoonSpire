@@ -23,8 +23,10 @@ public final class ModNetworking {
         registrar.playToServer(RequestDeveloperCenterPayload.TYPE, RequestDeveloperCenterPayload.STREAM_CODEC, RequestDeveloperCenterPayload::handle);
         registrar.playToServer(SaveDeveloperDataPayload.TYPE, SaveDeveloperDataPayload.STREAM_CODEC, SaveDeveloperDataPayload::handle);
         registrar.playToServer(GiveDeveloperCardPayload.TYPE, GiveDeveloperCardPayload.STREAM_CODEC, GiveDeveloperCardPayload::handle);
+        registrar.playToServer(RequestBattlePilePayload.TYPE, RequestBattlePilePayload.STREAM_CODEC, RequestBattlePilePayload::handle);
         registrar.playToClient(PlayerCardDataPayload.TYPE, PlayerCardDataPayload.STREAM_CODEC, PlayerCardDataPayload::handle);
         registrar.playToClient(BattleSnapshotPayload.TYPE, BattleSnapshotPayload.STREAM_CODEC, BattleSnapshotPayload::handle);
+        registrar.playToClient(BattlePileContentsPayload.TYPE, BattlePileContentsPayload.STREAM_CODEC, BattlePileContentsPayload::handle);
         registrar.playToClient(OpenCardForgeScreenPayload.TYPE, OpenCardForgeScreenPayload.STREAM_CODEC, OpenCardForgeScreenPayload::handle);
         registrar.playToClient(DeveloperCenterPayload.TYPE, DeveloperCenterPayload.STREAM_CODEC, DeveloperCenterPayload::handle);
     }

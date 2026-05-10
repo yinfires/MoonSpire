@@ -357,10 +357,8 @@ public class BattleState {
                 local == null ? 0 : local.deck().drawPile().size(),
                 local == null ? 0 : local.deck().discardPile().size(),
                 local == null ? 0 : local.deck().exhaustPile().size(),
+                local == null ? 0L : local.deck().version(),
                 local == null ? List.of() : List.copyOf(local.deck().hand()),
-                local == null ? List.of() : List.copyOf(local.deck().drawPile()),
-                local == null ? List.of() : List.copyOf(local.deck().discardPile()),
-                local == null ? List.of() : List.copyOf(local.deck().exhaustPile()),
                 pendingHandSelectionSnapshotFor(local),
                 firstEnemy == null ? List.of() : List.copyOf(firstEnemy.deck().hand()),
                 firstEnemy == null ? null : monsterIntent(firstEnemy),
@@ -372,6 +370,49 @@ public class BattleState {
 
     public long nextSnapshotSequence() {
         return ++snapshotSequence;
+    }
+
+    public boolean matchesId(UUID battleId) {
+        return id.equals(battleId);
+    }
+
+    public List<CardInstance> pileCardsFor(ServerPlayer viewer, BattlePileSource source) {
+        CombatantState local = byPlayerId.get(viewer.getUUID());
+        if (local == null || source == null) {
+            return List.of();
+        }
+        return switch (source) {
+            case BATTLE_DECK -> battleDeckCards(local);
+            case DRAW -> List.copyOf(local.deck().drawPile());
+            case DISCARD -> List.copyOf(local.deck().discardPile());
+            case EXHAUST -> List.copyOf(local.deck().exhaustPile());
+        };
+    }
+
+    public int pileCountFor(ServerPlayer viewer, BattlePileSource source) {
+        CombatantState local = byPlayerId.get(viewer.getUUID());
+        if (local == null || source == null) {
+            return 0;
+        }
+        return switch (source) {
+            case BATTLE_DECK -> local.deck().hand().size() + local.deck().drawPile().size() + local.deck().discardPile().size();
+            case DRAW -> local.deck().drawPile().size();
+            case DISCARD -> local.deck().discardPile().size();
+            case EXHAUST -> local.deck().exhaustPile().size();
+        };
+    }
+
+    public long deckVersionFor(ServerPlayer viewer) {
+        CombatantState local = byPlayerId.get(viewer.getUUID());
+        return local == null ? 0L : local.deck().version();
+    }
+
+    private List<CardInstance> battleDeckCards(CombatantState local) {
+        List<CardInstance> cards = new ArrayList<>(local.deck().hand().size() + local.deck().drawPile().size() + local.deck().discardPile().size());
+        cards.addAll(local.deck().hand());
+        cards.addAll(local.deck().drawPile());
+        cards.addAll(local.deck().discardPile());
+        return List.copyOf(cards);
     }
 
     public boolean shouldSyncNow() {

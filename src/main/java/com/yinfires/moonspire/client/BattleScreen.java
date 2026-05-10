@@ -7,6 +7,7 @@ import com.yinfires.moonspire.battle.BattleEffectSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectType;
 import com.yinfires.moonspire.battle.BattleEnemyIntentSnapshot;
 import com.yinfires.moonspire.battle.BattlePhase;
+import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
 import com.yinfires.moonspire.battle.PendingHandSelectionSnapshot;
 import com.yinfires.moonspire.card.CardEffect;
@@ -20,6 +21,7 @@ import com.yinfires.moonspire.client.ui.MoonSpireUiRect;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.network.CancelBattlePayload;
 import com.yinfires.moonspire.network.EndTurnPayload;
+import com.yinfires.moonspire.network.RequestBattlePilePayload;
 import com.yinfires.moonspire.network.SelectBattleTargetPayload;
 import com.yinfires.moonspire.network.SelectHandCardsPayload;
 import com.yinfires.moonspire.network.UseCardPayload;
@@ -125,8 +127,8 @@ public class BattleScreen extends NoBlurScreen {
     private final Set<UUID> locallyUsedCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
     private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
-    private long cachedBattleDeckSnapshotVersion = -1L;
-    private List<CardInstance> cachedBattleDeckCards = List.of();
+    private PileRequestKey requestedPileKey;
+    private PileRequestKey displayedPileKey;
 
     public BattleScreen() {
         super(Component.translatable("screen.moonspire.battle"));
@@ -1426,6 +1428,9 @@ public class BattleScreen extends NoBlurScreen {
         while (iterator.hasNext()) {
             FlyingCardAnimation animation = iterator.next();
             animation.advance(currentFrameTicks);
+            if (animation.played() && !animation.released() && !snapshot.resolvingEffects() && !awaitingUseCardSnapshot && animation.readyToRelease()) {
+                animation.release();
+            }
             if (animation.done()) {
                 iterator.remove();
                 continue;
@@ -1745,8 +1750,8 @@ public class BattleScreen extends NoBlurScreen {
             locallyUsedCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
             handSelectionConfirmation = HandSelectionConfirmation.empty();
-            cachedBattleDeckSnapshotVersion = -1L;
-            cachedBattleDeckCards = List.of();
+            requestedPileKey = null;
+            displayedPileKey = null;
             recordPerf(PerfBucket.SNAPSHOT_SYNC, start);
             return;
         }
@@ -1762,16 +1767,12 @@ public class BattleScreen extends NoBlurScreen {
         Set<UUID> currentIds = currentHandIds(snapshot.hand());
         locallyUsedCardIds.removeIf(id -> !keepLocalUsedCardsHidden || !currentIds.contains(id));
         Set<UUID> representedFlyingIds = flyingCardIds();
-        Set<UUID> discardIds = currentHandIds(snapshot.discardPileCards());
-        Set<UUID> exhaustedIds = currentHandIds(snapshot.exhaustPileCards());
         for (FlyingCardAnimation animation : flyingCards) {
             if (!animation.played() || animation.released()) {
                 continue;
             }
-            if (exhaustedIds.contains(animation.card().id())) {
-                animation.releaseExhaust();
-            } else if (discardIds.contains(animation.card().id())) {
-                animation.releaseToDiscard();
+            if (!keepLocalUsedCardsHidden) {
+                animation.release();
             }
         }
         if (firstActiveSnapshot) {
@@ -1780,7 +1781,7 @@ public class BattleScreen extends NoBlurScreen {
             showTurnBanner(snapshot.phase());
         }
         for (CardInstance oldCard : previousSnapshot.hand()) {
-            if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id()) && exhaustedIds.contains(oldCard.id())) {
+            if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id()) && oldCard.hasEffect(CardEffectKind.EXHAUST) && !expectedPlayedRemoval) {
                 HandCardAnimation from = handAnimations.get(oldCard.id());
                 float startX = from != null ? from.currentX() : drawPileCenterX();
                 float startY = from != null ? from.currentY() : drawPileCenterY();
@@ -1795,8 +1796,11 @@ public class BattleScreen extends NoBlurScreen {
                 float startX = from != null ? from.currentX() : drawPileCenterX();
                 float startY = from != null ? from.currentY() : drawPileCenterY();
                 if (expectedPlayedRemoval) {
-                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), false);
-                    if (discardIds.contains(animation.card().id())) {
+                    boolean exhausts = oldCard.hasEffect(CardEffectKind.EXHAUST);
+                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), exhausts);
+                    if (exhausts) {
+                        animation.releaseExhaust();
+                    } else {
                         animation.releaseToDiscard();
                     }
                     flyingCards.add(animation);
@@ -2355,15 +2359,15 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean clickPile(double mouseX, double mouseY, BattleSnapshot snapshot) {
         if (drawPileAt(mouseX, mouseY)) {
-            openPileOverlay(snapshot.drawPileCards(), Component.translatable("screen.moonspire.draw_pile"), PileOverlaySource.DRAW);
+            openPileOverlay(Component.translatable("screen.moonspire.draw_pile"), PileOverlaySource.DRAW, snapshot);
             return true;
         }
         if (discardPileAt(mouseX, mouseY)) {
-            openPileOverlay(snapshot.discardPileCards(), Component.translatable("screen.moonspire.discard_pile"), PileOverlaySource.DISCARD);
+            openPileOverlay(Component.translatable("screen.moonspire.discard_pile"), PileOverlaySource.DISCARD, snapshot);
             return true;
         }
         if (visibleExhaustPileAt(mouseX, mouseY, snapshot)) {
-            openPileOverlay(snapshot.exhaustPileCards(), Component.translatable("screen.moonspire.exhaust_pile"), PileOverlaySource.EXHAUST);
+            openPileOverlay(Component.translatable("screen.moonspire.exhaust_pile"), PileOverlaySource.EXHAUST, snapshot);
             return true;
         }
         return false;
@@ -2373,45 +2377,79 @@ public class BattleScreen extends NoBlurScreen {
         if (!snapshot.active() || snapshot.pendingHandSelection().active() || pileOverlay != null || MoonSpireBattleLayoutEditor.enabled()) {
             return;
         }
-        openPileOverlay(battleDeckCards(snapshot), Component.translatable("screen.moonspire.deck_view"), PileOverlaySource.BATTLE_DECK);
+        openPileOverlay(Component.translatable("screen.moonspire.deck_view"), PileOverlaySource.BATTLE_DECK, snapshot);
     }
 
     private void openPileOverlay(List<CardInstance> cards, Component title, PileOverlaySource source) {
         pileOverlay = new CardGridPanel(cards, title);
         pileOverlaySource = source;
+        requestedPileKey = null;
+        displayedPileKey = null;
+    }
+
+    private void openPileOverlay(Component title, PileOverlaySource source, BattleSnapshot snapshot) {
+        pileOverlay = new CardGridPanel(List.of(), title);
+        pileOverlaySource = source;
+        displayedPileKey = null;
+        pileOverlay.setDisplayCountOverride(expectedPileCount(snapshot, source));
+        requestPileContentsIfNeeded(snapshot);
     }
 
     private void closePileOverlay() {
         pileOverlay = null;
         pileOverlaySource = PileOverlaySource.NONE;
+        requestedPileKey = null;
+        displayedPileKey = null;
     }
 
     private void updatePileOverlayCards(BattleSnapshot snapshot) {
         if (pileOverlay == null) {
             return;
         }
-        switch (pileOverlaySource) {
-            case BATTLE_DECK -> pileOverlay.setCards(battleDeckCards(snapshot));
-            case DRAW -> pileOverlay.setCards(snapshot.drawPileCards());
-            case DISCARD -> pileOverlay.setCards(snapshot.discardPileCards());
-            case EXHAUST -> pileOverlay.setCards(snapshot.exhaustPileCards());
-            default -> {
+        if (!pileOverlaySource.remote()) {
+            return;
+        }
+        pileOverlay.setDisplayCountOverride(expectedPileCount(snapshot, pileOverlaySource));
+        requestPileContentsIfNeeded(snapshot);
+        BattlePileSource source = pileOverlaySource.remoteSource();
+        PileRequestKey key = new PileRequestKey(snapshot.battleId(), source, snapshot.localDeckVersion());
+        if (ClientBattleState.hasPileContents(snapshot.battleId(), source, snapshot.localDeckVersion())) {
+            if (key.equals(displayedPileKey)) {
+                return;
             }
+            pileOverlay.setCards(ClientBattleState.pileContents(snapshot.battleId(), source, snapshot.localDeckVersion()));
+            displayedPileKey = key;
+        } else if (displayedPileKey != null) {
+            pileOverlay.setCards(List.of());
+            displayedPileKey = null;
         }
     }
 
-    private List<CardInstance> battleDeckCards(BattleSnapshot snapshot) {
-        long snapshotVersion = ClientBattleState.snapshotVersion();
-        if (cachedBattleDeckSnapshotVersion == snapshotVersion) {
-            return cachedBattleDeckCards;
+    private void requestPileContentsIfNeeded(BattleSnapshot snapshot) {
+        if (pileOverlay == null || !pileOverlaySource.remote() || !snapshot.active()) {
+            return;
         }
-        List<CardInstance> cards = new ArrayList<>(snapshot.hand().size() + snapshot.drawPileCards().size() + snapshot.discardPileCards().size());
-        cards.addAll(snapshot.hand());
-        cards.addAll(snapshot.drawPileCards());
-        cards.addAll(snapshot.discardPileCards());
-        cachedBattleDeckCards = List.copyOf(cards);
-        cachedBattleDeckSnapshotVersion = snapshotVersion;
-        return cachedBattleDeckCards;
+        BattlePileSource source = pileOverlaySource.remoteSource();
+        long deckVersion = snapshot.localDeckVersion();
+        if (ClientBattleState.hasPileContents(snapshot.battleId(), source, deckVersion)) {
+            return;
+        }
+        PileRequestKey key = new PileRequestKey(snapshot.battleId(), source, deckVersion);
+        if (key.equals(requestedPileKey)) {
+            return;
+        }
+        requestedPileKey = key;
+        PacketDistributor.sendToServer(new RequestBattlePilePayload(snapshot.battleId(), source, deckVersion));
+    }
+
+    private int expectedPileCount(BattleSnapshot snapshot, PileOverlaySource source) {
+        return switch (source) {
+            case BATTLE_DECK -> snapshot.hand().size() + snapshot.drawPile() + snapshot.discardPile();
+            case DRAW -> snapshot.drawPile();
+            case DISCARD -> snapshot.discardPile();
+            case EXHAUST -> snapshot.exhaustPile();
+            default -> -1;
+        };
     }
 
     private boolean clickEndTurn(double mouseX, double mouseY, BattleSnapshot snapshot) {
@@ -3490,7 +3528,24 @@ public class BattleScreen extends NoBlurScreen {
         DRAW,
         DISCARD,
         EXHAUST,
-        ENTITY_HAND
+        ENTITY_HAND;
+
+        private boolean remote() {
+            return this == BATTLE_DECK || this == DRAW || this == DISCARD || this == EXHAUST;
+        }
+
+        private BattlePileSource remoteSource() {
+            return switch (this) {
+                case BATTLE_DECK -> BattlePileSource.BATTLE_DECK;
+                case DRAW -> BattlePileSource.DRAW;
+                case DISCARD -> BattlePileSource.DISCARD;
+                case EXHAUST -> BattlePileSource.EXHAUST;
+                default -> BattlePileSource.BATTLE_DECK;
+            };
+        }
+    }
+
+    private record PileRequestKey(UUID battleId, BattlePileSource source, long deckVersion) {
     }
 
     private static final class PileHoverAnimation {
@@ -3736,14 +3791,23 @@ public class BattleScreen extends NoBlurScreen {
         private void releaseToDiscard() {
             if (played && !fadeOut) {
                 released = true;
-                age = toCenterTicks + holdTicks;
             }
         }
 
         private void releaseExhaust() {
             if (played && fadeOut) {
                 released = true;
-                age = toCenterTicks + holdTicks;
+            }
+        }
+
+        private void release() {
+            if (!played) {
+                return;
+            }
+            if (fadeOut) {
+                releaseExhaust();
+            } else {
+                releaseToDiscard();
             }
         }
 
@@ -3817,6 +3881,10 @@ public class BattleScreen extends NoBlurScreen {
 
         private boolean showPlayableGlow() {
             return played && age <= toCenterTicks + holdTicks;
+        }
+
+        private boolean readyToRelease() {
+            return played && age >= toCenterTicks + holdTicks;
         }
 
         private int totalTicks() {

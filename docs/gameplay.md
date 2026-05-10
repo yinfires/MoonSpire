@@ -23,9 +23,9 @@
 - 玩法描述：玩家方回合中，所有存活参战玩家可以同时按自己的手牌、费用和目标出牌。玩家按下结束回合后只结束自己的回合，不能继续出牌；只有本地玩家已经结束或正在等待结束回合回包，且仍存在其它存活玩家尚未结束时，界面按钮才显示“等待其他玩家结束回合”。没有其它玩家、其它玩家都已死亡或都已结束时不显示等待文案，敌方回合也不显示等待文案。除本地玩家死亡和真正等待其它玩家外，只有战斗状态本身允许结束回合时才显示“结束第 X 回合”；打开卡组/牌堆遮罩、弃牌/消耗手牌选择界面，或本地玩家刚使用卡牌并等待权威快照/播放出牌动画时，输入会被锁住，但不改变底层“结束第 X 回合”文案和可用底图。敌方行动刚结算完但按钮仍因结算动画、手牌选择确认、结束回合回包、回合结束过渡或本地已结束状态而不可点击时，按钮继续显示“敌方回合”，直到战斗状态本身可结束回合后才显示“结束第 X 回合”；单纯残留的敌方出牌展示卡不再让结束回合按钮显示为敌方回合。所有存活玩家都结束后，才进入敌方回合。已死亡玩家不阻塞回合推进。单体敌方卡牌拖拽时优先使用鼠标当前指向的敌方目标，不再固定回退到第一只敌人。
   - 代码实现：`BattleState` 为每个玩家维护独立 `CombatantState`、手牌、费用、牌堆、目标选择和 `endedTurn`；`BattleCombatantSnapshot` 同步每个玩家的 `endedTurn`，`BattleManager.sync()` 为每名参战玩家发送带本地视角的 `BattleSnapshot`，并由 `BattleState.shouldSyncNow()` 在无视觉事件和无结算时降低同步频率；`BattleScreen.waitingForOtherPlayers()` 只在玩家方回合、本地已结束或正在等待结束回合回包、且 `hasOtherAliveUnendedPlayer()` 确认至少一名其它存活玩家尚未结束时显示等待文案；`BattleScreen.canEndTurn()` 负责真实输入锁，`endTurnButtonLabel()` 和 `endTurnVisualEnabled()` 负责底图/文案状态，允许牌堆遮罩、`snapshot.pendingHandSelection().active()`、手牌选择确认、`awaitingUseCardSnapshot` 和本地玩家出牌飞行动画期间保留玩家回合文案；`ClientBattleState.monsterPlayedCard()` 只影响展示层，不再锁定结束回合按钮；拖牌目标解析通过 `targetEntityUnderMouse()` 优先传入当前指向目标。
   - 变更记录：玩家回合从单玩家行动扩展为多人同步出牌，并新增多人结束回合等待状态；本次修正等待文案的显示条件，避免单人战斗或敌方回合短暂显示“等待其他玩家结束回合”，并修正敌方回合收尾、回合结束过渡或本地已结束等待权威快照时按钮不可用但文案提前显示“结束第 X 回合”的问题。
-- 玩法描述：战斗中的死亡都是假死亡。单位战斗生命降到 0 时会立即失去行动和目标资格，并等待死亡动画播放完成，但不会立刻触发真实死亡。玩家假死亡后不进入死亡界面，可以继续观战；结束回合按钮显示“你已死亡。”且不可用。整场战斗结束并等待所有假死亡动画完成后，才真正结算死亡。由玩家卡牌导致假死亡的怪物会按玩家击杀结算，能触发只有玩家击杀才有的掉落、统计和成就。
-  - 代码实现：`CombatantState` 保存 `fakeDead`、`fakeDeathTicks` 和 `creditedPlayerKill`；`BattleState.tick()` 在一方全灭后等待 `fakeDeathAnimationDone()`，`finish()` 再调用带玩家攻击来源的真实死亡路径。假死亡动画期间 `BattleState.freezeEntity()` 会清除残余速度、跳跃和导航，避免死亡姿态被击退或服务端校正反复打断。旧的 `maxHealth * 2` 高伤害收尾已移除，敌方真实死亡优先使用 `damageSources().playerAttack(killer)` 保留玩家击杀归因。
-  - 变更记录：新增高优先级假死亡、观战、延后真实死亡结算和玩家击杀归因规则。
+- 玩法描述：战斗中的死亡都是假死亡。单位战斗生命降到 0 时会立即失去行动和目标资格，并等待死亡动画播放完成，但不会立刻触发真实死亡。玩家假死亡后不进入死亡界面，可以继续观战；结束回合按钮显示“你已死亡。”且不可用。整场战斗结束并等待所有假死亡动画完成后，才真正结算死亡；等待时长与客户端死亡动画一致，动画结束后不再额外拖延。由玩家卡牌导致假死亡的怪物会按玩家击杀结算，能触发只有玩家击杀才有的掉落、统计和成就。
+  - 代码实现：`CombatantState` 保存 `fakeDead`、`fakeDeathTicks` 和 `creditedPlayerKill`，并通过 `FAKE_DEATH_ANIMATION_TICKS` 统一服务端结算等待与客户端 `ClientBattleState.fakeDeathRenderTicks()` 的死亡动画上限；`BattleState.tick()` 在一方全灭后等待 `fakeDeathAnimationDone()`，`finish()` 再调用带玩家攻击来源的真实死亡路径。假死亡动画期间 `BattleState.freezeEntity()` 会清除残余速度、跳跃和导航，避免死亡姿态被击退或服务端校正反复打断。旧的 `maxHealth * 2` 高伤害收尾已移除，敌方真实死亡优先使用 `damageSources().playerAttack(killer)` 保留玩家击杀归因。
+  - 变更记录：新增高优先级假死亡、观战、延后真实死亡结算和玩家击杀归因规则；本次将服务端假死亡等待从独立魔法数改为与客户端死亡动画一致，减少动画完成后的战斗结束延迟。
 - 玩法描述：费用暂时固定为每方每回合 3 点，出牌消耗费用，费用不足的牌不能打出。
   - 代码实现：`CardBalance.fixedEnergy()` 固定返回 3，`CombatantState` 在每方回合开始重置费用并在出牌时扣费。
   - 变更记录：移除玩家经验等级和怪物血量对费用上限的影响。
@@ -72,20 +72,20 @@
 ## 牌组系统
 
 - 玩法描述：战斗使用抽牌堆、手牌和弃牌堆。回合开始弃掉剩余手牌并抽 5 张；打出的牌进入弃牌堆；抽牌堆为空时洗入弃牌堆。
-  - 代码实现：`BattleDeck.startTurn()`、`draw()`、`useHand()` 管理抽牌、弃牌和洗牌，`BattleSnapshot` 同步牌堆数量和可查看内容。
-  - 变更记录：替换旧的准备牌池，改为杀戮尖塔式抽牌/弃牌流程。
+  - 代码实现：`BattleDeck.startTurn()`、`draw()`、`useHand()` 管理抽牌、弃牌和洗牌，并在手牌、抽牌堆、弃牌堆或消耗堆变化时递增本地牌堆版本；`BattleDeck` 构建时复用已经属于本场战斗的 `CardInstance`，避免大卡组入战时逐张二次复制；`BattleSnapshot` 只同步牌堆数量、手牌和版本号，完整牌堆内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 在玩家打开对应列表时按需同步。
+  - 变更记录：替换旧的准备牌池，改为杀戮尖塔式抽牌/弃牌流程；本次将完整牌堆内容从每次战斗快照中移除，并移除战斗牌库构建阶段的重复卡牌复制，避免大卡组在入战和同步时造成卡顿。
 - 玩法描述：战斗 HUD 会通过鼠标提示说明抽牌堆和弃牌堆规则。指向抽牌堆时提示每回合开始从这里抽 5 张牌，并说明点击可查看抽牌堆但显示顺序会被打乱；指向弃牌堆时提示抽牌堆空后会把弃牌堆打乱洗回抽牌堆，并说明点击可查看弃牌堆。
   - 代码实现：`BattleScreen.hudTooltipAt()` 使用 `draw_pile` 和 `discard_pile` 布局元素命中范围生成翻译文本提示，`clickPile()` 继续打开对应 `CardGridPanel`，`BattleDeck.draw()` 继续负责抽牌堆为空时洗入弃牌堆。
   - 变更记录：新增抽牌堆和弃牌堆 HUD 提示框，不改变抽牌、弃牌或洗牌结算。
 - 玩法描述：带有“消耗”的卡牌在被打出并完成其它效果后消耗自身，卡牌正文只显示“消耗”，具体规则在关键词提示中说明；被消耗的卡牌不会进入弃牌堆，也不会参与后续抽牌堆重洗，它会在本场战斗结束前从战斗牌组循环中移除。玩家和怪物打出的卡牌都会在效果结算期间保持展示，结算结束后普通牌进入弃牌堆，消耗牌播放淡出动画。战斗界面仅在玩家已有被消耗牌时，才会在弃牌堆上方显示“被消耗的牌”入口，数字为居中的粗体紫色，鼠标指向时提示可点击查看本场战斗被消耗的牌，点击后只显示当前玩家自己的被消耗牌。
-  - 代码实现：`CardEffectKind.EXHAUST` 作为无目标、无数值、无次数的关键词效果；`BattleDeck` 保存 `exhaustPile`，`BattleState.queueCard()` 跳过消耗效果本身的批次结算，并在其它效果批次结束后把打出的牌按是否带有 `EXHAUST` 移入消耗堆或弃牌堆；`BattleSnapshot` 同步玩家消耗堆数量和列表，`BattleScreen` 使用 `exhaust_pile` 布局元素与 `exhaust_pile.png` 绘制入口并复用卡牌网格弹窗查看列表。
-  - 变更记录：新增“消耗”关键词、被消耗牌堆、消耗牌淡出动画和玩家被消耗牌查看入口。
+  - 代码实现：`CardEffectKind.EXHAUST` 作为无目标、无数值、无次数的关键词效果；`BattleDeck` 保存 `exhaustPile`，`BattleState.queueCard()` 跳过消耗效果本身的批次结算，并在其它效果批次结束后把打出的牌按是否带有 `EXHAUST` 移入消耗堆或弃牌堆；`BattleSnapshot` 同步玩家消耗堆数量，完整列表改由按需牌堆内容包同步；`BattleScreen` 使用出牌动画自身的消耗标记决定普通牌飞向弃牌堆或消耗牌淡出，但动画何时离开中央由服务端结算状态和本地等待状态驱动，避免快照到达时跳过中央停留或永久停在中央。
+  - 变更记录：新增“消耗”关键词、被消耗牌堆、消耗牌淡出动画和玩家被消耗牌查看入口；本次修复出牌动画释放时机，恢复结算期间中央短暂停留，并为结算结束后的出牌动画添加释放兜底。
 - 玩法描述：玩家不再手动选择战斗卡组；所有已持有卡牌都会自动进入下一次战斗牌组。卡组界面只用于查看已拥有的卡牌，不能点击选择或取消选择，也没有保存/完成底部按钮。玩家至少需要持有 1 张卡牌才能开始卡牌战斗。
   - 代码实现：`DeckScreen` 只渲染 `ClientCardState.cards().collection()` 的卡牌网格，数量由 `CardGridPanel` 统一显示，不再发送 `SetDeckPayload`；`PlayerCardData.deckCards()` 返回持有卡牌集合，`hasValidDeck()` 仅检查集合非空；`BattleManager.challenge()` 使用 `data.deckCards()` 创建玩家战斗牌库。
   - 变更记录：移除 15-30 张手动组牌限制和卡组保存交互，战斗牌组改为自动使用玩家持有的全部卡牌。
-- 玩法描述：玩家按 K 可以打开或关闭自己的卡组界面。非战斗中显示当前持有卡牌；战斗中只有处于最基础战斗界面、没有牌堆弹窗、手牌选择层或布局编辑器等其它界面时，才能按 K 打开本场战斗中自己的当前卡组。战斗中的卡组内容会随抽牌、弃牌、打牌和消耗变化，显示仍在战斗循环中的手牌、抽牌堆和弃牌堆，已消耗牌只在被消耗牌入口中查看。大量卡牌时，打开卡组或牌堆会先显示遮罩、标题、滚动和轻量占位卡面，首屏卡面内容会按帧补齐，不再在打开瞬间一次性处理所有卡面资源。
-  - 代码实现：`ClientScreens.openDeckScreen()` 让非战斗 `DeckScreen` 支持 K 开关且只在没有其它屏幕时打开；`BattleScreen.keyPressed()` 在基础战斗界面拦截 K，并用带快照版本缓存的 `battleDeckCards()` 从 `BattleSnapshot` 的 `hand`、`drawPileCards` 和 `discardPileCards` 合成 `CardGridPanel` 内容，弹窗打开期间每帧通过 `updatePileOverlayCards()` 跟随最新快照刷新；`CardGridPanel` 按帧渐进调用 `CardRenderHelper.warmupCard()`，`CardRenderHelper` 按卡牌显示签名缓存已预热结果，未预热完成时先绘制轻量占位卡面。
-  - 变更记录：新增战斗中 K 键查看当前战斗卡组，并允许 K 关闭自己卡组界面；本次优化卡组/牌堆大列表打开性能，避免同步预热导致明显卡顿。
+- 玩法描述：玩家按 K 可以打开或关闭自己的卡组界面。非战斗中显示当前持有卡牌；战斗中只有处于最基础战斗界面、没有牌堆弹窗、手牌选择层或布局编辑器等其它界面时，才能按 K 打开本场战斗中自己的当前卡组。战斗中的卡组内容会随抽牌、弃牌、打牌和消耗变化，显示仍在战斗循环中的手牌、抽牌堆和弃牌堆，已消耗牌只在被消耗牌入口中查看。大量卡牌时，战斗牌堆弹窗可以在等待服务端内容包期间先显示遮罩、标题、数量和空网格；内容包到达后必须显示真实卡牌，并通过可视区域渲染、布局缓存和增量预热降低打开与滚动卡顿。
+  - 代码实现：`ClientScreens.openDeckScreen()` 让非战斗 `DeckScreen` 支持 K 开关且只在没有其它屏幕时打开，`ClientCardState.version()` 让 `DeckScreen` 只在收藏数据真的更新时刷新 `CardGridPanel`；`BattleScreen.keyPressed()` 在基础战斗界面拦截 K，打开弹窗后按 `battleId + BattlePileSource + localDeckVersion` 请求并缓存当前战斗卡组、抽牌堆、弃牌堆或消耗堆内容，未收到内容包前先显示遮罩、标题、数量和空网格；内容包到达后，只有显示的 `battleId + source + version` 真的变化才重新调用 `CardGridPanel.setCards(...)`，避免打开大牌堆后每帧触发全量卡牌比对。
+  - 变更记录：新增战斗中 K 键查看当前战斗卡组，并允许 K 关闭自己卡组界面；本次优化卡组/牌堆大列表打开性能，避免每帧全量比对收藏卡牌和已打开的战斗牌堆，也避免战斗快照持续同步完整牌堆导致明显卡顿。
 
 ## 界面与交互
 
@@ -202,7 +202,7 @@
 ## 数据与同步
 
 - 玩法描述：客户端显示的卡牌、速度、生命、格挡、效果、牌堆、目标、怪物预计行动和表现事件都来自服务端同步。怪物预计行动同步为怪物按当前手牌、费用、生命和格挡策略即将实际打出的牌序列。
-  - 代码实现：`BattleSnapshot` 包含双方 `BattleCombatantSnapshot`、牌堆内容、怪物手牌、预计单牌、预计牌列表和 `BattleVisualEvent` 列表；`BattleState.plannedMonsterCards()` 使用与 `tickMonsterTurn()` 相同的选牌策略模拟后续怪物出牌，`BattleSnapshotPayload` 负责同步。
+- 代码实现：`BattleSnapshot` 包含双方 `BattleCombatantSnapshot`、本地牌堆数量、本地手牌、本地牌堆版本、怪物手牌、预计单牌、预计牌列表和 `BattleVisualEvent` 列表；抽牌堆、弃牌堆、消耗堆和战斗中 K 卡组的完整内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 按需同步；`BattleState.plannedMonsterCards()` 使用与 `tickMonsterTurn()` 相同的选牌策略模拟后续怪物出牌，`BattleSnapshotPayload` 负责同步权威战斗状态。
   - 变更记录：修复怪物实际出牌和预计显示不一致的问题。
 
 ## 本次战斗目标与卡牌效果更新

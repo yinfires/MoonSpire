@@ -4,6 +4,7 @@ import com.yinfires.moonspire.card.CardFactory;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.PlayerCardData;
 import com.yinfires.moonspire.network.BattleSnapshotPayload;
+import com.yinfires.moonspire.network.BattlePileContentsPayload;
 import com.yinfires.moonspire.network.PlayerCardDataPayload;
 import com.yinfires.moonspire.registry.ModAttachments;
 import java.util.ArrayList;
@@ -153,6 +154,20 @@ public final class BattleManager {
             battle.confirmHandSelection(player, cardIds);
             sync(battle);
         }
+    }
+
+    public static void requestPile(ServerPlayer player, UUID battleId, BattlePileSource source, long deckVersion) {
+        BattleState battle = BY_PLAYER.get(player.getUUID());
+        if (battle == null || source == null || !battle.matchesId(battleId)) {
+            return;
+        }
+        long currentVersion = battle.deckVersionFor(player);
+        PacketDistributor.sendToPlayer(player, new BattlePileContentsPayload(
+                battle.id(),
+                source,
+                currentVersion,
+                battle.pileCountFor(player, source),
+                battle.pileCardsFor(player, source)));
     }
 
     public static boolean handleDamage(LivingEntity target, Entity sourceEntity) {

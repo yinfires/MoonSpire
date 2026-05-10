@@ -9,6 +9,8 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 
 public class CombatantState {
+    public static final int FAKE_DEATH_ANIMATION_TICKS = 20;
+
     private final LivingEntity entity;
     private final BattleDeck deck;
     private final int maxEnergy;
@@ -113,7 +115,7 @@ public class CombatantState {
     }
 
     public boolean fakeDeathAnimationDone() {
-        return !fakeDead || fakeDeathTicks >= 24;
+        return !fakeDead || fakeDeathTicks >= FAKE_DEATH_ANIMATION_TICKS;
     }
 
     public UUID creditedPlayerKill() {

@@ -8,16 +8,21 @@ import org.lwjgl.glfw.GLFW;
 public class DeckScreen extends NoBlurScreen {
     private static final int BOTTOM_RESERVE = 0;
     private final CardGridPanel cardPanel;
+    private long syncedCardVersion;
 
     public DeckScreen() {
         super(Component.translatable("screen.moonspire.deck"));
         cardPanel = new CardGridPanel(ClientCardState.cards().collection(), title);
+        syncedCardVersion = ClientCardState.version();
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
-            cardPanel.setCards(ClientCardState.cards().collection());
+            if (syncedCardVersion != ClientCardState.version()) {
+                cardPanel.setCards(ClientCardState.cards().collection());
+                syncedCardVersion = ClientCardState.version();
+            }
             cardPanel.render(graphics, font, width, height, mouseX, mouseY, BOTTOM_RESERVE, card -> false,
                     (previewGraphics, previewFont, card, x, y, selectedCard) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false));
             renderWidgets(graphics, mouseX, mouseY, partialTick);
