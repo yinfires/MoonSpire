@@ -59,7 +59,7 @@
   "screen.moonspire.deck_view": "Deck",
 
   "battle_phase.moonspire.player_turn": "Player Turn",
-  "battle_phase.moonspire.monster_turn": "Monster Turn",
+  "battle_phase.moonspire.monster_turn": "Enemy Turn",
   "battle_phase.moonspire.round_end": "Round End",
 
   "card.moonspire.type.attack": "Attack",

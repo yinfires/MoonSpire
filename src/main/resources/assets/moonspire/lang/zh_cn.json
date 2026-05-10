@@ -59,7 +59,7 @@
   "screen.moonspire.deck_view": "卡组",
 
   "battle_phase.moonspire.player_turn": "玩家回合",
-  "battle_phase.moonspire.monster_turn": "怪物回合",
+  "battle_phase.moonspire.monster_turn": "敌方回合",
   "battle_phase.moonspire.round_end": "回合结束",
 
   "card.moonspire.type.attack": "攻击",

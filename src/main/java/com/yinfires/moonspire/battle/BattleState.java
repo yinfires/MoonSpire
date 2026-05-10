@@ -8,6 +8,7 @@ import com.yinfires.moonspire.card.CardTarget;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -49,6 +50,7 @@ public class BattleState {
     private final Map<UUID, Integer> selectedTargets = new HashMap<>();
     private int currentEnemyIndex;
     private int monsterActionDelay;
+    private List<CombatantState> enemyTurnOrder = List.of();
     private int openingProtectionTicks;
     private boolean suppressDamageEvent;
     private boolean started;
@@ -432,7 +434,6 @@ public class BattleState {
         phase = BattlePhase.MONSTER_TURN;
         phaseTicks = 0;
         monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
-        currentEnemyIndex = 0;
         for (CombatantState state : enemyStates) {
             if (!state.fakeDead()) {
                 state.clearDefense();
@@ -443,6 +444,8 @@ public class BattleState {
                 state.resetEnergy();
             }
         }
+        enemyTurnOrder = enemyActionOrder();
+        currentEnemyIndex = 0;
         selectedTargets.clear();
     }
 
@@ -465,14 +468,14 @@ public class BattleState {
             monsterActionDelay--;
             return;
         }
-        while (currentEnemyIndex < enemyStates.size() && enemyStates.get(currentEnemyIndex).fakeDead()) {
+        while (currentEnemyIndex < enemyTurnOrder.size() && enemyTurnOrder.get(currentEnemyIndex).fakeDead()) {
             currentEnemyIndex++;
         }
-        if (currentEnemyIndex >= enemyStates.size()) {
+        if (currentEnemyIndex >= enemyTurnOrder.size()) {
             beginRoundEnd();
             return;
         }
-        CombatantState enemy = enemyStates.get(currentEnemyIndex);
+        CombatantState enemy = enemyTurnOrder.get(currentEnemyIndex);
         int index = chooseMonsterCard(enemy);
         if (index < 0) {
             currentEnemyIndex++;
@@ -494,6 +497,12 @@ public class BattleState {
         }
         queueCard(enemy, target, used);
         monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
+    }
+
+    private List<CombatantState> enemyActionOrder() {
+        return enemyStates.stream()
+                .sorted(Comparator.comparingInt(CombatantState::roundSpeed).reversed())
+                .toList();
     }
 
     private int chooseMonsterCard(CombatantState monster) {

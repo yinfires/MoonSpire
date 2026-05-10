@@ -348,13 +348,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 return clickDeleteConfirm(mouseX, mouseY);
             }
             if (targetPickerOpen) {
-                if (clickTargetPicker(layout, mouseX, mouseY)) {
+                if (clickTargetPicker(layout, mouseX, mouseY, button)) {
                     return true;
                 }
                 return true;
             }
             if (effectPickerOpen) {
-                if (clickEffectPicker(layout, mouseX, mouseY)) {
+                if (clickEffectPicker(layout, mouseX, mouseY, button)) {
                     return true;
                 }
                 return true;
@@ -3144,10 +3144,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return false;
     }
 
-    private boolean clickEffectPicker(Layout layout, double mouseX, double mouseY) {
+    private boolean clickEffectPicker(Layout layout, double mouseX, double mouseY, int button) {
         PickerBounds picker = effectPickerBounds(layout, selectedEffectCount());
         if (insideRect(mouseX, mouseY, picker.x() + 6, picker.y() + 5, Math.max(1, picker.w() - 12), 18)) {
-            return false;
+            focusPopupSearchBox(effectSearchBox, mouseX, mouseY, button);
+            return true;
         }
         List<DeveloperCardEffect.Kind> kinds = filteredEffectKinds();
         GridLayout grid = effectPickerGrid(picker, kinds.size());
@@ -3177,10 +3178,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return true;
     }
 
-    private boolean clickTargetPicker(Layout layout, double mouseX, double mouseY) {
+    private boolean clickTargetPicker(Layout layout, double mouseX, double mouseY, int button) {
         PickerBounds picker = targetPickerBounds(layout, selectedEffectCount());
         if (insideRect(mouseX, mouseY, picker.x() + 6, picker.y() + 5, Math.max(1, picker.w() - 12), 18)) {
-            return false;
+            focusPopupSearchBox(targetSearchBox, mouseX, mouseY, button);
+            return true;
         }
         List<CardTarget> targets = filteredTargets();
         GridLayout grid = targetPickerGrid(picker, targets.size());
@@ -3209,6 +3211,15 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return true;
         }
         return true;
+    }
+
+    private void focusPopupSearchBox(EditBox box, double mouseX, double mouseY, int button) {
+        if (box == null) {
+            return;
+        }
+        box.mouseClicked(mouseX, mouseY, button);
+        setFocused(box);
+        box.setFocused(true);
     }
 
     private boolean clickCardListToggle(Layout layout, double mouseX, double mouseY) {
