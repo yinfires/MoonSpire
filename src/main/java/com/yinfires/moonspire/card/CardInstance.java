@@ -427,16 +427,13 @@ public record CardInstance(
         if (sourceType == CardSourceType.MONSTER && isDefaultMonsterDescriptionKey(key)) {
             return "";
         }
+        if (isConvertedDescriptionKey(key)) {
+            return "";
+        }
         if (isTranslationKey(key)) {
             return key;
         }
-        return switch (sourceType) {
-            case WEAPON -> "card.moonspire.converted.weapon.description";
-            case ARMOR -> "card.moonspire.converted.armor.description";
-            case TOOL -> "card.moonspire.converted.tool.description";
-            case MONSTER -> "";
-            default -> "";
-        };
+        return "";
     }
 
     private static boolean isTranslationKey(String key) {
@@ -445,5 +442,9 @@ public record CardInstance(
 
     private static boolean isDefaultMonsterDescriptionKey(String key) {
         return key != null && key.startsWith("card.moonspire.monster.") && key.endsWith(".description");
+    }
+
+    private static boolean isConvertedDescriptionKey(String key) {
+        return key != null && key.startsWith("card.moonspire.converted.") && key.endsWith(".description");
     }
 }

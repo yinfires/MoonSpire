@@ -16,6 +16,17 @@
 - Do not wait until every detail is understood before making low-risk layout, documentation, or narrowly scoped changes.
 - When investigating battle confirmation or synchronization delays, do not stop at client-side modal visibility or local animations. Check the authoritative server chain and sync cadence first: payload handler thread, `BattleManager` mutation, `BattleState` pending flags, snapshot size/frequency, and stale snapshot ordering. Large `BattleSnapshot` payloads must not be sent every tick while a pending player choice is idle; repeated old pending snapshots can queue ahead of the confirmation result and look like delayed server resolution.
 
+## Lessons From Recent UI Fixes
+
+- When a user says a previous UI fix did not solve the problem, first re-check the actual render/input state chain before adding another visual workaround. Do not assume the last patch was directionally correct.
+- Keep follow-up fixes tightly scoped to the newest user request. If the user narrows the task to one issue, do not keep changing adjacent pile, modal, or layout behavior in the same pass.
+- Do not hide card layering bugs by drawing opaque or solid-color backing under cards. Card visuals must stay faithful to their textures; fix leaks through layer ownership, batching, clipping, and render order instead.
+- For hand-card drag behavior, every hover entry point must respect `dragState`: frame cache, preview hit testing, sticky hover, direct hover, and render-time hover selection should all return no hover while dragging.
+- Clearing a drag hover must not accidentally snap cards to their target layout. If only hover should be cleared, reset hover progress only; use a separate helper when an instant position reset is genuinely intended.
+- When a dragged hand card is released without being played, use the release/current card position as the animation start and let normal hand target interpolation pull it back. Do not clear `dragState` and then immediately reset the hand animation to the final layout position.
+- Make play attempts report whether a card was actually used before starting played-card or return-to-hand animations. Invalid target, invalid play area, insufficient energy, or locked action should all take the smooth return path.
+- After card UI animation changes, compile and also reason through the frame order: input release, local state mutation, snapshot sync, animation target update, and render interpolation.
+
 ## Video References
 
 - When the user provides a local gameplay/reference video, treat it as workspace context and analyze it before implementing UI animation or interaction changes.
@@ -71,5 +82,7 @@
 - Every player-facing string must use a translation key.
 - Do not use `Component.literal(...)` or direct English/Chinese UI text for names, descriptions, HUD labels, messages, buttons, phases, card stats, or card text.
 - Store card display text as translation keys (`nameKey`, `descriptionKey`) and render them with `Component.translatable(...)`.
+- Before adding, moving, or deleting language file entries, read `docs/language_categories.md`; keep language keys in that documented category order, and update that document if a new category or prefix is needed.
+- Reuse existing same-category language keys when the player-facing meaning and placeholder structure match; add a new key only when reuse would be misleading or incompatible.
 - Whenever language files are modified, remove translation keys that no longer have an effective code path or resource reference in the same change.
 - Internal NBT keys, registry IDs, payload IDs, resource paths, and code comments are not language content and should remain stable implementation strings.

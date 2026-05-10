@@ -150,7 +150,7 @@ public final class MoonSpireCardRegistry {
         return new RegisteredCardDefinition(
                 id,
                 stack.getDescriptionId(),
-                convertedDescriptionKey(type),
+                "",
                 cost,
                 attack,
                 defense,
@@ -163,15 +163,6 @@ public final class MoonSpireCardRegistry {
                 1.0F,
                 "default",
                 "");
-    }
-
-    public static String convertedDescriptionKey(CardSourceType type) {
-        return switch (type) {
-            case WEAPON -> "card.moonspire.converted.weapon.description";
-            case ARMOR -> "card.moonspire.converted.armor.description";
-            case TOOL -> "card.moonspire.converted.tool.description";
-            default -> "";
-        };
     }
 
     private static RegisteredCardDefinition convertedCardTemplate(String normalizedId) {
