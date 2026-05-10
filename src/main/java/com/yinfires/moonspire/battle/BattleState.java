@@ -1,5 +1,6 @@
 package com.yinfires.moonspire.battle;
 
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.card.CardBalance;
 import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardEffectKind;
@@ -48,6 +49,7 @@ public class BattleState {
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int MIN_PROJECTILE_TICKS = 5;
     private static final int MAX_PROJECTILE_TICKS = 18;
+    private static final int IDLE_SYNC_HEARTBEAT_TICKS = 100;
     private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
     private static final double LUNGE_REACH = 1.35D;
@@ -73,6 +75,7 @@ public class BattleState {
     private boolean started;
     private boolean endingAfterAnimations;
     private int syncCooldownTicks;
+    private boolean syncDirty = true;
     private long snapshotSequence;
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
@@ -187,6 +190,7 @@ public class BattleState {
         }
         if (hasWinner()) {
             endingAfterAnimations = true;
+            markDirty();
             lockBattleEntities();
             return allFakeDeathAnimationsDone();
         }
@@ -206,6 +210,7 @@ public class BattleState {
         }
         if (hasWinner()) {
             endingAfterAnimations = true;
+            markDirty();
         }
         return endingAfterAnimations && allFakeDeathAnimationsDone();
     }
@@ -250,6 +255,7 @@ public class BattleState {
         } else {
             selectedTargets.put(player.getUUID(), -1);
         }
+        markDirty();
     }
 
     public boolean usePlayerCard(ServerPlayer player, int handIndex, int targetEntityId) {
@@ -276,6 +282,7 @@ public class BattleState {
             selectedTarget = firstAliveEnemy();
         }
         queueCard(user, selectedTarget, used);
+        markDirty();
         return true;
     }
 
@@ -294,6 +301,7 @@ public class BattleState {
             List<CardInstance> selectedCards = pendingHandSelection.user().deck().removeHandByIds(selectedIds);
             if (selectedCards.size() == selectedIds.size()) {
                 completePendingHandSelection(selectedCards);
+                markDirty();
                 return true;
             }
             currentCandidateIds = currentPendingHandCandidateIds();
@@ -301,6 +309,7 @@ public class BattleState {
         if (currentCandidateIds.size() <= pendingHandSelection.requiredCount()) {
             List<CardInstance> selectedCards = pendingHandSelection.user().deck().removeHandByIds(currentCandidateIds);
             completePendingHandSelection(selectedCards);
+            markDirty();
             return true;
         }
         return false;
@@ -312,6 +321,7 @@ public class BattleState {
             return;
         }
         state.setEndedTurn(true);
+        markDirty();
         if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
             for (CombatantState playerState : alivePlayers()) {
                 applyOwnTurnEndEffects(playerState);
@@ -333,6 +343,7 @@ public class BattleState {
     }
 
     public BattleSnapshot snapshotFor(ServerPlayer viewer) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         CombatantState local = byPlayerId.get(viewer.getUUID());
         if (local == null) {
             local = playerStates.isEmpty() ? null : playerStates.getFirst();
@@ -341,8 +352,30 @@ public class BattleState {
         if (firstEnemy == null && !enemyStates.isEmpty()) {
             firstEnemy = enemyStates.getFirst();
         }
+        long visualStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         List<BattleVisualEvent> visualEvents = List.copyOf(pendingVisualEvents);
-        return new BattleSnapshot(
+        long visualNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - visualStart : 0L;
+        long playersStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<BattleCombatantSnapshot> players = playerSnapshots();
+        long playersNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - playersStart : 0L;
+        long enemiesStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<BattleCombatantSnapshot> enemies = enemySnapshots();
+        long enemiesNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - enemiesStart : 0L;
+        long handStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<CardInstance> localHand = local == null ? List.of() : List.copyOf(local.deck().hand());
+        long handNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - handStart : 0L;
+        long monsterStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<CardInstance> monsterHand = firstEnemy == null ? List.of() : List.copyOf(firstEnemy.deck().hand());
+        CardInstance monsterIntent = firstEnemy == null ? null : monsterIntent(firstEnemy);
+        List<CardInstance> monsterIntentCards = firstEnemy == null ? List.of() : monsterIntentCards(firstEnemy);
+        long monsterNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - monsterStart : 0L;
+        long enemyIntentsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<BattleEnemyIntentSnapshot> enemyIntents = enemyIntentSnapshots();
+        long enemyIntentsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - enemyIntentsStart : 0L;
+        long entityHandsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        List<BattleEntityCardsSnapshot> entityHands = entityHandSnapshots();
+        long entityHandsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - entityHandsStart : 0L;
+        BattleSnapshot snapshot = new BattleSnapshot(
                 id,
                 snapshotSequence,
                 true,
@@ -352,20 +385,40 @@ public class BattleState {
                 selectedTargets.getOrDefault(viewer.getUUID(), -1),
                 local == null ? -1 : local.entity().getId(),
                 local != null && local.endedTurn(),
-                playerSnapshots(),
-                enemySnapshots(),
+                players,
+                enemies,
                 local == null ? 0 : local.deck().drawPile().size(),
                 local == null ? 0 : local.deck().discardPile().size(),
                 local == null ? 0 : local.deck().exhaustPile().size(),
                 local == null ? 0L : local.deck().version(),
-                local == null ? List.of() : List.copyOf(local.deck().hand()),
+                localHand,
                 pendingHandSelectionSnapshotFor(local),
-                firstEnemy == null ? List.of() : List.copyOf(firstEnemy.deck().hand()),
-                firstEnemy == null ? null : monsterIntent(firstEnemy),
-                firstEnemy == null ? List.of() : monsterIntentCards(firstEnemy),
-                enemyIntentSnapshots(),
-                entityHandSnapshots(),
+                monsterHand,
+                monsterIntent,
+                monsterIntentCards,
+                enemyIntents,
+                entityHands,
                 visualEvents);
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            int entityHandCards = entityHands.stream().mapToInt(entityHand -> entityHand.cards().size()).sum();
+            int intentCards = monsterIntentCards.size() + enemyIntents.stream().mapToInt(intent -> intent.cards().size()).sum();
+            MoonSpirePerfDiagnostics.markOperation("server.battle.snapshotFor.detail", MoonSpirePerfDiagnostics.now() - start,
+                    "battleId=" + id
+                            + " sequence=" + snapshotSequence
+                            + " playerMs=" + MoonSpirePerfDiagnostics.millis(playersNanos)
+                            + " enemyMs=" + MoonSpirePerfDiagnostics.millis(enemiesNanos)
+                            + " handMs=" + MoonSpirePerfDiagnostics.millis(handNanos)
+                            + " monsterMs=" + MoonSpirePerfDiagnostics.millis(monsterNanos)
+                            + " enemyIntentMs=" + MoonSpirePerfDiagnostics.millis(enemyIntentsNanos)
+                            + " entityHandMs=" + MoonSpirePerfDiagnostics.millis(entityHandsNanos)
+                            + " visualMs=" + MoonSpirePerfDiagnostics.millis(visualNanos)
+                            + " hand=" + localHand.size()
+                            + " entityHands=" + entityHands.size()
+                            + " entityHandCards=" + entityHandCards
+                            + " intentCards=" + intentCards
+                            + " visualEvents=" + visualEvents.size());
+        }
+        return snapshot;
     }
 
     public long nextSnapshotSequence() {
@@ -416,32 +469,65 @@ public class BattleState {
     }
 
     public boolean shouldSyncNow() {
+        if (syncDirty) {
+            syncDirty = false;
+            syncCooldownTicks = 0;
+            logSyncReason("dirty");
+            return true;
+        }
         if (pendingHandSelection != null) {
             if (!pendingVisualEvents.isEmpty()) {
                 syncCooldownTicks = 0;
+                logSyncReason("pending-visual");
                 return true;
             }
             syncCooldownTicks = 0;
+            logSyncSuppressed("pending-hand-selection");
             return false;
         }
         if (!pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingUsedCard != null) {
             if (!pendingVisualEvents.isEmpty()) {
                 syncCooldownTicks = 0;
+                logSyncReason("resolving-visual");
                 return true;
             }
             syncCooldownTicks = 0;
+            logSyncSuppressed("resolving-effects");
             return false;
         }
         if (!pendingVisualEvents.isEmpty() || endingAfterAnimations) {
             syncCooldownTicks = 0;
+            logSyncReason(endingAfterAnimations ? "ending" : "visual");
             return true;
         }
         syncCooldownTicks++;
-        if (syncCooldownTicks >= 5) {
+        if (syncCooldownTicks >= IDLE_SYNC_HEARTBEAT_TICKS) {
             syncCooldownTicks = 0;
+            logSyncReason("heartbeat");
             return true;
         }
         return false;
+    }
+
+    private void logSyncReason(String reason) {
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.log("server.battle.shouldSync", "battleId=" + id + " sequence=" + snapshotSequence + " reason=" + reason);
+        }
+    }
+
+    private void logSyncSuppressed(String reason) {
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.log("server.battle.shouldSync", "battleId=" + id + " sequence=" + snapshotSequence + " reason=pending-suppressed detail=" + reason);
+        }
+    }
+
+    private void markDirty() {
+        syncDirty = true;
+    }
+
+    public void clearSyncDirty() {
+        syncDirty = false;
+        syncCooldownTicks = 0;
     }
 
     public void clearPendingVisualEvents() {
@@ -485,6 +571,7 @@ public class BattleState {
     private void beginPlayerTurn() {
         phase = BattlePhase.PLAYER_TURN;
         phaseTicks = 0;
+        markDirty();
         for (CombatantState state : playerStates) {
             if (!state.fakeDead()) {
                 state.clearDefense();
@@ -508,6 +595,7 @@ public class BattleState {
     private void beginMonsterTurn() {
         phase = BattlePhase.MONSTER_TURN;
         phaseTicks = 0;
+        markDirty();
         monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
         for (CombatantState state : enemyStates) {
             if (!state.fakeDead()) {
@@ -527,6 +615,7 @@ public class BattleState {
     private void beginRoundEnd() {
         phase = BattlePhase.ROUND_END;
         phaseTicks = 0;
+        markDirty();
         for (CombatantState state : aliveEnemies()) {
             applyOwnTurnEndEffects(state);
             state.reduceRetainedCardCosts();
@@ -927,6 +1016,7 @@ public class BattleState {
                 result.blockedDamage() > 0,
                 result.healthDamage() > 0,
                 gainedBlock > 0));
+        markDirty();
     }
 
     private boolean hasPendingCardBatches() {
@@ -941,6 +1031,7 @@ public class BattleState {
             BattleAnimation completed = pendingAnimation;
             pendingAnimation = null;
             completeAnimatedBatch(completed.batch());
+            markDirty();
             if (!pendingCardBatches.isEmpty()) {
                 pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
             } else {
@@ -971,6 +1062,7 @@ public class BattleState {
             return;
         }
         PendingCardBatch batch = pendingCardBatches.remove(0);
+        markDirty();
         if (beginBattleAnimation(batch)) {
             return;
         }
@@ -1020,6 +1112,7 @@ public class BattleState {
             if (step instanceof PendingBatchStep batchStep) {
                 pendingCardBatches.add(batchStep.batch());
                 pendingCardBatchDelay = Math.max(pendingCardBatchDelay, CARD_EFFECT_START_DELAY_TICKS);
+                markDirty();
                 return;
             }
             if (step instanceof PendingHandSelectionStep selectionStep) {
@@ -1043,6 +1136,7 @@ public class BattleState {
             return;
         }
         pendingHandSelection = new PendingHandSelection(step.target(), step.action(), required, candidateIds, step.arrowResolution());
+        markDirty();
     }
 
     private void completePendingHandSelection(List<CardInstance> selectedCards) {
@@ -1051,6 +1145,7 @@ public class BattleState {
         if (selection != null) {
             completeHandSelection(selection.user(), selection.action(), selectedCards, selection.arrowResolution());
         }
+        markDirty();
         advancePendingCardSteps();
         if (pendingCardBatches.isEmpty() && pendingCardSteps.isEmpty() && pendingHandSelection == null) {
             finishPendingUsedCard();

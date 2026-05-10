@@ -1,5 +1,6 @@
 package com.yinfires.moonspire.client;
 
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
@@ -84,6 +85,7 @@ public final class ClientBattleState {
     }
 
     public static void setSnapshot(BattleSnapshot next) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         BattleSnapshot previous = snapshot;
         if (next == null) {
             next = BattleSnapshot.inactive();
@@ -102,10 +104,15 @@ public final class ClientBattleState {
         snapshot = next;
         snapshotVersion++;
         if (!previous.active() && next.active()) {
+            long enterStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
             clearVisualStates();
             enterBattleCamera();
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                MoonSpirePerfDiagnostics.mark("client.battle.enterCamera", MoonSpirePerfDiagnostics.now() - enterStart);
+            }
         }
         if (previous.active() && !next.active()) {
+            long leaveStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
             leaveBattleCamera();
             selectedHandIndex = -1;
             hoveredEntityId = -1;
@@ -120,17 +127,37 @@ public final class ClientBattleState {
             monsterPlayedCardTicks = 0.0F;
             monsterPlayedCardEventSequence = 0L;
             MoonSpireBattleLayoutEditor.close();
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                MoonSpirePerfDiagnostics.mark("client.battle.leave", MoonSpirePerfDiagnostics.now() - leaveStart);
+                MoonSpirePerfDiagnostics.markOperation("client.battle.setSnapshot", MoonSpirePerfDiagnostics.now() - start,
+                        "battleId=" + next.battleId()
+                                + " sequence=" + next.sequence()
+                                + " active=false");
+            }
             return;
         }
         if (next.active() && previous.active() && previous.round() != next.round()) {
             selectedHandIndex = -1;
         }
+        long visualsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         for (BattleVisualEvent visualEvent : next.visualEvents()) {
             pendingVisualEvents.add(new ScheduledVisualEvent(visualEvent, visualEvent.delayTicks()));
             enqueueDamageNumbers(visualEvent);
         }
+        long visualsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - visualsStart : 0L;
+        long fakeDeathStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         updateFakeDeathStarts(next);
+        long fakeDeathNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - fakeDeathStart : 0L;
         clampSelectedHandIndex();
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.markOperation("client.battle.setSnapshot", MoonSpirePerfDiagnostics.now() - start,
+                    "battleId=" + next.battleId()
+                            + " sequence=" + next.sequence()
+                            + " active=" + next.active()
+                            + " visualEvents=" + next.visualEvents().size()
+                            + " visualMs=" + MoonSpirePerfDiagnostics.millis(visualsNanos)
+                            + " fakeDeathMs=" + MoonSpirePerfDiagnostics.millis(fakeDeathNanos));
+        }
     }
 
     public static void clear() {

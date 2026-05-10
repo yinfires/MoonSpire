@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.network;
 
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.battle.BattleSnapshot;
 import com.yinfires.moonspire.client.ClientBattleState;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -19,6 +20,20 @@ public record BattleSnapshotPayload(BattleSnapshot snapshot) implements CustomPa
     }
 
     public static void handle(BattleSnapshotPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientBattleState.setSnapshot(payload.snapshot));
+        context.enqueueWork(() -> {
+            long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            ClientBattleState.setSnapshot(payload.snapshot);
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                BattleSnapshot snapshot = payload.snapshot;
+                MoonSpirePerfDiagnostics.markOperation("client.battle.snapshotHandle", MoonSpirePerfDiagnostics.now() - start,
+                        "battleId=" + snapshot.battleId()
+                                + " sequence=" + snapshot.sequence()
+                                + " hand=" + snapshot.hand().size()
+                                + " entityHands=" + snapshot.entityHands().size()
+                                + " intentCards=" + snapshot.monsterIntentCards().size()
+                                + " enemyIntents=" + snapshot.enemyIntents().size()
+                                + " visualEvents=" + snapshot.visualEvents().size());
+            }
+        });
     }
 }

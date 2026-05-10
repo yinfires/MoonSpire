@@ -1,5 +1,6 @@
 package com.yinfires.moonspire.battle;
 
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.card.CardFactory;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.PlayerCardData;
@@ -62,6 +63,7 @@ public final class BattleManager {
     }
 
     public static void challenge(ServerPlayer player, int targetId) {
+        long challengeStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         Entity entity = player.level().getEntity(targetId);
         if (!(entity instanceof LivingEntity monster)) {
             player.displayClientMessage(Component.translatable("message.moonspire.no_target"), true);
@@ -76,23 +78,49 @@ public final class BattleManager {
             syncCardData(player);
             return;
         }
+        long collectPlayersStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         List<ServerPlayer> players = collectPlayers(player);
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.collectPlayers", MoonSpirePerfDiagnostics.now() - collectPlayersStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "players=" + players.size());
+        }
         if (!players.contains(player)) {
             players.add(0, player);
         }
+        long collectEnemiesStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         List<LivingEntity> enemies = collectEnemies(players, monster);
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.collectEnemies", MoonSpirePerfDiagnostics.now() - collectEnemiesStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "enemies=" + enemies.size());
+        }
         Map<UUID, List<CardInstance>> playerCards = new LinkedHashMap<>();
+        long playerCardsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        int playerCardCount = 0;
         for (ServerPlayer participant : players) {
             PlayerCardData participantData = participant.getData(ModAttachments.PLAYER_CARDS.get());
             if (participantData.hasValidDeck()) {
-                playerCards.put(participant.getUUID(), participantData.deckCards());
+                List<CardInstance> cards = participantData.deckCards();
+                playerCardCount += cards.size();
+                playerCards.put(participant.getUUID(), cards);
             }
         }
-        Map<Integer, List<CardInstance>> enemyCards = new LinkedHashMap<>();
-        for (LivingEntity enemy : enemies) {
-            enemyCards.put(enemy.getId(), MonsterDeckProfile.createDeck(enemy));
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.playerCards", MoonSpirePerfDiagnostics.now() - playerCardsStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "cards=" + playerCardCount);
         }
+        Map<Integer, List<CardInstance>> enemyCards = new LinkedHashMap<>();
+        long enemyCardsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+        int enemyCardCount = 0;
+        for (LivingEntity enemy : enemies) {
+            List<CardInstance> cards = MonsterDeckProfile.createDeck(enemy);
+            enemyCardCount += cards.size();
+            enemyCards.put(enemy.getId(), cards);
+        }
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.enemyCards", MoonSpirePerfDiagnostics.now() - enemyCardsStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "cards=" + enemyCardCount);
+        }
+        long constructStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         BattleState battle = new BattleState(player, players, enemies, playerCards, enemyCards);
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.constructState", MoonSpirePerfDiagnostics.now() - constructStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "players=" + players.size() + " enemies=" + enemies.size());
+        }
         for (ServerPlayer participant : battle.players()) {
             BY_PLAYER.put(participant.getUUID(), battle);
             BY_ENTITY_ID.put(participant.getId(), battle);
@@ -100,8 +128,22 @@ public final class BattleManager {
         for (LivingEntity participant : battle.entities()) {
             BY_ENTITY_ID.put(participant.getId(), battle);
         }
+        long startBattleStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         battle.start();
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.startBattle", MoonSpirePerfDiagnostics.now() - startBattleStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "");
+        }
+        long syncStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         sync(battle);
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("server.battle.challenge.initialSync", MoonSpirePerfDiagnostics.now() - syncStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "");
+            MoonSpirePerfDiagnostics.markOperation("server.battle.challenge", MoonSpirePerfDiagnostics.now() - challengeStart,
+                    "battleId=" + battle.id()
+                            + " players=" + players.size()
+                            + " enemies=" + enemies.size()
+                            + " playerCards=" + playerCardCount
+                            + " enemyCards=" + enemyCardCount);
+        }
         player.displayClientMessage(Component.translatable("message.moonspire.battle_started", monster.getDisplayName()), true);
     }
 
@@ -297,11 +339,37 @@ public final class BattleManager {
     }
 
     private static void sync(BattleState battle) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         battle.nextSnapshotSequence();
         for (ServerPlayer player : battle.players()) {
-            PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(battle.snapshotFor(player)));
+            long snapshotStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            BattleSnapshot snapshot = battle.snapshotFor(player);
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                MoonSpirePerfDiagnostics.mark("server.battle.snapshotFor", MoonSpirePerfDiagnostics.now() - snapshotStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, snapshotSummary(snapshot));
+            }
+            long sendStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(snapshot));
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                MoonSpirePerfDiagnostics.mark("server.battle.snapshotSend", MoonSpirePerfDiagnostics.now() - sendStart, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, snapshotSummary(snapshot));
+            }
         }
         battle.clearPendingVisualEvents();
+        battle.clearSyncDirty();
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.markOperation("server.battle.sync", MoonSpirePerfDiagnostics.now() - start, "battleId=" + battle.id() + " players=" + battle.players().size());
+        }
+    }
+
+    private static String snapshotSummary(BattleSnapshot snapshot) {
+        int entityHandCards = snapshot.entityHands().stream().mapToInt(entityHand -> entityHand.cards().size()).sum();
+        int intentCards = snapshot.monsterIntentCards().size() + snapshot.enemyIntents().stream().mapToInt(intent -> intent.cards().size()).sum();
+        return "battleId=" + snapshot.battleId()
+                + " sequence=" + snapshot.sequence()
+                + " hand=" + snapshot.hand().size()
+                + " entityHands=" + snapshot.entityHands().size()
+                + " entityHandCards=" + entityHandCards
+                + " intentCards=" + intentCards
+                + " visualEvents=" + snapshot.visualEvents().size();
     }
 
     private static void endBattle(BattleState battle) {

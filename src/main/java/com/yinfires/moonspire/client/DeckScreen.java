@@ -1,5 +1,6 @@
 package com.yinfires.moonspire.client;
 
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.card.CardInstance;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -9,23 +10,39 @@ public class DeckScreen extends NoBlurScreen {
     private static final int BOTTOM_RESERVE = 0;
     private final CardGridPanel cardPanel;
     private long syncedCardVersion;
+    private int perfFrameIndex;
 
     public DeckScreen() {
         super(Component.translatable("screen.moonspire.deck"));
-        cardPanel = new CardGridPanel(ClientCardState.cards().collection(), title);
+        cardPanel = new CardGridPanel(ClientCardState.cards().collection(), title, ClientCardState.version());
         syncedCardVersion = ClientCardState.version();
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
+            long setCardsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            long setCardsNanos = 0L;
             if (syncedCardVersion != ClientCardState.version()) {
-                cardPanel.setCards(ClientCardState.cards().collection());
+                cardPanel.setCards(ClientCardState.cards().collection(), ClientCardState.version());
                 syncedCardVersion = ClientCardState.version();
+            }
+            if (MoonSpirePerfDiagnostics.enabled()) {
+                setCardsNanos = MoonSpirePerfDiagnostics.now() - setCardsStart;
             }
             cardPanel.render(graphics, font, width, height, mouseX, mouseY, BOTTOM_RESERVE, card -> false,
                     (previewGraphics, previewFont, card, x, y, selectedCard) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false));
             renderWidgets(graphics, mouseX, mouseY, partialTick);
+            if (MoonSpirePerfDiagnostics.enabled() && perfFrameIndex < 10) {
+                perfFrameIndex++;
+                long elapsed = MoonSpirePerfDiagnostics.now() - start;
+                MoonSpirePerfDiagnostics.markOperation("client.deck.render", elapsed,
+                        "frameIndex=" + perfFrameIndex
+                                + " setCardsMs=" + MoonSpirePerfDiagnostics.millis(setCardsNanos)
+                                + " " + cardPanel.lastFrameStats().summary()
+                                + " " + CardRenderHelper.frameStats().summary());
+            }
         }
     }
 

@@ -2,6 +2,7 @@ package com.yinfires.moonspire.client;
 
 import com.mojang.math.Axis;
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectType;
@@ -129,6 +130,7 @@ public class BattleScreen extends NoBlurScreen {
     private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
     private PileRequestKey requestedPileKey;
     private PileRequestKey displayedPileKey;
+    private int pileOverlayPerfFrameIndex;
 
     public BattleScreen() {
         super(Component.translatable("screen.moonspire.battle"));
@@ -1398,8 +1400,11 @@ public class BattleScreen extends NoBlurScreen {
         if (pileOverlay == null) {
             return;
         }
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         BattleSnapshot snapshot = ClientBattleState.snapshot();
+        long updateStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         updatePileOverlayCards(snapshot);
+        long updateNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - updateStart : 0L;
         pileOverlay.render(graphics, font, width, height, mouseX, mouseY, CARD_GRID_BOTTOM_RESERVE, card -> false, CardRenderHelper.CardValues::original,
                 (previewGraphics, previewFont, card, x, y, selected) -> {
                     previewGraphics.pose().pushPose();
@@ -1407,6 +1412,19 @@ public class BattleScreen extends NoBlurScreen {
                     CardRenderHelper.renderCard(previewGraphics, previewFont, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false);
                     previewGraphics.pose().popPose();
                 });
+        if (MoonSpirePerfDiagnostics.enabled() && pileOverlayPerfFrameIndex < 10) {
+            pileOverlayPerfFrameIndex++;
+            long elapsed = MoonSpirePerfDiagnostics.now() - start;
+            MoonSpirePerfDiagnostics.markOperation("client.battle.pileRender", elapsed,
+                    "frameIndex=" + pileOverlayPerfFrameIndex
+                            + " battleId=" + snapshot.battleId()
+                            + " sequence=" + snapshot.sequence()
+                            + " source=" + pileOverlaySource
+                            + " deckVersion=" + snapshot.localDeckVersion()
+                            + " updateMs=" + MoonSpirePerfDiagnostics.millis(updateNanos)
+                            + " " + pileOverlay.lastFrameStats().summary()
+                            + " " + CardRenderHelper.frameStats().summary());
+        }
     }
 
     private float animationFrameTicks() {
@@ -2381,16 +2399,18 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void openPileOverlay(List<CardInstance> cards, Component title, PileOverlaySource source) {
-        pileOverlay = new CardGridPanel(cards, title);
+        pileOverlay = new CardGridPanel(cards, title, new StaticPileKey(source, ClientBattleState.snapshot().sequence()));
         pileOverlaySource = source;
         requestedPileKey = null;
         displayedPileKey = null;
+        pileOverlayPerfFrameIndex = 0;
     }
 
     private void openPileOverlay(Component title, PileOverlaySource source, BattleSnapshot snapshot) {
-        pileOverlay = new CardGridPanel(List.of(), title);
+        pileOverlay = new CardGridPanel(List.of(), title, new StaticPileKey(source, snapshot.sequence()));
         pileOverlaySource = source;
         displayedPileKey = null;
+        pileOverlayPerfFrameIndex = 0;
         pileOverlay.setDisplayCountOverride(expectedPileCount(snapshot, source));
         requestPileContentsIfNeeded(snapshot);
     }
@@ -2400,6 +2420,7 @@ public class BattleScreen extends NoBlurScreen {
         pileOverlaySource = PileOverlaySource.NONE;
         requestedPileKey = null;
         displayedPileKey = null;
+        pileOverlayPerfFrameIndex = 0;
     }
 
     private void updatePileOverlayCards(BattleSnapshot snapshot) {
@@ -2417,10 +2438,10 @@ public class BattleScreen extends NoBlurScreen {
             if (key.equals(displayedPileKey)) {
                 return;
             }
-            pileOverlay.setCards(ClientBattleState.pileContents(snapshot.battleId(), source, snapshot.localDeckVersion()));
+            pileOverlay.setCards(ClientBattleState.pileContents(snapshot.battleId(), source, snapshot.localDeckVersion()), key);
             displayedPileKey = key;
         } else if (displayedPileKey != null) {
-            pileOverlay.setCards(List.of());
+            pileOverlay.setCards(List.of(), new StaticPileKey(pileOverlaySource, snapshot.sequence()));
             displayedPileKey = null;
         }
     }
@@ -2602,7 +2623,6 @@ public class BattleScreen extends NoBlurScreen {
         float centerX = width / 2.0F;
         float scale = HAND_BASE_SCALE;
         if (!layout.cards().isEmpty()) {
-            centerX = layout.card(layout.cards().size() / 2).centerX();
             scale = Math.max(HAND_MIN_SCALE, layout.card(layout.cards().size() / 2).scale());
         }
         int cardW = Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale);
@@ -3546,6 +3566,9 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private record PileRequestKey(UUID battleId, BattlePileSource source, long deckVersion) {
+    }
+
+    private record StaticPileKey(PileOverlaySource source, long version) {
     }
 
     private static final class PileHoverAnimation {

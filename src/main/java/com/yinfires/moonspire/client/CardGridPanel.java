@@ -2,9 +2,11 @@ package com.yinfires.moonspire.client;
 
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -34,6 +36,8 @@ final class CardGridPanel {
 
     private final Component title;
     private final List<CardInstance> cards = new ArrayList<>();
+    private final List<String> warmupContentKeys = new ArrayList<>();
+    private final List<CardRenderHelper.CardValues> frameValues = new ArrayList<>();
     private final PreviewAnimation previewAnimation = new PreviewAnimation();
     private double scrollOffset;
     private boolean draggingScrollbar;
@@ -44,27 +48,46 @@ final class CardGridPanel {
     private Layout cachedLayout;
     private int cachedFirstVisibleIndex = -1;
     private int cachedLastVisibleIndex = -1;
-    private int cachedCardSignature;
-    private int currentCardSignature;
+    private Object contentKey = new Object();
     private int displayCountOverride = -1;
     private final Set<String> warmedCardKeys = new HashSet<>();
+    private int warmupCompleteStart = -1;
+    private int warmupCompleteEnd = -1;
+    private int warmupCompleteScroll = Integer.MIN_VALUE;
+    private int frameValuesStart = -1;
+    private int frameValuesEnd = -1;
+    private FrameStats lastFrameStats = FrameStats.EMPTY;
 
-    CardGridPanel(List<CardInstance> cards, Component title) {
+    CardGridPanel(List<CardInstance> cards, Component title, Object contentKey) {
         this.title = title;
-        setCards(cards);
+        setCards(cards, contentKey);
     }
 
-    void setCards(List<CardInstance> cards) {
-        if (sameCards(cards)) {
+    void setCards(List<CardInstance> cards, Object contentKey) {
+        if (Objects.equals(this.contentKey, contentKey)) {
             return;
         }
+        this.contentKey = contentKey;
         this.cards.clear();
-        this.cards.addAll(cards);
-        currentCardSignature = cardSignature();
+        this.warmupContentKeys.clear();
+        this.frameValues.clear();
+        if (cards != null && !cards.isEmpty()) {
+            for (CardInstance card : cards) {
+                this.cards.add(card);
+                this.warmupContentKeys.add(CardRenderHelper.warmupContentKey(card));
+                this.frameValues.add(null);
+            }
+        }
         invalidateLayout();
         warmedCardKeys.clear();
-        if (previewAnimation.cardId() != null && this.cards.stream().noneMatch(card -> card.id().equals(previewAnimation.cardId()))) {
-            previewAnimation.clear();
+        warmupCompleteStart = -1;
+        warmupCompleteEnd = -1;
+        warmupCompleteScroll = Integer.MIN_VALUE;
+        frameValuesStart = -1;
+        frameValuesEnd = -1;
+        previewAnimation.clear();
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.log("client.cardGrid.setCards", "cards=" + this.cards.size() + " contentKey=" + contentKey);
         }
     }
 
@@ -72,52 +95,105 @@ final class CardGridPanel {
         this.displayCountOverride = displayCountOverride;
     }
 
-    private boolean sameCards(List<CardInstance> nextCards) {
-        if (nextCards == null || nextCards.size() != cards.size()) {
-            return false;
-        }
-        for (int i = 0; i < cards.size(); i++) {
-            CardInstance current = cards.get(i);
-            CardInstance next = nextCards.get(i);
-            if (next == null || !current.id().equals(next.id()) || !current.cardId().equals(next.cardId())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     void render(GuiGraphics graphics, Font font, int width, int height, int mouseX, int mouseY, int bottomReserve, Predicate<CardInstance> selected, PreviewRenderer previewRenderer) {
         render(graphics, font, width, height, mouseX, mouseY, bottomReserve, selected, CardRenderHelper.CardValues::original, previewRenderer);
     }
 
     void render(GuiGraphics graphics, Font font, int width, int height, int mouseX, int mouseY, int bottomReserve, Predicate<CardInstance> selected, Function<CardInstance, CardRenderHelper.CardValues> values, PreviewRenderer previewRenderer) {
+        boolean diag = MoonSpirePerfDiagnostics.enabled();
+        long start = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
         Layout layout = layout(width, height, bottomReserve);
         constrainScroll(layout);
+        prepareFrameValues(layout, values);
         double frameScrollOffset = clampedScrollOffset(layout);
         boolean scrolledSinceLastFrame = Double.isFinite(previousScrollOffset) && Math.abs(frameScrollOffset - previousScrollOffset) > 0.01D;
         previousScrollOffset = frameScrollOffset;
-        warmupVisibleCards(font, layout, values);
+        long layoutNanos = elapsedSince(segmentStart);
+        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        int warmed = warmupVisibleCards(font, layout, values);
+        long warmupNanos = elapsedSince(segmentStart);
+        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
         MoonSpireUiTextures.drawOverlay(graphics, width, height);
+        long overlayNanos = elapsedSince(segmentStart);
 
+        int renderedCards = 0;
+        boolean previewRendered = false;
+        long hoverNanos = 0L;
+        long scissorNanos = 0L;
+        long baseNanos = 0L;
+        long artNanos = 0L;
+        long baseArtOtherNanos = 0L;
+        long clearDepthNanos = 0L;
+        long textNanos = 0L;
+        long scrollbarNanos = 0L;
+        long previewNanos = 0L;
+        long titleNanos = 0L;
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, MODAL_CONTENT_Z);
         try {
+            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
             hoveredIndex = hoveredCardIndex(layout, mouseX, mouseY);
+            hoverNanos += elapsedSince(segmentStart);
+            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
             graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
+            scissorNanos += elapsedSince(segmentStart);
             try {
+                boolean itemArtRendered = false;
                 for (int i = firstVisibleIndex(layout); i < Math.min(cards.size(), lastVisibleIndex(layout)); i++) {
                     if (i == hoveredIndex) {
                         continue;
                     }
                     CardBounds bounds = cardBounds(layout, i);
+                    if (!cardIntersectsView(layout, bounds)) {
+                        continue;
+                    }
                     CardInstance card = cards.get(i);
-                    renderGridCard(graphics, font, card, bounds.x(), bounds.y(), layout.cardW(), layout.cardH(), layout.cardScale(), selected.test(card), values.apply(card));
+                    segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                    long beforeBaseNanos = diag ? CardRenderHelper.frameFaceBaseNanos() : 0L;
+                    long beforeCustomArtNanos = diag ? CardRenderHelper.frameCustomArtNanos() : 0L;
+                    long beforeItemArtNanos = diag ? CardRenderHelper.frameItemArtNanos() : 0L;
+                    itemArtRendered |= renderGridCardBaseAndArt(graphics, card, bounds.x(), bounds.y(), layout.cardW(), layout.cardH(), layout.cardScale(), selected.test(card));
+                    long visualElapsed = elapsedSince(segmentStart);
+                    if (diag) {
+                        long cardBaseNanos = Math.max(0L, CardRenderHelper.frameFaceBaseNanos() - beforeBaseNanos);
+                        long cardArtNanos = Math.max(0L, CardRenderHelper.frameCustomArtNanos() - beforeCustomArtNanos)
+                                + Math.max(0L, CardRenderHelper.frameItemArtNanos() - beforeItemArtNanos);
+                        baseNanos += cardBaseNanos;
+                        artNanos += cardArtNanos;
+                        baseArtOtherNanos += Math.max(0L, visualElapsed - cardBaseNanos - cardArtNanos);
+                    }
+                }
+                if (itemArtRendered) {
+                    segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                    CardRenderHelper.clearBatchedItemArtDepth(graphics);
+                    clearDepthNanos += elapsedSince(segmentStart);
+                }
+                for (int i = firstVisibleIndex(layout); i < Math.min(cards.size(), lastVisibleIndex(layout)); i++) {
+                    if (i == hoveredIndex) {
+                        continue;
+                    }
+                    CardBounds bounds = cardBounds(layout, i);
+                    if (!cardIntersectsView(layout, bounds)) {
+                        continue;
+                    }
+                    CardInstance card = cards.get(i);
+                    boolean selectedCard = selected.test(card);
+                    segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                    renderGridCardText(graphics, font, card, warmupContentKeys.get(i), bounds.x(), bounds.y(), layout.cardW(), layout.cardH(), layout.cardScale(), selectedCard, frameValue(i), shouldRenderGridDescription(layout, bounds, card, selectedCard));
+                    textNanos += elapsedSince(segmentStart);
+                    renderedCards++;
                 }
             } finally {
+                segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
                 graphics.disableScissor();
+                scissorNanos += elapsedSince(segmentStart);
             }
 
+            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
             renderScrollbar(graphics, layout);
+            scrollbarNanos += elapsedSince(segmentStart);
+            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
             if (hoveredIndex >= 0) {
                 CardInstance card = cards.get(hoveredIndex);
                 CardBounds cardBounds = cardBounds(layout, hoveredIndex);
@@ -128,6 +204,7 @@ final class CardGridPanel {
                 }
                 previewAnimation.advance(animationFrameTicks());
                 renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
+                previewRendered = true;
                 if (previewAnimation.progress() > 0.86F) {
                     int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());
                     int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewAnimation.scale());
@@ -141,15 +218,22 @@ final class CardGridPanel {
                 CardInstance closingCard = previewAnimation.card(cards);
                 if (closingCard != null && previewAnimation.visible()) {
                     renderAnimatedPreview(graphics, font, closingCard, selected.test(closingCard), previewAnimation, previewRenderer);
+                    previewRendered = true;
                 } else {
                     previewAnimation.clear();
                     lastAnimationNanos = 0L;
                 }
             }
+            previewNanos += elapsedSince(segmentStart);
+            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
             renderTitleBand(graphics, font, layout);
+            titleNanos += elapsedSince(segmentStart);
         } finally {
             graphics.pose().popPose();
         }
+        int visible = visibleCardCount(layout);
+        long elapsed = diag ? MoonSpirePerfDiagnostics.now() - start : 0L;
+        lastFrameStats = new FrameStats(cards.size(), visible, warmed, renderedCards, hoveredIndex, previewRendered, elapsed, layoutNanos, warmupNanos, overlayNanos, hoverNanos, scissorNanos, baseNanos, artNanos, baseArtOtherNanos, clearDepthNanos, textNanos, scrollbarNanos, previewNanos, titleNanos);
     }
 
     boolean mouseClicked(int width, int height, int bottomReserve, double mouseX, double mouseY, int button) {
@@ -233,35 +317,76 @@ final class CardGridPanel {
     void warmup(int width, int height, int bottomReserve, Font font, Function<CardInstance, CardRenderHelper.CardValues> values) {
         Layout layout = layout(width, height, bottomReserve);
         constrainScroll(layout);
+        prepareFrameValues(layout, values);
         warmupVisibleCards(font, layout, values);
     }
 
-    private void warmupVisibleCards(Font font, Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
+    FrameStats lastFrameStats() {
+        return lastFrameStats;
+    }
+
+    private int warmupVisibleCards(Font font, Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
+        int start = firstVisibleIndex(layout);
         int end = Math.min(cards.size(), lastVisibleIndex(layout));
+        int scrollKey = (int) Math.round(clampedScrollOffset(layout));
+        if (warmupCompleteStart == start && warmupCompleteEnd == end && warmupCompleteScroll == scrollKey) {
+            return 0;
+        }
         int warmedThisFrame = 0;
-        for (int i = firstVisibleIndex(layout); i < end; i++) {
+        for (int i = start; i < end; i++) {
+            if (!cardIntersectsView(layout, cardBounds(layout, i))) {
+                continue;
+            }
             CardInstance card = cards.get(i);
-            CardRenderHelper.CardValues cardValues = values.apply(card);
-            String key = CardRenderHelper.warmupKey(card, cardValues);
+            CardRenderHelper.CardValues cardValues = frameValue(i);
+            String key = CardRenderHelper.warmupKey(warmupContentKeys.get(i), cardValues);
             if (!warmedCardKeys.add(key)) {
                 continue;
             }
             CardRenderHelper.warmupCard(font, card, cardValues);
             warmedThisFrame++;
             if (warmedThisFrame >= WARMUP_CARDS_PER_FRAME) {
-                return;
+                return warmedThisFrame;
             }
         }
+        warmupCompleteStart = start;
+        warmupCompleteEnd = end;
+        warmupCompleteScroll = scrollKey;
+        return warmedThisFrame;
     }
 
     private void renderGridCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int baseW, int baseH, float baseScale, boolean selected, CardRenderHelper.CardValues values) {
+        boolean itemArtRendered = renderGridCardBaseAndArt(graphics, card, x, y, baseW, baseH, baseScale, selected);
+        if (itemArtRendered) {
+            CardRenderHelper.clearBatchedItemArtDepth(graphics);
+        }
+        renderGridCardText(graphics, font, card, x, y, baseW, baseH, baseScale, selected, values);
+    }
+
+    private boolean renderGridCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, int baseW, int baseH, float baseScale, boolean selected) {
         float scale = selected ? Math.min(1.0F, baseScale + GRID_SELECTED_SCALE_BONUS) : baseScale;
         int cardW = Math.round(CardRenderHelper.CARD_WIDTH * scale);
         int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
         graphics.pose().pushPose();
         graphics.pose().translate(x + (baseW - cardW) / 2.0F, y + (baseH - cardH) / 2.0F, 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
-        CardRenderHelper.renderCard(graphics, font, card, 0, 0, false, values, false, false);
+        boolean itemArtRendered = CardRenderHelper.renderGridCardBaseAndArt(graphics, card, 0, 0);
+        graphics.pose().popPose();
+        return itemArtRendered;
+    }
+
+    private void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int baseW, int baseH, float baseScale, boolean selected, CardRenderHelper.CardValues values) {
+        renderGridCardText(graphics, font, card, CardRenderHelper.warmupContentKey(card), x, y, baseW, baseH, baseScale, selected, values, true);
+    }
+
+    private void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, String contentKey, int x, int y, int baseW, int baseH, float baseScale, boolean selected, CardRenderHelper.CardValues values, boolean showDescription) {
+        float scale = selected ? Math.min(1.0F, baseScale + GRID_SELECTED_SCALE_BONUS) : baseScale;
+        int cardW = Math.round(CardRenderHelper.CARD_WIDTH * scale);
+        int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        graphics.pose().pushPose();
+        graphics.pose().translate(x + (baseW - cardW) / 2.0F, y + (baseH - cardH) / 2.0F, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        CardRenderHelper.renderGridCardText(graphics, font, card, 0, 0, values, showDescription, contentKey);
         graphics.pose().popPose();
     }
 
@@ -342,13 +467,77 @@ final class CardGridPanel {
         return new CardBounds(x, y);
     }
 
+    private boolean cardIntersectsView(Layout layout, CardBounds bounds) {
+        return bounds.x() < layout.viewX() + layout.viewW()
+                && bounds.x() + layout.cardW() > layout.viewX()
+                && bounds.y() < layout.viewY() + layout.viewH()
+                && bounds.y() + layout.cardH() > layout.viewY();
+    }
+
+    private boolean descriptionIntersectsView(Layout layout, CardBounds bounds, CardInstance card, boolean selected) {
+        float scale = selected ? Math.min(1.0F, layout.cardScale() + GRID_SELECTED_SCALE_BONUS) : layout.cardScale();
+        int cardW = Math.round(CardRenderHelper.CARD_WIDTH * scale);
+        int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        float cardX = bounds.x() + (layout.cardW() - cardW) / 2.0F;
+        float cardY = bounds.y() + (layout.cardH() - cardH) / 2.0F;
+        CardRenderHelper.CardLocalArea area = CardRenderHelper.gridCardDescriptionArea(card);
+        float descX = cardX + area.x() * scale;
+        float descY = cardY + area.y() * scale;
+        float descW = area.width() * scale;
+        float descH = area.height() * scale;
+        return descX < layout.viewX() + layout.viewW()
+                && descX + descW > layout.viewX()
+                && descY < layout.viewY() + layout.viewH()
+                && descY + descH > layout.viewY();
+    }
+
+    private boolean shouldRenderGridDescription(Layout layout, CardBounds bounds, CardInstance card, boolean selected) {
+        return descriptionIntersectsView(layout, bounds, card, selected);
+    }
+
+    private void prepareFrameValues(Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
+        int start = firstVisibleIndex(layout);
+        int end = Math.min(cards.size(), lastVisibleIndex(layout));
+        if (frameValuesStart != start || frameValuesEnd != end) {
+            for (int i = Math.max(0, frameValuesStart); i < Math.min(frameValuesEnd, frameValues.size()); i++) {
+                frameValues.set(i, null);
+            }
+            frameValuesStart = start;
+            frameValuesEnd = end;
+        }
+        for (int i = start; i < end; i++) {
+            if (cardIntersectsView(layout, cardBounds(layout, i)) && frameValues.get(i) == null) {
+                frameValues.set(i, values.apply(cards.get(i)));
+            }
+        }
+    }
+
+    private CardRenderHelper.CardValues frameValue(int index) {
+        CardRenderHelper.CardValues cached = frameValues.get(index);
+        if (cached != null) {
+            return cached;
+        }
+        CardRenderHelper.CardValues fallback = CardRenderHelper.CardValues.original(cards.get(index));
+        frameValues.set(index, fallback);
+        return fallback;
+    }
+
+    private int visibleCardCount(Layout layout) {
+        int count = 0;
+        int end = Math.min(cards.size(), lastVisibleIndex(layout));
+        for (int i = firstVisibleIndex(layout); i < end; i++) {
+            if (cardIntersectsView(layout, cardBounds(layout, i))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private Layout layout(int width, int height, int bottomReserve) {
-        int signature = currentCardSignature;
         if (cachedLayout != null
                 && cachedLayout.screenW() == width
                 && cachedLayout.screenH() == height
-                && cachedLayout.bottomReserve() == Math.max(0, bottomReserve)
-                && cachedCardSignature == signature) {
+                && cachedLayout.bottomReserve() == Math.max(0, bottomReserve)) {
             return cachedLayout;
         }
         int viewX = 18;
@@ -379,7 +568,6 @@ final class CardGridPanel {
         int contentH = cards.isEmpty() ? 0 : scrollPadTop + cardContentH + scrollPadBottom;
         int scrollbarX = viewX + viewW - SCROLLBAR_HIT_WIDTH / 2;
         cachedLayout = new Layout(width, height, reservedBottom, viewX, cardViewY, viewW, viewH, cardsX, scrollbarX, columns, cardW, cardH, rowH, contentH, scrollPadTop, cardScale);
-        cachedCardSignature = signature;
         cachedFirstVisibleIndex = -1;
         cachedLastVisibleIndex = -1;
         return cachedLayout;
@@ -483,15 +671,6 @@ final class CardGridPanel {
         cachedLastVisibleIndex = -1;
     }
 
-    private int cardSignature() {
-        int result = cards.size();
-        for (CardInstance card : cards) {
-            result = 31 * result + card.id().hashCode();
-            result = 31 * result + card.cardId().hashCode();
-        }
-        return result;
-    }
-
     @FunctionalInterface
     interface PreviewRenderer {
         void render(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected);
@@ -509,6 +688,10 @@ final class CardGridPanel {
             return 0.25F;
         }
         return Math.max(0.05F, Math.min(1.5F, deltaTicks));
+    }
+
+    private static long elapsedSince(long startNanos) {
+        return startNanos == 0L ? 0L : MoonSpirePerfDiagnostics.now() - startNanos;
     }
 
     private record Layout(int screenW, int screenH, int bottomReserve, int viewX, int viewY, int viewW, int viewH, int cardsX, int scrollbarX, int columns, int cardW, int cardH, int rowH, int contentH, int scrollPadTop, float cardScale) {
@@ -541,6 +724,33 @@ final class CardGridPanel {
     }
 
     private record ScrollbarThumb(int y, int height) {
+    }
+
+    record FrameStats(int cards, int visible, int warmup, int rendered, int hoveredIndex, boolean previewRendered, long renderNanos, long layoutNanos, long warmupNanos, long overlayNanos, long hoverNanos, long scissorNanos, long baseNanos, long artNanos, long baseArtOtherNanos, long clearDepthNanos, long textNanos, long scrollbarNanos, long previewNanos, long titleNanos) {
+        private static final FrameStats EMPTY = new FrameStats(0, 0, 0, 0, -1, false, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+
+        String summary() {
+            return "cards=" + cards
+                    + " visible=" + visible
+                    + " warmup=" + warmup
+                    + " rendered=" + rendered
+                    + " hoveredIndex=" + hoveredIndex
+                    + " preview=" + previewRendered
+                    + " gridMs=" + MoonSpirePerfDiagnostics.millis(renderNanos)
+                    + " layoutMs=" + MoonSpirePerfDiagnostics.millis(layoutNanos)
+                    + " warmupMs=" + MoonSpirePerfDiagnostics.millis(warmupNanos)
+                    + " overlayMs=" + MoonSpirePerfDiagnostics.millis(overlayNanos)
+                    + " hoverMs=" + MoonSpirePerfDiagnostics.millis(hoverNanos)
+                    + " scissorMs=" + MoonSpirePerfDiagnostics.millis(scissorNanos)
+                    + " baseMs=" + MoonSpirePerfDiagnostics.millis(baseNanos)
+                    + " artMs=" + MoonSpirePerfDiagnostics.millis(artNanos)
+                    + " baseArtOtherMs=" + MoonSpirePerfDiagnostics.millis(baseArtOtherNanos)
+                    + " clearDepthMs=" + MoonSpirePerfDiagnostics.millis(clearDepthNanos)
+                    + " textMs=" + MoonSpirePerfDiagnostics.millis(textNanos)
+                    + " scrollbarMs=" + MoonSpirePerfDiagnostics.millis(scrollbarNanos)
+                    + " previewMs=" + MoonSpirePerfDiagnostics.millis(previewNanos)
+                    + " titleMs=" + MoonSpirePerfDiagnostics.millis(titleNanos);
+        }
     }
 
     private static final class PreviewAnimation {

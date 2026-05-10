@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.GlConst;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
 import com.yinfires.moonspire.battle.BattleDamageCalculator;
 import com.yinfires.moonspire.battle.BattleEffectSnapshot;
@@ -31,14 +32,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -75,6 +80,14 @@ public final class CardRenderHelper {
     private static final int TEXTURE_HEIGHT = 158;
     private static final Map<String, TextureRef> FILE_TEXTURES = new HashMap<>();
     private static final Map<String, TextureLookup> FILE_TEXTURE_LOOKUPS = new HashMap<>();
+    private static final Map<String, AsyncTextureState> ASYNC_FILE_TEXTURES = new ConcurrentHashMap<>();
+    private static final ConcurrentLinkedQueue<LoadedTexture> LOADED_FILE_TEXTURES = new ConcurrentLinkedQueue<>();
+    private static final ExecutorService TEXTURE_LOAD_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "MoonSpire Card Texture Loader");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private static final int TEXTURE_REGISTRATIONS_PER_FRAME = 2;
     private static final Map<String, ItemStack> ART_ITEMS = new HashMap<>();
     private static final Map<String, List<FormattedCharSequence>> DESCRIPTION_WRAP_CACHE = new LinkedHashMap<>(128, 0.75F, true) {
         @Override
@@ -82,13 +95,44 @@ public final class CardRenderHelper {
             return size() > 512;
         }
     };
+    private static final Map<String, DescriptionLayout> DESCRIPTION_LAYOUT_CACHE = new LinkedHashMap<>(128, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, DescriptionLayout> eldest) {
+            return size() > 512;
+        }
+    };
+    private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(128, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) {
+            return size() > 512;
+        }
+    };
+    private static final Map<String, TextContent> TEXT_CONTENT_CACHE = new LinkedHashMap<>(128, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, TextContent> eldest) {
+            return size() > 512;
+        }
+    };
     private static long descriptionCacheRevision = Long.MIN_VALUE;
     private static final ThreadLocal<CardRenderContext> FRAME_CONTEXT = new ThreadLocal<>();
+    private static int textureRegistrationsThisFrame;
+    private static long textureRegistrationNanosThisFrame;
+    private static int textureDecodeCompletedTotal;
+    private static long textureDecodeNanosTotal;
 
     private record TextureRef(ResourceLocation location, int width, int height) {
     }
 
     private record TextureLookup(TextureRef texture) {
+    }
+
+    private enum AsyncTextureState {
+        LOADING,
+        READY,
+        FAILED
+    }
+
+    private record LoadedTexture(String key, NativeImage image) {
     }
 
     public record CardValues(int attack, int defense, List<Integer> damageAmounts, List<Integer> blockAmounts) {
@@ -115,11 +159,63 @@ public final class CardRenderHelper {
     public static CardRenderContext openFrameContext() {
         CardRenderContext context = new CardRenderContext(FRAME_CONTEXT.get());
         FRAME_CONTEXT.set(context);
+        registerPendingFileTextures();
         return context;
     }
 
+    public static CardRenderStats frameStats() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        return context == null ? CardRenderStats.EMPTY : context.stats();
+    }
+
+    public static long frameFaceBaseNanos() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        return context == null ? 0L : context.faceBaseNanos;
+    }
+
+    public static long frameCustomArtNanos() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        return context == null ? 0L : context.customArtNanos;
+    }
+
+    public static long frameItemArtNanos() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        return context == null ? 0L : context.itemArtNanos;
+    }
+
+    public record CardRenderStats(int textureRegistrations, long textureRegistrationNanos, int textureDecodeCompleted, long textureDecodeNanos, int fakeItemRenders, int skippedItemArt, int itemDepthClears, int descriptionCacheHits, int descriptionCacheMisses, long faceBaseNanos, long customArtNanos, long itemArtNanos, long textCostNanos, long textNameNanos, long textTypeNanos, long textDescriptionNanos) {
+        private static final CardRenderStats EMPTY = new CardRenderStats(0, 0L, 0, 0L, 0, 0, 0, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+
+        public String summary() {
+            return "textureRegistrations=" + textureRegistrations
+                    + " textureRegisterMs=" + MoonSpirePerfDiagnostics.millis(textureRegistrationNanos)
+                    + " textureDecoded=" + textureDecodeCompleted
+                    + " textureDecodeMs=" + MoonSpirePerfDiagnostics.millis(textureDecodeNanos)
+                    + " fakeItemRenders=" + fakeItemRenders
+                    + " skippedItemArt=" + skippedItemArt
+                    + " itemDepthClears=" + itemDepthClears
+                    + " descCacheHits=" + descriptionCacheHits
+                    + " descCacheMisses=" + descriptionCacheMisses
+                    + " faceBaseMs=" + MoonSpirePerfDiagnostics.millis(faceBaseNanos)
+                    + " customArtMs=" + MoonSpirePerfDiagnostics.millis(customArtNanos)
+                    + " itemArtMs=" + MoonSpirePerfDiagnostics.millis(itemArtNanos)
+                    + " textCostMs=" + MoonSpirePerfDiagnostics.millis(textCostNanos)
+                    + " textNameMs=" + MoonSpirePerfDiagnostics.millis(textNameNanos)
+                    + " textTypeMs=" + MoonSpirePerfDiagnostics.millis(textTypeNanos)
+                    + " textDescMs=" + MoonSpirePerfDiagnostics.millis(textDescriptionNanos);
+        }
+    }
+
     public static String warmupKey(CardInstance card, CardValues values) {
-        return dataVersionKey() + "|" + card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense();
+        return warmupKey(warmupContentKey(card), values);
+    }
+
+    public static String warmupContentKey(CardInstance card) {
+        return dataVersionKey() + "|" + cardContentKey(card);
+    }
+
+    public static String warmupKey(String contentKey, CardValues values) {
+        return contentKey + "|" + valuesKey(values);
     }
 
     public static final class CardRenderContext implements AutoCloseable {
@@ -129,12 +225,32 @@ public final class CardRenderHelper {
         private final DeveloperData data;
         private final long dataVersion;
         private final Map<String, DeveloperCardFace> faceCache = boundedMap();
+        private int fakeItemRenders;
+        private int skippedItemArt;
+        private int itemDepthClears;
+        private int descriptionCacheHits;
+        private int descriptionCacheMisses;
+        private long faceBaseNanos;
+        private long customArtNanos;
+        private long itemArtNanos;
+        private long textCostNanos;
+        private long textNameNanos;
+        private long textTypeNanos;
+        private long textDescriptionNanos;
+        private int textureRegistrationsAtOpen;
+        private long textureRegistrationNanosAtOpen;
+        private int textureDecodeCompletedAtOpen;
+        private long textureDecodeNanosAtOpen;
         private boolean closed;
 
         private CardRenderContext(CardRenderContext previous) {
             this.previous = previous;
             this.data = DeveloperDataManager.cachedOrLoad();
             this.dataVersion = DeveloperDataManager.cachedStamp();
+            this.textureRegistrationsAtOpen = textureRegistrationsThisFrame;
+            this.textureRegistrationNanosAtOpen = textureRegistrationNanosThisFrame;
+            this.textureDecodeCompletedAtOpen = textureDecodeCompletedTotal;
+            this.textureDecodeNanosAtOpen = textureDecodeNanosTotal;
         }
 
         @Override
@@ -146,12 +262,92 @@ public final class CardRenderHelper {
             if (previous == null) {
                 FRAME_CONTEXT.remove();
             } else {
+                previous.fakeItemRenders += fakeItemRenders;
+                previous.skippedItemArt += skippedItemArt;
+                previous.itemDepthClears += itemDepthClears;
+                previous.descriptionCacheHits += descriptionCacheHits;
+                previous.descriptionCacheMisses += descriptionCacheMisses;
+                previous.faceBaseNanos += faceBaseNanos;
+                previous.customArtNanos += customArtNanos;
+                previous.itemArtNanos += itemArtNanos;
+                previous.textCostNanos += textCostNanos;
+                previous.textNameNanos += textNameNanos;
+                previous.textTypeNanos += textTypeNanos;
+                previous.textDescriptionNanos += textDescriptionNanos;
                 FRAME_CONTEXT.set(previous);
             }
         }
 
         private DeveloperCardFace cardFace(CardInstance card) {
             return faceCache.computeIfAbsent(faceCacheKey(card, dataVersion), ignored -> resolveCardFace(card, data));
+        }
+
+        private void recordFakeItemRender() {
+            fakeItemRenders++;
+        }
+
+        private void recordSkippedItemArt() {
+            skippedItemArt++;
+        }
+
+        private void recordItemDepthClear() {
+            itemDepthClears++;
+        }
+
+        private void recordDescriptionCacheHit() {
+            descriptionCacheHits++;
+        }
+
+        private void recordDescriptionCacheMiss() {
+            descriptionCacheMisses++;
+        }
+
+        private void recordFaceBase(long nanos) {
+            faceBaseNanos += nanos;
+        }
+
+        private void recordCustomArt(long nanos) {
+            customArtNanos += nanos;
+        }
+
+        private void recordItemArt(long nanos) {
+            itemArtNanos += nanos;
+        }
+
+        private void recordTextCost(long nanos) {
+            textCostNanos += nanos;
+        }
+
+        private void recordTextName(long nanos) {
+            textNameNanos += nanos;
+        }
+
+        private void recordTextType(long nanos) {
+            textTypeNanos += nanos;
+        }
+
+        private void recordTextDescription(long nanos) {
+            textDescriptionNanos += nanos;
+        }
+
+        private CardRenderStats stats() {
+            return new CardRenderStats(
+                    Math.max(0, textureRegistrationsThisFrame - textureRegistrationsAtOpen),
+                    Math.max(0L, textureRegistrationNanosThisFrame - textureRegistrationNanosAtOpen),
+                    Math.max(0, textureDecodeCompletedTotal - textureDecodeCompletedAtOpen),
+                    Math.max(0L, textureDecodeNanosTotal - textureDecodeNanosAtOpen),
+                    fakeItemRenders,
+                    skippedItemArt,
+                    itemDepthClears,
+                    descriptionCacheHits,
+                    descriptionCacheMisses,
+                    faceBaseNanos,
+                    customArtNanos,
+                    itemArtNanos,
+                    textCostNanos,
+                    textNameNanos,
+                    textTypeNanos,
+                    textDescriptionNanos);
         }
 
         private static <T> Map<String, T> boundedMap() {
@@ -167,13 +363,21 @@ public final class CardRenderHelper {
     private record TipLayout(List<FormattedCharSequence> titleLines, List<FormattedCharSequence> descLines, int height) {
     }
 
-    private record DescriptionLayout(List<FormattedCharSequence> lines, float scale) {
+    public record TextLine(FormattedCharSequence text, int width) {
+    }
+
+    private record DescriptionLayout(List<TextLine> lines, float scale) {
+    }
+
+    private record TextContent(FormattedCharSequence name, int nameWidth, FormattedCharSequence type, int typeWidth) {
     }
 
     public static void invalidateFileTexture(Path path) {
         if (path != null) {
-            FILE_TEXTURES.remove(path.toAbsolutePath().normalize().toString());
-            FILE_TEXTURE_LOOKUPS.remove(path.toAbsolutePath().normalize().toString());
+            String key = path.toAbsolutePath().normalize().toString();
+            FILE_TEXTURES.remove(key);
+            FILE_TEXTURE_LOOKUPS.remove(key);
+            ASYNC_FILE_TEXTURES.remove(key);
         }
     }
 
@@ -181,22 +385,20 @@ public final class CardRenderHelper {
         if (font == null || card == null) {
             return;
         }
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         DeveloperCardFace face = cardFace(card);
         font.width(card.nameComponent());
         font.width(Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill"));
         DeveloperCardFace.Area descArea = face.descriptionArea();
         int descWidth = sx(CARD_WIDTH, descArea.width());
         float scale = DETAILED_DESCRIPTION_SCALE;
-        List<Component> lines = descriptionLines(card, values);
-        if (lines.isEmpty()) {
-            lines = List.of(card.descriptionComponent());
-        }
-        for (Component line : lines) {
-            font.split(line, Math.max(1, (int) (descWidth / scale)));
-        }
+        wrappedDescriptionLines(font, card, values, Math.max(1, (int) (descWidth / scale)));
         customTexture(face.imagePath(), DeveloperPaths.cardFacesDirectory());
         customTexture(card.artPath(), DeveloperPaths.cardArtDirectory());
         artItem(card.artItemId());
+        if (MoonSpirePerfDiagnostics.enabled()) {
+            MoonSpirePerfDiagnostics.mark("client.card.warmup", MoonSpirePerfDiagnostics.now() - start);
+        }
     }
 
     public record BarSegments(int healthWidth, int blockX, int blockWidth) {
@@ -251,6 +453,38 @@ public final class CardRenderHelper {
 
     public static void renderSmallCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean unaffordable, CardValues values, boolean clipArt, boolean showDescription) {
         renderCard(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, selected, false, unaffordable, values, clipArt, null, showDescription);
+    }
+
+    public static void renderGridCardFast(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, CardValues values) {
+        renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, false, values, true, null, true, true);
+    }
+
+    public static boolean renderGridCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y) {
+        return renderCardBaseAndArt(graphics, card, x, y, CARD_WIDTH, CARD_HEIGHT, true, null, true, false);
+    }
+
+    public static void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values) {
+        renderGridCardText(graphics, font, card, x, y, values, true);
+    }
+
+    public static void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values, boolean showDescription) {
+        renderGridCardText(graphics, font, card, x, y, values, showDescription, null);
+    }
+
+    public static void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values, boolean showDescription, String contentKey) {
+        renderCardText(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, true, false, values, null, showDescription, contentKey);
+    }
+
+    public static CardLocalArea gridCardDescriptionArea(CardInstance card) {
+        return descriptionArea(card, CARD_WIDTH, CARD_HEIGHT, null);
+    }
+
+    public static void clearBatchedItemArtDepth(GuiGraphics graphics) {
+        clearItemDepth();
+    }
+
+    public static void clearBatchedItemArtDepth() {
+        clearItemDepth();
     }
 
     public static int previewAttack(CardInstance card, int attackerSpeed, int defenderSpeed, int defenderBlock) {
@@ -702,16 +936,17 @@ public final class CardRenderHelper {
     }
 
     private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values, boolean clipArt, DeveloperData dataOverride, boolean showDescription) {
+        renderCard(graphics, font, card, x, y, width, height, selected, detailed, unaffordable, values, clipArt, dataOverride, showDescription, true);
+    }
+
+    private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values, boolean clipArt, DeveloperData dataOverride, boolean showDescription, boolean renderItemArt) {
+        renderCardBaseAndArt(graphics, card, x, y, width, height, clipArt, dataOverride, renderItemArt, true);
+        renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription);
+    }
+
+    private static boolean renderCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, boolean clipArt, DeveloperData dataOverride, boolean renderItemArt, boolean clearItemDepth) {
         DeveloperCardFace face = cardFace(card, dataOverride);
         renderCardFaceBase(graphics, face.imagePath(), x, y, width, height);
-
-        DeveloperCardFace.Area costArea = face.costArea();
-        drawCardCostNumber(graphics, font, Integer.toString(card.cost()), x + sx(width, costArea.x()) + sx(width, costArea.width()) / 2, y + sy(height, costArea.y()) + sy(height, costArea.height()) / 2, width, unaffordable);
-
-        float nameScale = detailed ? 0.86F : 0.58F;
-        DeveloperCardFace.Area nameArea = face.nameArea();
-        drawCenteredFit(graphics, font, card.nameComponent().getString(), x + sx(width, nameArea.x()), y + sy(height, nameArea.y()), sx(width, nameArea.width()), sy(height, nameArea.height()), 0xFF3A3025, nameScale);
-
         DeveloperCardFace.Area artArea = face.artArea();
         int artX = x + sx(width, artArea.x());
         int artY = y + sy(height, artArea.y());
@@ -719,22 +954,58 @@ public final class CardRenderHelper {
         int artHeight = sy(height, artArea.height());
         TextureRef artTexture = customTexture(card.artPath(), DeveloperPaths.cardArtDirectory());
         ItemStack artItem = artItem(card.artItemId());
+        boolean renderedItemArt = false;
         if (!artItem.isEmpty()) {
-            renderCardArtItem(graphics, artItem, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipArt);
+            if (!renderItemArt) {
+                recordSkippedItemArt();
+            } else {
+                renderCardArtItem(graphics, artItem, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipArt, clearItemDepth);
+                renderedItemArt = true;
+            }
         } else if (artTexture != null) {
             renderCustomCardArt(graphics, artTexture, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipArt);
         } else if (!card.sourceStack().isEmpty()) {
-            renderCardArtItem(graphics, card, artX, artY, artWidth, artHeight, clipArt);
+            if (!renderItemArt) {
+                recordSkippedItemArt();
+            } else {
+                renderCardArtItem(graphics, card, artX, artY, artWidth, artHeight, clipArt, clearItemDepth);
+                renderedItemArt = true;
+            }
         }
+        return renderedItemArt;
+    }
 
-        Component type = Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill");
+    private static void renderCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, boolean unaffordable, CardValues values, DeveloperData dataOverride, boolean showDescription) {
+        renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription, null);
+    }
+
+    private static void renderCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, boolean unaffordable, CardValues values, DeveloperData dataOverride, boolean showDescription, String contentKey) {
+        boolean diag = MoonSpirePerfDiagnostics.enabled();
+        DeveloperCardFace face = cardFace(card, dataOverride);
+        String effectiveContentKey = contentKey == null ? dataVersionKey() + "|" + cardContentKey(card) : contentKey;
+        TextContent textContent = dataOverride == null ? textContent(font, card, effectiveContentKey) : uncachedTextContent(font, card);
+        DeveloperCardFace.Area costArea = face.costArea();
+        long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        drawCardCostNumber(graphics, font, Integer.toString(card.cost()), x + sx(width, costArea.x()) + sx(width, costArea.width()) / 2, y + sy(height, costArea.y()) + sy(height, costArea.height()) / 2, width, unaffordable);
+        recordTextCost(segmentStart);
+
+        float nameScale = detailed ? 0.86F : 0.58F;
+        DeveloperCardFace.Area nameArea = face.nameArea();
+        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        drawCenteredFit(graphics, font, textContent.name(), textContent.nameWidth(), x + sx(width, nameArea.x()), y + sy(height, nameArea.y()), sx(width, nameArea.width()), sy(height, nameArea.height()), 0xFF3A3025, nameScale);
+        recordTextName(segmentStart);
+
         DeveloperCardFace.Area typeArea = face.typeArea();
-        drawCenteredFit(graphics, font, type.getString(), x + sx(width, typeArea.x()), y + sy(height, typeArea.y()), sx(width, typeArea.width()), sy(height, typeArea.height()), 0xFF514B45, detailed ? 0.62F : 0.48F);
+        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        drawCenteredFit(graphics, font, textContent.type(), textContent.typeWidth(), x + sx(width, typeArea.x()), y + sy(height, typeArea.y()), sx(width, typeArea.width()), sy(height, typeArea.height()), 0xFF514B45, detailed ? 0.62F : 0.48F);
+        recordTextType(segmentStart);
 
         if (!showDescription) {
             return;
         }
-        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true, face);
+        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true, face, effectiveContentKey);
+        recordTextDescription(segmentStart);
     }
 
     private static CardLocalArea descriptionArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
@@ -743,17 +1014,17 @@ public final class CardRenderHelper {
     }
 
     private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription) {
-        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, clipDescription, cardFace(card, dataOverride));
+        renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, clipDescription, cardFace(card, dataOverride), null);
     }
 
-    private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription, DeveloperCardFace face) {
+    private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription, DeveloperCardFace face, String contentKey) {
         DeveloperCardFace.Area faceDescArea = face.descriptionArea();
         CardLocalArea descArea = new CardLocalArea(sx(width, faceDescArea.x()), sy(height, faceDescArea.y()), sx(width, faceDescArea.width()), sy(height, faceDescArea.height()));
         int descX = x + descArea.x();
         int descY = y + descArea.y();
         int descWidth = descArea.width();
         int descHeight = descArea.height();
-        DescriptionLayout layout = descriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
+        DescriptionLayout layout = descriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride, contentKey);
         if (clipDescription) {
             enablePoseScissor(graphics, descX, descY, descWidth, descHeight);
         }
@@ -776,14 +1047,37 @@ public final class CardRenderHelper {
         graphics.enableScissor((int) Math.floor(minX), (int) Math.floor(minY), (int) Math.ceil(maxX), (int) Math.ceil(maxY));
     }
 
-    private static DescriptionLayout descriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride) {
+    private static DescriptionLayout descriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride, String contentKey) {
+        if (dataOverride == null) {
+            long revision = DeveloperDataManager.cacheRevision();
+            if (descriptionCacheRevision != revision) {
+                DESCRIPTION_WRAP_CACHE.clear();
+                DESCRIPTION_LAYOUT_CACHE.clear();
+                TEXT_WIDTH_CACHE.clear();
+                TEXT_CONTENT_CACHE.clear();
+                descriptionCacheRevision = revision;
+            }
+            String baseKey = contentKey == null ? dataVersionKey() + "|" + cardContentKey(card) : contentKey;
+            String key = baseKey + "|" + valuesKey(values) + "|" + descWidth + "|" + descHeight + "|" + detailed;
+            DescriptionLayout cached = DESCRIPTION_LAYOUT_CACHE.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            DescriptionLayout built = buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
+            DESCRIPTION_LAYOUT_CACHE.put(key, built);
+            return built;
+        }
+        return buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
+    }
+
+    private static DescriptionLayout buildDescriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride) {
         float baseScale = detailed ? DETAILED_DESCRIPTION_SCALE : COMPACT_DESCRIPTION_SCALE;
         float minScale = detailed ? DETAILED_DESCRIPTION_MIN_SCALE : COMPACT_DESCRIPTION_MIN_SCALE;
         for (float scale = baseScale; scale >= minScale - 0.001F; scale -= DESCRIPTION_SCALE_STEP) {
             float normalizedScale = Math.max(minScale, scale);
             List<FormattedCharSequence> lines = descriptionLinesAtScale(font, card, values, descWidth, normalizedScale, dataOverride);
             if (descriptionFits(font, lines, normalizedScale, descHeight)) {
-                return new DescriptionLayout(lines, normalizedScale);
+                return new DescriptionLayout(widthLines(font, lines), normalizedScale);
             }
         }
         List<FormattedCharSequence> fallbackLines = descriptionLinesAtScale(font, card, values, descWidth, minScale, dataOverride);
@@ -791,7 +1085,7 @@ public final class CardRenderHelper {
         if (fallbackLines.size() > maxVisibleLines) {
             fallbackLines = List.copyOf(fallbackLines.subList(0, maxVisibleLines));
         }
-        return new DescriptionLayout(fallbackLines, minScale);
+        return new DescriptionLayout(widthLines(font, fallbackLines), minScale);
     }
 
     private static boolean descriptionFits(Font font, List<FormattedCharSequence> lines, float scale, int descHeight) {
@@ -812,10 +1106,26 @@ public final class CardRenderHelper {
         long revision = DeveloperDataManager.cacheRevision();
         if (descriptionCacheRevision != revision) {
             DESCRIPTION_WRAP_CACHE.clear();
+            DESCRIPTION_LAYOUT_CACHE.clear();
+            TEXT_WIDTH_CACHE.clear();
+            TEXT_CONTENT_CACHE.clear();
             descriptionCacheRevision = revision;
         }
-        String key = card.id() + "|" + card.cardId() + "|" + values.attack() + "|" + values.defense() + "|" + values.damageAmounts() + "|" + values.blockAmounts() + "|" + width;
-        return DESCRIPTION_WRAP_CACHE.computeIfAbsent(key, ignored -> buildWrappedDescription(font, card, values, width));
+        String key = dataVersionKey() + "|" + cardContentKey(card) + "|" + valuesKey(values) + "|" + width;
+        List<FormattedCharSequence> cached = DESCRIPTION_WRAP_CACHE.get(key);
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (cached != null) {
+            if (context != null) {
+                context.recordDescriptionCacheHit();
+            }
+            return cached;
+        }
+        if (context != null) {
+            context.recordDescriptionCacheMiss();
+        }
+        List<FormattedCharSequence> built = buildWrappedDescription(font, card, values, width);
+        DESCRIPTION_WRAP_CACHE.put(key, built);
+        return built;
     }
 
     private static List<FormattedCharSequence> buildWrappedDescription(Font font, CardInstance card, CardValues values, int width) {
@@ -830,6 +1140,30 @@ public final class CardRenderHelper {
             }
         }
         return List.copyOf(wrappedLines);
+    }
+
+    private static List<TextLine> widthLines(Font font, List<FormattedCharSequence> lines) {
+        List<TextLine> widthLines = new ArrayList<>(lines.size());
+        for (FormattedCharSequence line : lines) {
+            widthLines.add(new TextLine(line, font.width(line)));
+        }
+        return List.copyOf(widthLines);
+    }
+
+    private static int cachedTextWidth(Font font, String key, String text) {
+        return TEXT_WIDTH_CACHE.computeIfAbsent(key, ignored -> font.width(text));
+    }
+
+    private static TextContent textContent(Font font, CardInstance card, String contentKey) {
+        return TEXT_CONTENT_CACHE.computeIfAbsent(contentKey, ignored -> uncachedTextContent(font, card));
+    }
+
+    private static TextContent uncachedTextContent(Font font, CardInstance card) {
+        String name = card.nameComponent().getString();
+        String type = Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill").getString();
+        FormattedCharSequence nameText = FormattedCharSequence.forward(name, Style.EMPTY);
+        FormattedCharSequence typeText = FormattedCharSequence.forward(type, Style.EMPTY);
+        return new TextContent(nameText, font.width(nameText), typeText, font.width(typeText));
     }
 
     private static DeveloperCardFace cardFace(CardInstance card) {
@@ -872,6 +1206,41 @@ public final class CardRenderHelper {
         return dataVersion + "|" + card.cardId() + "|" + nullSafe(card.faceId());
     }
 
+    private static String cardContentKey(CardInstance card) {
+        StringBuilder builder = new StringBuilder(192);
+        builder.append(nullSafe(card.cardId()))
+                .append('|').append(nullSafe(card.nameKey()))
+                .append('|').append(nullSafe(card.descriptionKey()))
+                .append('|').append(card.attack())
+                .append('|').append(card.defense())
+                .append('|').append(card.cost())
+                .append('|').append(card.baseCost())
+                .append('|').append(card.battleCostReduction())
+                .append('|').append(card.sourceType().name())
+                .append('|').append(nullSafe(card.developerCardId()))
+                .append('|').append(nullSafe(card.artPath()))
+                .append('|').append(nullSafe(card.artItemId()))
+                .append('|').append(card.artX())
+                .append('|').append(card.artY())
+                .append('|').append(card.artScale())
+                .append('|').append(nullSafe(card.faceId()));
+        if (!card.sourceStack().isEmpty()) {
+            builder.append('|').append(BuiltInRegistries.ITEM.getKey(card.sourceStack().getItem()));
+        }
+        for (CardEffect effect : card.effects()) {
+            builder.append('|')
+                    .append(effect.kind().name())
+                    .append(':').append(effect.amount())
+                    .append(':').append(effect.target().name())
+                    .append(':').append(effect.count());
+        }
+        return builder.toString();
+    }
+
+    private static String valuesKey(CardValues values) {
+        return values.attack() + "|" + values.defense() + "|" + values.damageAmounts() + "|" + values.blockAmounts();
+    }
+
     private static String nullSafe(String value) {
         return Objects.toString(value, "");
     }
@@ -907,19 +1276,24 @@ public final class CardRenderHelper {
     }
 
     public static void renderCardFaceBase(GuiGraphics graphics, String imagePath, int x, int y, int width, int height) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         TextureRef baseTexture = customTexture(imagePath, DeveloperPaths.cardFacesDirectory());
-        graphics.blit(
-                baseTexture == null ? CARD_BASE_TEXTURE : baseTexture.location(),
-                x,
-                y,
-                width,
-                height,
-                0.0F,
-                0.0F,
-                baseTexture == null ? TEXTURE_WIDTH : baseTexture.width(),
-                baseTexture == null ? TEXTURE_HEIGHT : baseTexture.height(),
-                baseTexture == null ? TEXTURE_WIDTH : baseTexture.width(),
-                baseTexture == null ? TEXTURE_HEIGHT : baseTexture.height());
+        try {
+            graphics.blit(
+                    baseTexture == null ? CARD_BASE_TEXTURE : baseTexture.location(),
+                    x,
+                    y,
+                    width,
+                    height,
+                    0.0F,
+                    0.0F,
+                    baseTexture == null ? TEXTURE_WIDTH : baseTexture.width(),
+                    baseTexture == null ? TEXTURE_HEIGHT : baseTexture.height(),
+                    baseTexture == null ? TEXTURE_WIDTH : baseTexture.width(),
+                    baseTexture == null ? TEXTURE_HEIGHT : baseTexture.height());
+        } finally {
+            recordFaceBase(start);
+        }
     }
 
     public static void renderCostIconAndNumber(GuiGraphics graphics, Font font, int cost, int x, int y, int width, int height) {
@@ -1015,22 +1389,67 @@ public final class CardRenderHelper {
                 FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(cached));
                 return cached;
             }
-            NativeImage image;
-            try (FileInputStream input = new FileInputStream(resolved.toFile())) {
-                image = NativeImage.read(input);
-            }
-            int width = Math.max(1, image.getWidth());
-            int height = Math.max(1, image.getHeight());
-            ResourceLocation id = ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "developer_file/" + Integer.toHexString(key.hashCode()));
-            Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
-            TextureRef ref = new TextureRef(id, width, height);
-            FILE_TEXTURES.put(key, ref);
-            FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(ref));
-            return ref;
+            enqueueFileTextureLoad(key, resolved);
+            return null;
         } catch (RuntimeException ignored) {
             return null;
-        } catch (IOException ignored) {
-            return null;
+        }
+    }
+
+    private static void enqueueFileTextureLoad(String key, Path resolved) {
+        AsyncTextureState existing = ASYNC_FILE_TEXTURES.putIfAbsent(key, AsyncTextureState.LOADING);
+        if (existing != null) {
+            return;
+        }
+        TEXTURE_LOAD_EXECUTOR.execute(() -> {
+            long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            try (FileInputStream input = new FileInputStream(resolved.toFile())) {
+                NativeImage image = NativeImage.read(input);
+                if (MoonSpirePerfDiagnostics.enabled()) {
+                    long elapsed = MoonSpirePerfDiagnostics.now() - start;
+                    textureDecodeCompletedTotal++;
+                    textureDecodeNanosTotal += elapsed;
+                    MoonSpirePerfDiagnostics.mark("client.card.textureDecode", elapsed, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "keyHash=" + Integer.toHexString(key.hashCode()));
+                }
+                LOADED_FILE_TEXTURES.add(new LoadedTexture(key, image));
+            } catch (IOException | RuntimeException ignored) {
+                ASYNC_FILE_TEXTURES.put(key, AsyncTextureState.FAILED);
+                FILE_TEXTURE_LOOKUPS.put(key, new TextureLookup(null));
+            }
+        });
+    }
+
+    private static void registerPendingFileTextures() {
+        for (int i = 0; i < TEXTURE_REGISTRATIONS_PER_FRAME; i++) {
+            LoadedTexture loaded = LOADED_FILE_TEXTURES.poll();
+            if (loaded == null) {
+                return;
+            }
+            if (ASYNC_FILE_TEXTURES.get(loaded.key()) != AsyncTextureState.LOADING) {
+                loaded.image().close();
+                continue;
+            }
+            long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
+            try {
+                int width = Math.max(1, loaded.image().getWidth());
+                int height = Math.max(1, loaded.image().getHeight());
+                ResourceLocation id = ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "developer_file/" + Integer.toHexString(loaded.key().hashCode()));
+                Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(loaded.image()));
+                if (MoonSpirePerfDiagnostics.enabled()) {
+                    long elapsed = MoonSpirePerfDiagnostics.now() - start;
+                    textureRegistrationsThisFrame++;
+                    textureRegistrationNanosThisFrame += elapsed;
+                    MoonSpirePerfDiagnostics.mark("client.card.textureRegister", elapsed, MoonSpirePerfDiagnostics.SEGMENT_THRESHOLD_NANOS, "width=" + width + " height=" + height);
+                }
+                TextureRef ref = new TextureRef(id, width, height);
+                FILE_TEXTURES.put(loaded.key(), ref);
+                FILE_TEXTURE_LOOKUPS.put(loaded.key(), new TextureLookup(ref));
+                ASYNC_FILE_TEXTURES.put(loaded.key(), AsyncTextureState.READY);
+            } catch (RuntimeException ignored) {
+                ASYNC_FILE_TEXTURES.put(loaded.key(), AsyncTextureState.FAILED);
+                FILE_TEXTURE_LOOKUPS.put(loaded.key(), new TextureLookup(null));
+                loaded.image().close();
+            }
         }
     }
 
@@ -1054,6 +1473,11 @@ public final class CardRenderHelper {
     }
 
     private static void renderCardArtItem(GuiGraphics graphics, ItemStack stack, int artX, int artY, int artWidth, int artHeight, int offsetX, int offsetY, float customScale, boolean clipArt) {
+        renderCardArtItem(graphics, stack, artX, artY, artWidth, artHeight, offsetX, offsetY, customScale, clipArt, true);
+    }
+
+    private static void renderCardArtItem(GuiGraphics graphics, ItemStack stack, int artX, int artY, int artWidth, int artHeight, int offsetX, int offsetY, float customScale, boolean clipArt, boolean clearDepthAfterRender) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         int padding = Math.max(2, Math.min(artWidth, artHeight) / 12);
         int itemSize = Math.max(16, Math.min(artWidth - padding * 2, artHeight - padding * 2));
         itemSize = Math.max(1, Math.round(itemSize * Math.max(0.05F, customScale)));
@@ -1061,22 +1485,30 @@ public final class CardRenderHelper {
         int itemX = artX + (artWidth - itemSize) / 2 + offsetX;
         int itemY = artY + (artHeight - itemSize) / 2 + offsetY;
         if (clipArt) {
-            graphics.enableScissor(artX, artY, artX + artWidth, artY + artHeight);
+            enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         graphics.pose().pushPose();
         graphics.pose().translate(itemX, itemY, 0.0F);
         graphics.pose().scale(itemScale, itemScale, 1.0F);
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null) {
+            context.recordFakeItemRender();
+        }
         graphics.renderFakeItem(stack, 0, 0);
         graphics.pose().popPose();
         if (clipArt) {
             graphics.disableScissor();
         }
-        RenderSystem.clear(GlConst.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+        if (clearDepthAfterRender) {
+            clearItemDepth();
+        }
+        recordItemArt(start);
     }
 
     private static void renderCustomCardArt(GuiGraphics graphics, TextureRef texture, int artX, int artY, int artWidth, int artHeight, int offsetX, int offsetY, float scale, boolean clipArt) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         if (clipArt) {
-            graphics.enableScissor(artX, artY, artX + artWidth, artY + artHeight);
+            enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         int drawW = Math.max(1, Math.round(artWidth * Math.max(0.05F, scale)));
         int drawH = Math.max(1, Math.round(artHeight * Math.max(0.05F, scale)));
@@ -1086,6 +1518,7 @@ public final class CardRenderHelper {
         if (clipArt) {
             graphics.disableScissor();
         }
+        recordCustomArt(start);
     }
 
     private static void renderBarFill(GuiGraphics graphics, ResourceLocation texture, int x, int y, int width, int height) {
@@ -1103,23 +1536,99 @@ public final class CardRenderHelper {
     }
 
     private static void renderCardArtItem(GuiGraphics graphics, CardInstance card, int artX, int artY, int artWidth, int artHeight, boolean clipArt) {
+        renderCardArtItem(graphics, card, artX, artY, artWidth, artHeight, clipArt, true);
+    }
+
+    private static void renderCardArtItem(GuiGraphics graphics, CardInstance card, int artX, int artY, int artWidth, int artHeight, boolean clipArt, boolean clearDepthAfterRender) {
+        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         int padding = Math.max(2, Math.min(artWidth, artHeight) / 12);
         int itemSize = Math.max(16, Math.min(artWidth - padding * 2, artHeight - padding * 2));
         float itemScale = itemSize / 16.0F;
         int itemX = artX + (artWidth - itemSize) / 2;
         int itemY = artY + (artHeight - itemSize) / 2;
         if (clipArt) {
-            graphics.enableScissor(artX, artY, artX + artWidth, artY + artHeight);
+            enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         graphics.pose().pushPose();
         graphics.pose().translate(itemX, itemY, 0.0F);
         graphics.pose().scale(itemScale, itemScale, 1.0F);
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null) {
+            context.recordFakeItemRender();
+        }
         graphics.renderFakeItem(card.sourceStack(), 0, 0);
         graphics.pose().popPose();
         if (clipArt) {
             graphics.disableScissor();
         }
+        if (clearDepthAfterRender) {
+            clearItemDepth();
+        }
+        recordItemArt(start);
+    }
+
+    private static void clearItemDepth() {
         RenderSystem.clear(GlConst.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null) {
+            context.recordItemDepthClear();
+        }
+    }
+
+    private static void recordSkippedItemArt() {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null) {
+            context.recordSkippedItemArt();
+        }
+    }
+
+    private static void recordFaceBase(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordFaceBase(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordCustomArt(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordCustomArt(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordItemArt(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordItemArt(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordTextCost(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordTextCost(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordTextName(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordTextName(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordTextType(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordTextType(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
+    }
+
+    private static void recordTextDescription(long startNanos) {
+        CardRenderContext context = FRAME_CONTEXT.get();
+        if (context != null && startNanos != 0L) {
+            context.recordTextDescription(MoonSpirePerfDiagnostics.now() - startNanos);
+        }
     }
 
     private static int sx(int width, int textureX) {
@@ -1150,26 +1659,47 @@ public final class CardRenderHelper {
     }
 
     private static void drawCenteredFit(GuiGraphics graphics, Font font, String text, int x, int y, int width, int height, int color, float maxScale) {
-        float widthScale = width / (float) Math.max(1, font.width(text));
+        drawCenteredFit(graphics, font, text, font.width(text), x, y, width, height, color, maxScale);
+    }
+
+    private static void drawCenteredFit(GuiGraphics graphics, Font font, String text, int textWidth, int x, int y, int width, int height, int color, float maxScale) {
+        float widthScale = width / (float) Math.max(1, textWidth);
         float heightScale = height / (float) Math.max(1, font.lineHeight);
         float scale = Math.min(maxScale, Math.min(widthScale, heightScale));
         scale = Math.max(FITTED_TEXT_MIN_SCALE, scale);
-        int scaledWidth = (int) (font.width(text) * scale);
+        int scaledWidth = (int) (textWidth * scale);
         int scaledHeight = (int) (font.lineHeight * scale);
         drawScaled(graphics, font, text, x + (width - scaledWidth) / 2, y + (height - scaledHeight) / 2, color, scale);
     }
 
-    private static void drawCenteredLines(GuiGraphics graphics, Font font, List<FormattedCharSequence> lines, int x, int y, int width, int height, int color, float scale) {
+    private static void drawCenteredFit(GuiGraphics graphics, Font font, FormattedCharSequence text, int textWidth, int x, int y, int width, int height, int color, float maxScale) {
+        float widthScale = width / (float) Math.max(1, textWidth);
+        float heightScale = height / (float) Math.max(1, font.lineHeight);
+        float scale = Math.min(maxScale, Math.min(widthScale, heightScale));
+        scale = Math.max(FITTED_TEXT_MIN_SCALE, scale);
+        int scaledWidth = (int) (textWidth * scale);
+        int scaledHeight = (int) (font.lineHeight * scale);
+        drawScaled(graphics, font, text, x + (width - scaledWidth) / 2, y + (height - scaledHeight) / 2, color, scale);
+    }
+
+    private static void drawCenteredLines(GuiGraphics graphics, Font font, List<TextLine> lines, int x, int y, int width, int height, int color, float scale) {
         if (lines.isEmpty()) {
             return;
         }
         int lineHeight = scaledLineHeight(font, scale);
         int totalHeight = lines.size() * lineHeight - 2;
         int lineY = y + (height - totalHeight) / 2;
-        for (FormattedCharSequence line : lines) {
-            int scaledWidth = (int) (font.width(line) * scale);
-            drawScaled(graphics, font, line, x + (width - scaledWidth) / 2, lineY, color, scale);
-            lineY += lineHeight;
+        graphics.pose().pushPose();
+        graphics.pose().scale(scale, scale, 1.0F);
+        try {
+            for (TextLine line : lines) {
+                int scaledWidth = (int) (line.width() * scale);
+                int lineX = x + (width - scaledWidth) / 2;
+                graphics.drawString(font, line.text(), Math.round(lineX / scale), Math.round(lineY / scale), color, false);
+                lineY += lineHeight;
+            }
+        } finally {
+            graphics.pose().popPose();
         }
     }
 

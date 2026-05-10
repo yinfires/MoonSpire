@@ -72,8 +72,8 @@
 ## 牌组系统
 
 - 玩法描述：战斗使用抽牌堆、手牌和弃牌堆。回合开始弃掉剩余手牌并抽 5 张；打出的牌进入弃牌堆；抽牌堆为空时洗入弃牌堆。
-  - 代码实现：`BattleDeck.startTurn()`、`draw()`、`useHand()` 管理抽牌、弃牌和洗牌，并在手牌、抽牌堆、弃牌堆或消耗堆变化时递增本地牌堆版本；`BattleDeck` 构建时复用已经属于本场战斗的 `CardInstance`，避免大卡组入战时逐张二次复制；`BattleSnapshot` 只同步牌堆数量、手牌和版本号，完整牌堆内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 在玩家打开对应列表时按需同步。
-  - 变更记录：替换旧的准备牌池，改为杀戮尖塔式抽牌/弃牌流程；本次将完整牌堆内容从每次战斗快照中移除，并移除战斗牌库构建阶段的重复卡牌复制，避免大卡组在入战和同步时造成卡顿。
+  - 代码实现：`BattleDeck.startTurn()`、`draw()`、`useHand()` 管理抽牌、弃牌和洗牌，并在手牌、抽牌堆、弃牌堆或消耗堆变化时递增本地牌堆版本；`BattleDeck` 构建时复用已经属于本场战斗的 `CardInstance`，避免大卡组入战时逐张二次复制，抽牌时通过随机索引与末尾交换并弹出的方式取得下一张牌，不再在入战或洗入弃牌堆时整堆 `shuffle`；`BattleSnapshot` 只同步牌堆数量、手牌和版本号，完整牌堆内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 在玩家打开对应列表时按需同步。
+  - 变更记录：替换旧的准备牌池，改为杀戮尖塔式抽牌/弃牌流程；本次将完整牌堆内容从每次战斗快照中移除，并移除战斗牌库构建阶段的重复卡牌复制和整堆预洗牌，避免大卡组在入战和同步时造成卡顿。
 - 玩法描述：战斗 HUD 会通过鼠标提示说明抽牌堆和弃牌堆规则。指向抽牌堆时提示每回合开始从这里抽 5 张牌，并说明点击可查看抽牌堆但显示顺序会被打乱；指向弃牌堆时提示抽牌堆空后会把弃牌堆打乱洗回抽牌堆，并说明点击可查看弃牌堆。
   - 代码实现：`BattleScreen.hudTooltipAt()` 使用 `draw_pile` 和 `discard_pile` 布局元素命中范围生成翻译文本提示，`clickPile()` 继续打开对应 `CardGridPanel`，`BattleDeck.draw()` 继续负责抽牌堆为空时洗入弃牌堆。
   - 变更记录：新增抽牌堆和弃牌堆 HUD 提示框，不改变抽牌、弃牌或洗牌结算。
@@ -84,8 +84,8 @@
   - 代码实现：`DeckScreen` 只渲染 `ClientCardState.cards().collection()` 的卡牌网格，数量由 `CardGridPanel` 统一显示，不再发送 `SetDeckPayload`；`PlayerCardData.deckCards()` 返回持有卡牌集合，`hasValidDeck()` 仅检查集合非空；`BattleManager.challenge()` 使用 `data.deckCards()` 创建玩家战斗牌库。
   - 变更记录：移除 15-30 张手动组牌限制和卡组保存交互，战斗牌组改为自动使用玩家持有的全部卡牌。
 - 玩法描述：玩家按 K 可以打开或关闭自己的卡组界面。非战斗中显示当前持有卡牌；战斗中只有处于最基础战斗界面、没有牌堆弹窗、手牌选择层或布局编辑器等其它界面时，才能按 K 打开本场战斗中自己的当前卡组。战斗中的卡组内容会随抽牌、弃牌、打牌和消耗变化，显示仍在战斗循环中的手牌、抽牌堆和弃牌堆，已消耗牌只在被消耗牌入口中查看。大量卡牌时，战斗牌堆弹窗可以在等待服务端内容包期间先显示遮罩、标题、数量和空网格；内容包到达后必须显示真实卡牌，并通过可视区域渲染、布局缓存和增量预热降低打开与滚动卡顿。
-  - 代码实现：`ClientScreens.openDeckScreen()` 让非战斗 `DeckScreen` 支持 K 开关且只在没有其它屏幕时打开，`ClientCardState.version()` 让 `DeckScreen` 只在收藏数据真的更新时刷新 `CardGridPanel`；`BattleScreen.keyPressed()` 在基础战斗界面拦截 K，打开弹窗后按 `battleId + BattlePileSource + localDeckVersion` 请求并缓存当前战斗卡组、抽牌堆、弃牌堆或消耗堆内容，未收到内容包前先显示遮罩、标题、数量和空网格；内容包到达后，只有显示的 `battleId + source + version` 真的变化才重新调用 `CardGridPanel.setCards(...)`，避免打开大牌堆后每帧触发全量卡牌比对。
-  - 变更记录：新增战斗中 K 键查看当前战斗卡组，并允许 K 关闭自己卡组界面；本次优化卡组/牌堆大列表打开性能，避免每帧全量比对收藏卡牌和已打开的战斗牌堆，也避免战斗快照持续同步完整牌堆导致明显卡顿。
+  - 代码实现：`ClientScreens.openDeckScreen()` 让非战斗 `DeckScreen` 支持 K 开关且只在没有其它屏幕时打开，`ClientCardState.version()` 让 `DeckScreen` 只在收藏数据真的更新时刷新 `CardGridPanel`；`CardGridPanel` 通过调用方传入的内容 key 和版本判断是否需要替换列表，稳定帧不再生成整套卡牌签名或扫描旧列表；`BattleScreen.keyPressed()` 在基础战斗界面拦截 K，打开弹窗后按 `battleId + BattlePileSource + localDeckVersion` 请求并缓存当前战斗卡组、抽牌堆、弃牌堆或消耗堆内容，未收到内容包前先显示遮罩、标题、数量和空网格；内容包到达后，只有显示的 `battleId + source + version` 真的变化才重新调用 `CardGridPanel.setCards(...)`，避免打开大牌堆后每帧触发全量卡牌比对。
+  - 变更记录：新增战斗中 K 键查看当前战斗卡组，并允许 K 关闭自己卡组界面；本次优化卡组/牌堆大列表打开性能，避免每帧全量比对收藏卡牌和已打开的战斗牌堆，避免渲染路径同步解码并注册本地 PNG 卡图，也避免战斗快照持续同步完整牌堆导致明显卡顿。
 
 ## 界面与交互
 
@@ -202,7 +202,7 @@
 ## 数据与同步
 
 - 玩法描述：客户端显示的卡牌、速度、生命、格挡、效果、牌堆、目标、怪物预计行动和表现事件都来自服务端同步。怪物预计行动同步为怪物按当前手牌、费用、生命和格挡策略即将实际打出的牌序列。
-- 代码实现：`BattleSnapshot` 包含双方 `BattleCombatantSnapshot`、本地牌堆数量、本地手牌、本地牌堆版本、怪物手牌、预计单牌、预计牌列表和 `BattleVisualEvent` 列表；抽牌堆、弃牌堆、消耗堆和战斗中 K 卡组的完整内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 按需同步；`BattleState.plannedMonsterCards()` 使用与 `tickMonsterTurn()` 相同的选牌策略模拟后续怪物出牌，`BattleSnapshotPayload` 负责同步权威战斗状态。
+- 代码实现：`BattleSnapshot` 包含双方 `BattleCombatantSnapshot`、本地牌堆数量、本地手牌、本地牌堆版本、怪物手牌、预计单牌、预计牌列表和 `BattleVisualEvent` 列表；抽牌堆、弃牌堆、消耗堆和战斗中 K 卡组的完整内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 按需同步；`BattleState` 在玩家输入、抽牌/弃牌/消耗、阶段切换、手牌选择、视觉事件和死亡/结束判定等权威状态变化时标记同步脏状态，`shouldSyncNow()` 只在脏状态、视觉事件、结束流程或低频心跳时发送完整快照，`BattleManager.sync()` 发送后清理视觉事件和脏标记；`BattleState.plannedMonsterCards()` 使用与 `tickMonsterTurn()` 相同的选牌策略模拟后续怪物出牌，`BattleSnapshotPayload` 负责同步权威战斗状态。
   - 变更记录：修复怪物实际出牌和预计显示不一致的问题。
 
 ## 本次战斗目标与卡牌效果更新

@@ -4,7 +4,6 @@ import com.yinfires.moonspire.card.CardBalance;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -22,7 +21,6 @@ public class BattleDeck {
         for (CardInstance card : cards) {
             drawPile.add(card);
         }
-        shuffle(drawPile, random);
     }
 
     public List<CardInstance> drawPile() {
@@ -88,9 +86,8 @@ public class BattleDeck {
                 }
                 drawPile.addAll(discardPile);
                 discardPile.clear();
-                shuffle(drawPile, random);
             }
-            CardInstance drawn = drawPile.remove(drawPile.size() - 1);
+            CardInstance drawn = drawRandom(drawPile, random);
             if (hand.size() >= CardBalance.MAX_HAND_SIZE) {
                 discardPile.add(drawn);
             } else {
@@ -233,8 +230,15 @@ public class BattleDeck {
         return hand.stream().anyMatch(card -> card.hasAnyEffect() && card.cost() <= energyLeft);
     }
 
-    private static void shuffle(List<CardInstance> cards, RandomSource random) {
-        Collections.shuffle(cards, new java.util.Random(random.nextLong()));
+    private static CardInstance drawRandom(List<CardInstance> cards, RandomSource random) {
+        int index = cards.size() == 1 ? 0 : random.nextInt(cards.size());
+        int last = cards.size() - 1;
+        CardInstance drawn = cards.get(index);
+        CardInstance tail = cards.remove(last);
+        if (index < last) {
+            cards.set(index, tail);
+        }
+        return drawn;
     }
 
     private void markChanged() {
