@@ -957,9 +957,7 @@ public class BattleState {
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
-        emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS);
-        pendingAnimation = new LungeAnimation(batch, animated.target());
-        return true;
+        return false;
     }
 
     private PendingEffect firstAnimatedEffect(PendingCardBatch batch) {

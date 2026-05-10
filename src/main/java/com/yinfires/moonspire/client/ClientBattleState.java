@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
@@ -23,7 +24,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -332,7 +335,7 @@ public final class ClientBattleState {
         if (state == null || state.itemTicks <= 0 || state.itemStack.isEmpty()) {
             return ItemStack.EMPTY;
         }
-        return state.itemStack;
+        return state.mainHandStack();
     }
 
     public static CardInstance monsterPlayedCard() {
@@ -579,6 +582,14 @@ public final class ClientBattleState {
                     usingTicks = Math.max(usingTicks, Math.max(1, animationTicks));
                 }
             }
+        }
+
+        private ItemStack mainHandStack() {
+            ItemStack stack = itemStack.copy();
+            if (animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD && usingTicks <= 0 && stack.is(Items.CROSSBOW)) {
+                stack.set(DataComponents.CHARGED_PROJECTILES, ChargedProjectiles.of(new ItemStack(Items.ARROW)));
+            }
+            return stack;
         }
 
         private void hurtFlash() {

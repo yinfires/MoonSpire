@@ -31,7 +31,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -264,7 +263,6 @@ public final class ClientEvents {
                 syncVisualHandOverride(event.getEntity(), override);
             }
             if (event.getRenderer().getModel() instanceof HumanoidModel<?> humanoidModel) {
-                applyBattleArmPose(event.getEntity(), humanoidModel);
                 suppressDefaultBattleArmPose(event.getEntity(), humanoidModel);
             }
         }
@@ -449,38 +447,6 @@ public final class ClientEvents {
             TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
             model.leftArmPose = HumanoidModel.ArmPose.EMPTY;
             model.rightArmPose = HumanoidModel.ArmPose.EMPTY;
-        }
-
-        private static void applyBattleArmPose(LivingEntity entity, HumanoidModel<?> model) {
-            HumanoidModel.ArmPose pose = battleArmPose(entity.getId());
-            if (pose == null) {
-                return;
-            }
-            TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
-            if (entity.getMainArm() == HumanoidArm.RIGHT) {
-                model.rightArmPose = pose;
-                if (model.leftArmPose == HumanoidModel.ArmPose.EMPTY) {
-                    model.leftArmPose = HumanoidModel.ArmPose.ITEM;
-                }
-            } else {
-                model.leftArmPose = pose;
-                if (model.rightArmPose == HumanoidModel.ArmPose.EMPTY) {
-                    model.rightArmPose = HumanoidModel.ArmPose.ITEM;
-                }
-            }
-        }
-
-        private static HumanoidModel.ArmPose battleArmPose(int entityId) {
-            BattleVisualEvent.AnimationType animationType = ClientBattleState.visualAnimationType(entityId);
-            if (animationType == BattleVisualEvent.AnimationType.BOW_DRAW && ClientBattleState.visualUsingItem(entityId)) {
-                return HumanoidModel.ArmPose.BOW_AND_ARROW;
-            }
-            if (animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
-                return ClientBattleState.visualUsingItem(entityId)
-                        ? HumanoidModel.ArmPose.CROSSBOW_CHARGE
-                        : HumanoidModel.ArmPose.CROSSBOW_HOLD;
-            }
-            return null;
         }
 
         private static void restoreArmPose(LivingEntity entity) {
