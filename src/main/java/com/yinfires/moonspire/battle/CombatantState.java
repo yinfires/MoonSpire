@@ -15,7 +15,7 @@ public class CombatantState {
     private float battleHealth;
     private final float maxBattleHealth;
     private int defense;
-    private int energySpent;
+    private int currentEnergy;
     private int roundSpeed;
     private boolean endedTurn;
     private boolean fakeDead;
@@ -27,6 +27,7 @@ public class CombatantState {
         this.entity = entity;
         this.deck = deck;
         this.maxEnergy = maxEnergy;
+        this.currentEnergy = maxEnergy;
         this.maxBattleHealth = maxBattleHealth;
         this.battleHealth = maxBattleHealth;
         this.baseSpeed = Math.max(1, baseSpeed);
@@ -46,19 +47,23 @@ public class CombatantState {
     }
 
     public int energySpent() {
-        return energySpent;
+        return Math.max(0, maxEnergy - currentEnergy);
     }
 
     public int energyLeft() {
-        return Math.max(0, maxEnergy - energySpent);
+        return Math.max(0, currentEnergy);
     }
 
     public void resetEnergy() {
-        energySpent = 0;
+        currentEnergy = maxEnergy;
     }
 
     public void setEnergySpent(int energySpent) {
-        this.energySpent = Math.max(0, Math.min(maxEnergy, energySpent));
+        this.currentEnergy = Math.max(0, maxEnergy - Math.max(0, Math.min(maxEnergy, energySpent)));
+    }
+
+    public void addEnergy(int amount) {
+        currentEnergy += Math.max(0, amount);
     }
 
     public boolean spendEnergy(int amount) {
@@ -66,7 +71,7 @@ public class CombatantState {
         if (cost > energyLeft()) {
             return false;
         }
-        setEnergySpent(energySpent + cost);
+        currentEnergy -= cost;
         return true;
     }
 
@@ -248,7 +253,7 @@ public class CombatantState {
             fakeDead = true;
             fakeDeathTicks = 0;
             defense = 0;
-            energySpent = maxEnergy;
+            currentEnergy = 0;
             endedTurn = true;
             deck().discardHand();
         }

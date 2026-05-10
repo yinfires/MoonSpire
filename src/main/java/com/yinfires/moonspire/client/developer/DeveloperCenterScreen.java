@@ -1543,8 +1543,18 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.WEAKNESS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.SLOWNESS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.SLOWNESS, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.DRAW_CARDS && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.DRAW_CARDS, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.GAIN_ENERGY && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GAIN_ENERGY, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.EXHAUST) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EXHAUST, 1));
+            } else if (effect.kind() == CardEffectKind.INNATE) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.INNATE, 1));
+            } else if (effect.kind() == CardEffectKind.RETAIN) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.RETAIN, 1));
+            } else if (effect.kind() == CardEffectKind.ETHEREAL) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.ETHEREAL, 1));
             } else if (effect.kind() == CardEffectKind.EXHAUST_HAND && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EXHAUST_HAND, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.DISCARD_HAND && effect.amount() > 0) {
@@ -1805,7 +1815,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.BURN,
                         DeveloperCardEffect.Kind.WEAKNESS,
                         DeveloperCardEffect.Kind.SLOWNESS,
+                        DeveloperCardEffect.Kind.DRAW_CARDS,
+                        DeveloperCardEffect.Kind.GAIN_ENERGY,
                         DeveloperCardEffect.Kind.EXHAUST,
+                        DeveloperCardEffect.Kind.INNATE,
+                        DeveloperCardEffect.Kind.RETAIN,
+                        DeveloperCardEffect.Kind.ETHEREAL,
                         DeveloperCardEffect.Kind.EXHAUST_HAND,
                         DeveloperCardEffect.Kind.DISCARD_HAND)
                 .stream()

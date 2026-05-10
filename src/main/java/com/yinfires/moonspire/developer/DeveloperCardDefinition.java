@@ -71,7 +71,7 @@ public record DeveloperCardDefinition(
     public RegisteredCardDefinition toRegisteredCard(String registeredId) {
         List<DeveloperCardEffect> normalizedEffects = normalizedEffects();
         List<CardEffect> effects = normalizedEffects.stream()
-                .filter(effect -> effect.amount() > 0 || effect.kind() == DeveloperCardEffect.Kind.EXHAUST)
+                .filter(effect -> effect.amount() > 0 || effect.kind().isKeyword())
                 .map(effect -> new CardEffect(cardEffectKind(effect.kind()), effect.amount(), effect.target(), effect.count()))
                 .toList();
         return new RegisteredCardDefinition(
@@ -107,7 +107,12 @@ public record DeveloperCardDefinition(
             case BURN -> CardEffectKind.BURN;
             case WEAKNESS -> CardEffectKind.WEAKNESS;
             case SLOWNESS -> CardEffectKind.SLOWNESS;
+            case DRAW_CARDS -> CardEffectKind.DRAW_CARDS;
+            case GAIN_ENERGY -> CardEffectKind.GAIN_ENERGY;
             case EXHAUST -> CardEffectKind.EXHAUST;
+            case INNATE -> CardEffectKind.INNATE;
+            case RETAIN -> CardEffectKind.RETAIN;
+            case ETHEREAL -> CardEffectKind.ETHEREAL;
             case EXHAUST_HAND -> CardEffectKind.EXHAUST_HAND;
             case DISCARD_HAND -> CardEffectKind.DISCARD_HAND;
         };

@@ -18,9 +18,9 @@ public record CardEffect(CardEffectKind kind, int amount, CardTarget target, int
 
     public CardEffect {
         kind = kind == null ? CardEffectKind.DAMAGE : kind;
-        amount = kind == CardEffectKind.EXHAUST ? 1 : Math.max(0, amount);
+        amount = kind.usesAmount() ? Math.max(0, amount) : 1;
         target = target == null ? kind.defaultTarget() : target;
-        count = kind == CardEffectKind.EXHAUST || kind.isHandSelection() ? 1 : Math.max(1, count);
+        count = kind.isKeyword() || kind.isHandSelection() ? 1 : Math.max(1, count);
     }
 
     private static void write(RegistryFriendlyByteBuf buf, CardEffect effect) {

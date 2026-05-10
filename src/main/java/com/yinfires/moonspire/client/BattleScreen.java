@@ -69,7 +69,7 @@ public class BattleScreen extends NoBlurScreen {
     private static final float HAND_PREVIEW_SCALE = 0.74F;
     private static final float HAND_BASE_SCALE = 0.98F;
     private static final float HAND_MIN_SCALE = 0.62F;
-    private static final int CARD_GRID_BOTTOM_RESERVE = 46;
+    private static final int CARD_GRID_BOTTOM_RESERVE = 0;
     private static final int TURN_BANNER_TICKS = 42;
     private static final int FLY_TO_DISCARD_TICKS = 10;
     private static final int PLAYED_CARD_TO_CENTER_TICKS = 4;
@@ -306,6 +306,7 @@ public class BattleScreen extends NoBlurScreen {
             if (handIndex >= 0) {
                 ClientBattleState.selectHandIndex(handIndex);
                 if (!cardActionsLocked(snapshot)) {
+                    clearHandHoverAnimations(snapshot);
                     dragState = new DragState(handIndex, snapshot.hand().get(handIndex).id());
                 }
                 pendingTargetClickId = -1;
@@ -347,8 +348,14 @@ public class BattleScreen extends NoBlurScreen {
             return true;
         }
         if (button == 0 && dragState != null) {
-            playDraggedCard(mouseX, mouseY);
+            BattleSnapshot snapshot = ClientBattleState.snapshot();
+            DragState releasedDrag = dragState;
+            boolean played = playDraggedCard(mouseX, mouseY);
+            if (!played) {
+                beginDraggedCardReturn(snapshot, releasedDrag, mouseX, mouseY);
+            }
             dragState = null;
+            clearHandHoverProgress();
             return true;
         }
         if (button == 0) {
@@ -716,16 +723,18 @@ public class BattleScreen extends NoBlurScreen {
 
     private void renderBottomBar(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean renderHand) {
         renderEnergy(graphics, layout().resolve("energy", width, height), snapshot);
-        renderPile(graphics, layout().resolve("draw_pile", width, height), snapshot.drawPile(), true, drawPileAt(mouseX, mouseY), drawPileHover, partialTick);
-        renderPile(graphics, layout().resolve("discard_pile", width, height), snapshot.discardPile(), false, discardPileAt(mouseX, mouseY), discardPileHover, partialTick);
+        List<ScreenRect> handMasks = renderHand ? handOcclusionMasks(snapshot, mouseX, mouseY, partialTick) : List.of();
+        renderPile(graphics, layout().resolve("draw_pile", width, height), snapshot.drawPile(), true, drawPileAt(mouseX, mouseY), drawPileHover, partialTick, handMasks);
+        renderPile(graphics, layout().resolve("discard_pile", width, height), snapshot.discardPile(), false, discardPileAt(mouseX, mouseY), discardPileHover, partialTick, handMasks);
         renderExhaustPile(graphics, layout().resolve("exhaust_pile", width, height), snapshot.exhaustPile(), visibleExhaustPileAt(mouseX, mouseY, snapshot), partialTick);
         renderEndTurnButton(graphics, snapshot, layout().resolve("end_turn", width, height), mouseX, mouseY, partialTick);
         if (renderHand) {
+            graphics.flush();
             renderHand(graphics, snapshot, mouseX, mouseY, partialTick);
         }
     }
 
-    private void renderPile(GuiGraphics graphics, MoonSpireUiRect rect, int count, boolean drawPile, boolean hovered, PileHoverAnimation animation, float partialTick) {
+    private void renderPile(GuiGraphics graphics, MoonSpireUiRect rect, int count, boolean drawPile, boolean hovered, PileHoverAnimation animation, float partialTick, List<ScreenRect> handMasks) {
         animation.setHovered(hovered);
         animation.advance(currentFrameTicks);
         PileIconBounds icon = pileIconBounds(rect);
@@ -737,7 +746,7 @@ public class BattleScreen extends NoBlurScreen {
         graphics.pose().translate(-icon.size() / 2.0F, -icon.size() / 2.0F, 0.0F);
         graphics.blit(texture, 0, 0, icon.size(), icon.size(), 0.0F, 0.0F, PILE_ICON_TEXTURE_SIZE, PILE_ICON_TEXTURE_SIZE, PILE_ICON_TEXTURE_SIZE, PILE_ICON_TEXTURE_SIZE);
         graphics.pose().popPose();
-        renderPileBadge(graphics, rect, icon, count, drawPile);
+        renderPileBadge(graphics, rect, icon, count, drawPile, handMasks);
     }
 
     private PileIconBounds pileIconBounds(MoonSpireUiRect rect) {
@@ -747,13 +756,17 @@ public class BattleScreen extends NoBlurScreen {
         return new PileIconBounds(centerX, centerY, size);
     }
 
-    private void renderPileBadge(GuiGraphics graphics, MoonSpireUiRect rect, PileIconBounds icon, int count, boolean drawPile) {
+    private void renderPileBadge(GuiGraphics graphics, MoonSpireUiRect rect, PileIconBounds icon, int count, boolean drawPile, List<ScreenRect> handMasks) {
         int badgeX = drawPile ? Math.round(icon.centerX() + icon.size() / 2.0F - PILE_BADGE_SIZE) : Math.round(icon.centerX() - icon.size() / 2.0F);
         int badgeY = Math.round(icon.centerY() + icon.size() / 2.0F - PILE_BADGE_SIZE);
         badgeX = Math.max(rect.x(), Math.min(rect.right() - PILE_BADGE_SIZE, badgeX));
         badgeY = Math.max(rect.y(), Math.min(rect.bottom() - PILE_BADGE_SIZE, badgeY));
-        graphics.blit(MoonSpireUiTextures.PILE_COUNT_BADGE, badgeX, badgeY, PILE_BADGE_SIZE, PILE_BADGE_SIZE, 0.0F, 0.0F, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE);
-        drawPileCount(graphics, Integer.toString(count), badgeX + PILE_BADGE_SIZE / 2.0F, badgeY + PILE_BADGE_SIZE / 2.0F);
+        int x = badgeX;
+        int y = badgeY;
+        renderWithOcclusionMask(graphics, x, y, PILE_BADGE_SIZE, PILE_BADGE_SIZE, handMasks, () -> {
+            graphics.blit(MoonSpireUiTextures.PILE_COUNT_BADGE, x, y, PILE_BADGE_SIZE, PILE_BADGE_SIZE, 0.0F, 0.0F, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE, PILE_BADGE_TEXTURE_SIZE);
+            drawPileCount(graphics, Integer.toString(count), x + PILE_BADGE_SIZE / 2.0F, y + PILE_BADGE_SIZE / 2.0F);
+        });
     }
 
     private void renderExhaustPile(GuiGraphics graphics, MoonSpireUiRect rect, int count, boolean hovered, float partialTick) {
@@ -816,6 +829,57 @@ public class BattleScreen extends NoBlurScreen {
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.drawString(font, text, 0, 0, 0xFFFFFFFF, false);
         graphics.pose().popPose();
+    }
+
+    private void renderWithOcclusionMask(GuiGraphics graphics, int x, int y, int w, int h, List<ScreenRect> masks, Runnable renderer) {
+        if (masks.isEmpty()) {
+            renderer.run();
+            graphics.flush();
+            return;
+        }
+        List<ScreenRect> visibleRects = List.of(new ScreenRect(x, y, x + w, y + h));
+        for (ScreenRect mask : masks) {
+            visibleRects = subtractMask(visibleRects, mask);
+            if (visibleRects.isEmpty()) {
+                return;
+            }
+        }
+        for (ScreenRect rect : visibleRects) {
+            graphics.enableScissor(rect.left(), rect.top(), rect.right(), rect.bottom());
+            renderer.run();
+            graphics.flush();
+            graphics.disableScissor();
+        }
+    }
+
+    private List<ScreenRect> subtractMask(List<ScreenRect> rects, ScreenRect mask) {
+        List<ScreenRect> result = new ArrayList<>();
+        for (ScreenRect rect : rects) {
+            result.addAll(subtractMask(rect, mask));
+        }
+        return result;
+    }
+
+    private List<ScreenRect> subtractMask(ScreenRect rect, ScreenRect mask) {
+        int left = Math.max(rect.left(), mask.left());
+        int top = Math.max(rect.top(), mask.top());
+        int right = Math.min(rect.right(), mask.right());
+        int bottom = Math.min(rect.bottom(), mask.bottom());
+        if (left >= right || top >= bottom) {
+            return List.of(rect);
+        }
+        List<ScreenRect> result = new ArrayList<>(4);
+        addRect(result, rect.left(), rect.top(), rect.right(), top);
+        addRect(result, rect.left(), bottom, rect.right(), rect.bottom());
+        addRect(result, rect.left(), top, left, bottom);
+        addRect(result, right, top, rect.right(), bottom);
+        return result;
+    }
+
+    private void addRect(List<ScreenRect> rects, int left, int top, int right, int bottom) {
+        if (right > left && bottom > top) {
+            rects.add(new ScreenRect(left, top, right, bottom));
+        }
     }
 
     private void renderEnergy(GuiGraphics graphics, MoonSpireUiRect rect, BattleSnapshot snapshot) {
@@ -1069,7 +1133,7 @@ public class BattleScreen extends NoBlurScreen {
         long start = perfStart();
         HandLayout layout = handLayout(visibleCards);
         int selectedIndex = ClientBattleState.selectedHandIndex();
-        int hoveredIndex = hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
+        int hoveredIndex = draggingHandCard() ? -1 : hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
         if (hoveredIndex >= count) {
             hoveredHandIndex = -1;
             hoveredIndex = -1;
@@ -1097,6 +1161,57 @@ public class BattleScreen extends NoBlurScreen {
             }
         }
         recordPerf(PerfBucket.HAND_RENDER, start);
+    }
+
+    private List<ScreenRect> handOcclusionMasks(BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick) {
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        if (visibleCards.isEmpty()) {
+            return List.of();
+        }
+        HandLayout layout = handLayout(visibleCards);
+        int hoveredIndex = draggingHandCard() ? -1 : hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
+        int selectedIndex = ClientBattleState.selectedHandIndex();
+        UUID selectedCardId = selectedHandCardId(snapshot, selectedIndex);
+        List<ScreenRect> masks = new ArrayList<>();
+        for (int i = 0; i < visibleCards.size(); i++) {
+            HandCardAnimation animation = handAnimations.get(visibleCards.get(i).id());
+            if (animation == null) {
+                HandCardBounds bounds = layout.card(i);
+                float halfW = CardRenderHelper.SMALL_CARD_WIDTH * bounds.scale() / 2.0F;
+                float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * bounds.scale() / 2.0F;
+                masks.add(screenRect(bounds.centerX() - halfW, bounds.centerY() - halfH, bounds.centerX() + halfW, bounds.centerY() + halfH));
+                continue;
+            }
+            boolean selected = visibleCards.get(i).id().equals(selectedCardId);
+            masks.add(screenRect(handCardScreenBounds(animation, partialTick, selected)));
+        }
+        if (hoveredIndex >= 0 && hoveredIndex < visibleCards.size()) {
+            HandCardBounds base = layout.card(hoveredIndex);
+            CardPreviewBounds preview = previewBounds(base);
+            HandCardAnimation animation = handAnimations.get(visibleCards.get(hoveredIndex).id());
+            float progress = animation == null ? 1.0F : smoothStep(animation.hover(partialTick));
+            float centerX = animation == null ? preview.centerX() : lerp(animation.x(partialTick), preview.centerX(), progress);
+            float centerY = animation == null ? preview.centerY() : lerp(animation.y(partialTick), preview.centerY(), progress);
+            float baseScale = animation == null ? base.scale() : animation.scale(partialTick);
+            float scale = animation == null
+                    ? HAND_PREVIEW_SCALE
+                    : lerp(baseScale * (CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH), HAND_PREVIEW_SCALE, progress);
+            float halfW = CardRenderHelper.CARD_WIDTH * scale / 2.0F;
+            float halfH = CardRenderHelper.CARD_HEIGHT * scale / 2.0F;
+            masks.add(screenRect(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH));
+        }
+        CardInstance dragged = draggedCard(snapshot);
+        if (dragged != null) {
+            HandCardAnimation animation = handAnimations.get(dragged.id());
+            if (dragged.requiresExplicitTarget() && animation != null) {
+                masks.add(screenRect(handCardScreenBounds(animation, partialTick, false)));
+            } else {
+                float halfW = CardRenderHelper.SMALL_CARD_WIDTH * HAND_BASE_SCALE / 2.0F;
+                float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * HAND_BASE_SCALE / 2.0F;
+                masks.add(screenRect(mouseX - halfW, mouseY - halfH, mouseX + halfW, mouseY + halfH));
+            }
+        }
+        return masks;
     }
 
     private void renderHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean showDescription) {
@@ -1234,6 +1349,25 @@ public class BattleScreen extends NoBlurScreen {
         renderDetailedPlayableGlow(graphics, basePlayable, centerX, centerY, scale, dragGlow.pulse());
         renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, 0.0F, card.cost() > snapshot.player().energyLeft(), false);
         renderDetailedPlayableOutline(graphics, basePlayable, centerX, centerY, scale, dragGlow.pulse());
+        recordPerf(PerfBucket.TARGET_CARD, start);
+    }
+
+    private void renderDraggedSmallCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, boolean playableHere) {
+        long start = perfStart();
+        DragGlow dragGlow = dragGlowFor(card, playableHere);
+        boolean basePlayable = playable(card, snapshot);
+        boolean unaffordable = card.cost() > snapshot.player().energyLeft();
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 80.0F);
+        graphics.pose().translate(centerX, centerY, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
+        renderSmallPlayableGlow(graphics, basePlayable, dragGlow.pulse(), 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
+        CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, cardValues(snapshot, card), false, true);
+        graphics.disableScissor();
+        renderSmallPlayableOutline(graphics, basePlayable, dragGlow.pulse(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
+        graphics.pose().popPose();
         recordPerf(PerfBucket.TARGET_CARD, start);
     }
 
@@ -1582,7 +1716,7 @@ public class BattleScreen extends NoBlurScreen {
             return;
         }
         boolean playableHere = playableDraggedCardAt(card, snapshot, mouseX, mouseY);
-        renderDraggedDetailedCard(graphics, snapshot, card, mouseX, mouseY, DRAG_CARD_SCALE, playableHere);
+        renderDraggedSmallCard(graphics, snapshot, card, mouseX, mouseY, HAND_BASE_SCALE, playableHere);
     }
 
     private MoonSpireUiRect targetRectForCard(CardInstance card, int targetEntityId, BattleSnapshot snapshot) {
@@ -1646,15 +1780,22 @@ public class BattleScreen extends NoBlurScreen {
             showTurnBanner(snapshot.phase());
         }
         for (CardInstance oldCard : previousSnapshot.hand()) {
+            if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id()) && exhaustedIds.contains(oldCard.id())) {
+                HandCardAnimation from = handAnimations.get(oldCard.id());
+                float startX = from != null ? from.currentX() : drawPileCenterX();
+                float startY = from != null ? from.currentY() : drawPileCenterY();
+                float scale = from != null ? from.currentScale() : HAND_BASE_SCALE;
+                flyingCards.add(FlyingCardAnimation.exhaustInPlace(oldCard, startX, startY, scale));
+                representedFlyingIds.add(oldCard.id());
+            }
+        }
+        for (CardInstance oldCard : previousSnapshot.hand()) {
             if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id())) {
                 HandCardAnimation from = handAnimations.get(oldCard.id());
                 float startX = from != null ? from.currentX() : drawPileCenterX();
                 float startY = from != null ? from.currentY() : drawPileCenterY();
-                if (exhaustedIds.contains(oldCard.id())) {
-                    float scale = from != null ? from.currentScale() : HAND_BASE_SCALE;
-                    flyingCards.add(FlyingCardAnimation.exhaustInPlace(oldCard, startX, startY, scale));
-                } else if (expectedPlayedRemoval) {
-                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), exhaustedIds.contains(oldCard.id()));
+                if (expectedPlayedRemoval) {
+                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), false);
                     if (discardIds.contains(animation.card().id())) {
                         animation.releaseToDiscard();
                     }
@@ -1749,8 +1890,55 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
+    private boolean draggingHandCard() {
+        return dragState != null;
+    }
+
+    private void beginDraggedCardReturn(BattleSnapshot snapshot, DragState releasedDrag, double mouseX, double mouseY) {
+        if (releasedDrag == null || releasedDrag.handIndex() < 0 || releasedDrag.handIndex() >= snapshot.hand().size()) {
+            return;
+        }
+        CardInstance card = snapshot.hand().get(releasedDrag.handIndex());
+        if (!card.id().equals(releasedDrag.cardId())) {
+            return;
+        }
+        HandCardAnimation animation = handAnimations.get(card.id());
+        if (animation == null) {
+            return;
+        }
+        HandCardBounds start = card.requiresExplicitTarget()
+                ? new HandCardBounds(animation.currentX(), animation.currentY(), 0.0F, animation.currentScale())
+                : new HandCardBounds((float) mouseX, (float) mouseY, 0.0F, HAND_BASE_SCALE);
+        animation.startReturn(start);
+    }
+
+    private void clearHandHoverProgress() {
+        hoveredHandIndex = -1;
+        for (HandCardAnimation animation : handAnimations.values()) {
+            animation.clearHoverOnly();
+        }
+    }
+
+    private void clearHandHoverAnimations(BattleSnapshot snapshot) {
+        hoveredHandIndex = -1;
+        Map<UUID, HandCardBounds> targets = handAnimationTargetsByCardId(snapshot);
+        for (HandCardAnimation animation : handAnimations.values()) {
+            animation.clearHover(targets.get(animation.cardId()));
+        }
+    }
+
+    private Map<UUID, HandCardBounds> handAnimationTargetsByCardId(BattleSnapshot snapshot) {
+        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        HandLayout layout = handLayout(visibleCards);
+        Map<UUID, HandCardBounds> targets = new HashMap<>();
+        for (int i = 0; i < visibleCards.size(); i++) {
+            targets.put(visibleCards.get(i).id(), layout.card(i));
+        }
+        return targets;
+    }
+
     private void renderScaledDetailedCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips) {
-        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, suppressTips, 1.0F);
+        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, suppressTips, 1.0F, null);
     }
 
     private void renderScaledDetailedCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips, float alpha) {
@@ -1850,6 +2038,8 @@ public class BattleScreen extends NoBlurScreen {
 
     private static boolean positiveEffect(CardEffectKind kind) {
         return kind == CardEffectKind.HEAL
+                || kind == CardEffectKind.DRAW_CARDS
+                || kind == CardEffectKind.GAIN_ENERGY
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
@@ -2255,6 +2445,9 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private int handPreviewIndexAt(double mouseX, double mouseY, BattleSnapshot snapshot) {
+        if (draggingHandCard()) {
+            return -1;
+        }
         if (frameCache.matches(snapshot, mouseX, mouseY)) {
             return frameCache.previewIndex();
         }
@@ -2300,6 +2493,10 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private int hoveredHandIndex(double mouseX, double mouseY, BattleSnapshot snapshot, List<CardInstance> visibleCards, HandLayout layout, float partialTick) {
+        if (draggingHandCard()) {
+            hoveredHandIndex = -1;
+            return -1;
+        }
         if (frameCache.matches(snapshot, mouseX, mouseY)) {
             hoveredHandIndex = frameCache.hoveredIndex();
             return hoveredHandIndex;
@@ -2334,6 +2531,9 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private boolean handHoverStickyAt(double mouseX, double mouseY, List<CardInstance> visibleCards, HandLayout layout, int index, float partialTick) {
+        if (draggingHandCard()) {
+            return false;
+        }
         if (index < 0 || index >= visibleCards.size()) {
             return false;
         }
@@ -2682,25 +2882,25 @@ public class BattleScreen extends NoBlurScreen {
         return bestEntityId;
     }
 
-    private void playDraggedCard(double mouseX, double mouseY) {
+    private boolean playDraggedCard(double mouseX, double mouseY) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         CardInstance card = draggedCard(snapshot);
         if (!ClientBattleState.playerTurn() || cardActionsLocked(snapshot) || card == null) {
-            return;
+            return false;
         }
         if (card.cost() > snapshot.player().energyLeft()) {
-            return;
+            return false;
         }
         int targetId = primaryTargetForCard(card, snapshot);
         if (card.requiresExplicitTarget()) {
             int pointed = targetEntityUnderMouse(mouseX, mouseY, snapshot);
             if (!validDraggedTarget(card, pointed, snapshot)) {
-                return;
+                return false;
             }
             targetId = pointed;
         } else {
             if (!playAreaContains(mouseX, mouseY)) {
-                return;
+                return false;
             }
             List<Integer> highlighted = highlightedTargetsForDraggedCard(card, snapshot, mouseX, mouseY);
             if (!highlighted.isEmpty()) {
@@ -2727,6 +2927,7 @@ public class BattleScreen extends NoBlurScreen {
         locallyUsedCardIds.add(card.id());
         flyingCards.add(FlyingCardAnimation.played(card, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EXHAUST)));
         PacketDistributor.sendToServer(new UseCardPayload(dragState.handIndex(), targetId));
+        return true;
     }
 
     private boolean cardActionsLocked(BattleSnapshot snapshot) {
@@ -2767,7 +2968,7 @@ public class BattleScreen extends NoBlurScreen {
             if (effect.amount() <= 0) {
                 continue;
             }
-            if (effect.kind() == CardEffectKind.EXHAUST) {
+            if (!effect.kind().usesTarget()) {
                 continue;
             }
             List<Integer> effectTargets = targetIdsForEffectTarget(effect.target(), snapshot, false, pointedTarget);
@@ -2780,8 +2981,8 @@ public class BattleScreen extends NoBlurScreen {
             }
         }
         if (card.requiresExplicitTarget() && pointedTarget != -1) {
-            boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ENEMY);
-            boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ALLY);
+            boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ENEMY);
+            boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ALLY);
             if (needsEnemy && snapshot.isEnemyEntity(pointedTarget) && !combatantFakeDead(snapshot, pointedTarget)) {
                 targets.removeIf(entityId -> snapshot.isEnemyEntity(entityId) && entityId != pointedTarget);
             }
@@ -2839,8 +3040,8 @@ public class BattleScreen extends NoBlurScreen {
         if (targetEntityId == -1) {
             return false;
         }
-        boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ENEMY);
-        boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ALLY);
+        boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ENEMY);
+        boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ALLY);
         if (needsEnemy && (!snapshot.isEnemyEntity(targetEntityId) || combatantFakeDead(snapshot, targetEntityId))) {
             return false;
         }
@@ -2952,10 +3153,11 @@ public class BattleScreen extends NoBlurScreen {
     private FrameCache createFrameCache(BattleSnapshot snapshot, double mouseX, double mouseY, float partialTick) {
         List<CardInstance> visibleCards = visibleHandCards(snapshot);
         HandLayout layout = handLayout(visibleCards);
-        int directHandIndex = directVisibleHandIndexAt(mouseX, mouseY, visibleCards, layout);
+        boolean draggingHandCard = draggingHandCard();
+        int directHandIndex = draggingHandCard ? -1 : directVisibleHandIndexAt(mouseX, mouseY, visibleCards, layout);
         int previewIndex = -1;
-        int nextHovered = hoveredHandIndex;
-        if (dragState != null || visibleCards.isEmpty()) {
+        int nextHovered = draggingHandCard ? -1 : hoveredHandIndex;
+        if (draggingHandCard || visibleCards.isEmpty()) {
             nextHovered = -1;
         } else if (nextHovered >= visibleCards.size()) {
             nextHovered = -1;
@@ -3241,6 +3443,21 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
+    private ScreenRect screenRect(HandCardScreenBounds bounds) {
+        return screenRect(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+    }
+
+    private ScreenRect screenRect(float left, float top, float right, float bottom) {
+        int clippedLeft = Math.max(0, (int) Math.floor(left));
+        int clippedTop = Math.max(0, (int) Math.floor(top));
+        int clippedRight = Math.min(width, (int) Math.ceil(right));
+        int clippedBottom = Math.min(height, (int) Math.ceil(bottom));
+        return new ScreenRect(clippedLeft, clippedTop, clippedRight, clippedBottom);
+    }
+
+    private record ScreenRect(int left, int top, int right, int bottom) {
+    }
+
     private record PileIconBounds(float centerX, float centerY, int size) {
     }
 
@@ -3317,6 +3534,47 @@ public class BattleScreen extends NoBlurScreen {
             this.targetAngle = angle;
             this.targetScale = scale;
             this.targetHover = hover;
+        }
+
+        private UUID cardId() {
+            return card.id();
+        }
+
+        private void startReturn(HandCardBounds start) {
+            previousX = start.centerX();
+            previousY = start.centerY();
+            previousAngle = start.angle();
+            previousScale = start.scale();
+            previousHover = 0.0F;
+            x = start.centerX();
+            y = start.centerY();
+            angle = start.angle();
+            scale = start.scale();
+            hover = 0.0F;
+            targetHover = 0.0F;
+        }
+
+        private void clearHoverOnly() {
+            previousHover = 0.0F;
+            hover = 0.0F;
+            targetHover = 0.0F;
+        }
+
+        private void clearHover(HandCardBounds target) {
+            previousHover = 0.0F;
+            hover = 0.0F;
+            targetHover = 0.0F;
+            if (target != null) {
+                previousX = target.centerX();
+                previousY = target.centerY();
+                previousAngle = target.angle();
+                previousScale = target.scale();
+                x = target.centerX();
+                y = target.centerY();
+                angle = target.angle();
+                scale = target.scale();
+                setTarget(target.centerX(), target.centerY(), target.angle(), target.scale(), 0.0F);
+            }
         }
 
         private void advance(float deltaTicks) {

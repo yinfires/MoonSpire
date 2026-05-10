@@ -267,28 +267,32 @@ public record CardInstance(
     }
 
     public boolean targetsEnemy() {
-        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target().targetsEnemy());
+        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target().targetsEnemy());
     }
 
     public boolean targetsSelf() {
-        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target().targetsSelf());
+        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target().targetsSelf());
     }
 
     public boolean requiresExplicitTarget() {
-        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target().requiresExplicitTarget());
+        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target().requiresExplicitTarget());
     }
 
     public int targetCountRank() {
         return effects().stream()
                 .filter(effect -> effect.amount() > 0)
-                .filter(effect -> effect.kind() != CardEffectKind.EXHAUST)
+                .filter(effect -> effect.kind().usesTarget())
                 .mapToInt(effect -> effect.target().targetCountRank())
                 .max()
                 .orElse(0);
     }
 
     public boolean hasAnyEffect() {
-        return effects().stream().anyMatch(effect -> effect.amount() > 0);
+        return effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().makesCardPlayable());
+    }
+
+    public boolean hasEffect(CardEffectKind kind) {
+        return effects().stream().anyMatch(effect -> effect.kind() == kind);
     }
 
     public boolean hasAttack() {
@@ -365,7 +369,7 @@ public record CardInstance(
         List<CardEffect> normalized = new ArrayList<>();
         if (effects != null) {
             for (CardEffect effect : effects) {
-                if (effect != null && (effect.amount() > 0 || effect.kind() == CardEffectKind.EXHAUST)) {
+                if (effect != null && (effect.amount() > 0 || effect.kind().isKeyword())) {
                     normalized.add(effect);
                 }
             }

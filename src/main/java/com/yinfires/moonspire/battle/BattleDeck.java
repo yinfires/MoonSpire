@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.battle;
 
 import com.yinfires.moonspire.card.CardBalance;
+import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -14,6 +15,7 @@ public class BattleDeck {
     private final List<CardInstance> discardPile = new ArrayList<>();
     private final List<CardInstance> exhaustPile = new ArrayList<>();
     private final List<CardInstance> hand = new ArrayList<>();
+    private boolean firstTurn = true;
 
     public BattleDeck(List<CardInstance> cards, RandomSource random) {
         for (CardInstance card : cards) {
@@ -39,13 +41,33 @@ public class BattleDeck {
     }
 
     public void startTurn(RandomSource random) {
-        discardHand();
-        draw(CardBalance.STARTING_HAND_SIZE, random);
+        int innateInHand = firstTurn ? moveInnateCardsToOpeningHand() : 0;
+        firstTurn = false;
+        draw(Math.max(0, CardBalance.STARTING_HAND_SIZE - innateInHand), random);
     }
 
     public void discardHand() {
-        discardPile.addAll(hand);
+        discardHand(false);
+    }
+
+    public void discardHand(boolean handleEndOfTurnKeywords) {
+        if (!handleEndOfTurnKeywords) {
+            discardPile.addAll(hand);
+            hand.clear();
+            return;
+        }
+        List<CardInstance> retained = new ArrayList<>();
+        for (CardInstance card : hand) {
+            if (card.hasEffect(CardEffectKind.ETHEREAL)) {
+                exhaustPile.add(card);
+            } else if (card.hasEffect(CardEffectKind.RETAIN)) {
+                retained.add(card);
+            } else {
+                discardPile.add(card);
+            }
+        }
         hand.clear();
+        hand.addAll(retained);
     }
 
     public void draw(int count, RandomSource random) {
@@ -127,6 +149,24 @@ public class BattleDeck {
         if (cards != null) {
             exhaustPile.addAll(cards);
         }
+    }
+
+    private int moveInnateCardsToOpeningHand() {
+        int movedToHand = 0;
+        for (int i = drawPile.size() - 1; i >= 0; i--) {
+            CardInstance card = drawPile.get(i);
+            if (!card.hasEffect(CardEffectKind.INNATE)) {
+                continue;
+            }
+            drawPile.remove(i);
+            if (movedToHand < CardBalance.MAX_HAND_SIZE) {
+                hand.add(card);
+                movedToHand++;
+            } else {
+                discardPile.add(card);
+            }
+        }
+        return movedToHand;
     }
 
     public int firstAffordableAttack(int energyLeft) {

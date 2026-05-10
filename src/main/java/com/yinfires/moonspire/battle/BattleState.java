@@ -294,7 +294,7 @@ public class BattleState {
         if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
             for (CombatantState playerState : alivePlayers()) {
                 applyOwnTurnEndEffects(playerState);
-                playerState.deck().discardHand();
+                playerState.deck().discardHand(true);
             }
             beginMonsterTurn();
         }
@@ -451,7 +451,7 @@ public class BattleState {
         phaseTicks = 0;
         for (CombatantState state : aliveEnemies()) {
             applyOwnTurnEndEffects(state);
-            state.deck().discardHand();
+            state.deck().discardHand(true);
         }
         resetParticipantsToStart();
         round++;
@@ -611,7 +611,7 @@ public class BattleState {
         }
         List<CardEffect> currentEffects = new ArrayList<>();
         for (CardEffect effect : card.effects()) {
-            if (effect.kind() == CardEffectKind.EXHAUST) {
+            if (effect.kind().isKeyword()) {
                 continue;
             }
             if (effect.kind().isHandSelection()) {
@@ -641,14 +641,14 @@ public class BattleState {
     private void addEffectSteps(CombatantState user, CombatantState selectedTarget, CardInstance card, List<CardEffect> effects) {
         int maxCount = 0;
         for (CardEffect effect : effects) {
-            if (effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && !effect.kind().isHandSelection()) {
+            if (effect.amount() > 0 && effect.kind().isResolvedEffect()) {
                 maxCount = Math.max(maxCount, effect.count());
             }
         }
         for (int repeat = 0; repeat < maxCount; repeat++) {
             List<PendingEffect> batchEffects = new ArrayList<>();
             for (CardEffect effect : effects) {
-                if (effect.kind() == CardEffectKind.EXHAUST || effect.kind().isHandSelection() || effect.amount() <= 0 || effect.count() <= repeat) {
+                if (!effect.kind().isResolvedEffect() || effect.amount() <= 0 || effect.count() <= repeat) {
                     continue;
                 }
                 for (CombatantState effectTarget : targetsForEffect(effect, user, selectedTarget)) {
@@ -662,7 +662,7 @@ public class BattleState {
     }
 
     private List<CombatantState> targetsForEffect(CardEffect effect, CombatantState user, CombatantState selectedTarget) {
-        if (effect.kind() == CardEffectKind.EXHAUST) {
+        if (!effect.kind().usesTarget()) {
             return List.of();
         }
         List<CombatantState> allies = sideOf(user);
@@ -700,8 +700,8 @@ public class BattleState {
         if (target == null || target.fakeDead()) {
             return false;
         }
-        boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ENEMY);
-        boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind() != CardEffectKind.EXHAUST && effect.target() == CardTarget.SINGLE_ALLY);
+        boolean needsEnemy = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ENEMY);
+        boolean needsAlly = card.effects().stream().anyMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ALLY);
         if (needsEnemy && !opposingSideOf(user).contains(target)) {
             return false;
         }
@@ -933,6 +933,12 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.SLOWNESS) {
                 effect.target().addEffect(BattleEffectType.SLOWNESS, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.DRAW_CARDS) {
+                effect.target().deck().draw(effect.amount(), leader.getRandom());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.GAIN_ENERGY) {
+                effect.target().addEnergy(effect.amount());
                 effectOnlyTargets.add(effect.target());
             }
         }

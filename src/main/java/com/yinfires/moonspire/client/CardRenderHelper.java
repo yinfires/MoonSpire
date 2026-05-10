@@ -319,8 +319,18 @@ public final class CardRenderHelper {
                 lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "weakness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.weakness.name"))), effect.count()));
             } else if (effect.kind() == CardEffectKind.SLOWNESS) {
                 lines.add(withEffectCount(Component.translatable(effectDescriptionKey(effect.kind(), "slowness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.slowness.name"))), effect.count()));
+            } else if (effect.kind() == CardEffectKind.DRAW_CARDS) {
+                lines.add(withEffectCount(Component.translatable(keywordDescriptionKey("draw_cards", effect.target()), effect.amount()), effect.count()));
+            } else if (effect.kind() == CardEffectKind.GAIN_ENERGY) {
+                lines.add(withEffectCount(Component.translatable(keywordDescriptionKey("gain_energy", effect.target()), effect.amount(), keyword(Component.translatable("keyword.moonspire.energy.name"))), effect.count()));
             } else if (effect.kind() == CardEffectKind.EXHAUST) {
                 lines.add(keyword(Component.translatable("keyword.moonspire.exhaust.name")));
+            } else if (effect.kind() == CardEffectKind.INNATE) {
+                lines.add(keyword(Component.translatable("keyword.moonspire.innate.name")));
+            } else if (effect.kind() == CardEffectKind.RETAIN) {
+                lines.add(keyword(Component.translatable("keyword.moonspire.retain.name")));
+            } else if (effect.kind() == CardEffectKind.ETHEREAL) {
+                lines.add(keyword(Component.translatable("keyword.moonspire.ethereal.name")));
             } else if (effect.kind() == CardEffectKind.EXHAUST_HAND) {
                 lines.add(withEffectCount(Component.translatable(handSelectionDescriptionKey("exhaust_hand", effect.target()), effect.amount()), 1));
             } else if (effect.kind() == CardEffectKind.DISCARD_HAND) {
@@ -407,6 +417,10 @@ public final class CardRenderHelper {
 
     private static String handSelectionDescriptionKey(String effect, CardTarget target) {
         return effectDescriptionKey(effect, target);
+    }
+
+    private static String keywordDescriptionKey(String effect, CardTarget target) {
+        return "card.moonspire.effect." + effect + (target == CardTarget.SELF ? "" : ".other");
     }
 
     private static String effectDescriptionKey(String effect, CardTarget target) {
@@ -498,8 +512,16 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.weakness.name"), Component.translatable("effect.moonspire.weakness.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.SLOWNESS && renderedTips.add("slowness")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.slowness.name"), Component.translatable("effect.moonspire.slowness.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.GAIN_ENERGY && renderedTips.add("energy")) {
+                tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.energy.name"), Component.translatable("keyword.moonspire.energy.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.EXHAUST && renderedTips.add("exhaust")) {
                 tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.exhaust.name"), Component.translatable("keyword.moonspire.exhaust.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.INNATE && renderedTips.add("innate")) {
+                tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.innate.name"), Component.translatable("keyword.moonspire.innate.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.RETAIN && renderedTips.add("retain")) {
+                tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.retain.name"), Component.translatable("keyword.moonspire.retain.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.ETHEREAL && renderedTips.add("ethereal")) {
+                tipY = renderTip(graphics, font, Component.translatable("keyword.moonspire.ethereal.name"), Component.translatable("keyword.moonspire.ethereal.description"), x, tipY);
             }
         }
     }
@@ -578,8 +600,16 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.weakness.name"), Component.translatable("effect.moonspire.weakness.description")) + 4;
             } else if (effect.kind() == CardEffectKind.SLOWNESS && renderedTips.add("slowness")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.slowness.name"), Component.translatable("effect.moonspire.slowness.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.GAIN_ENERGY && renderedTips.add("energy")) {
+                height += tipHeight(font, Component.translatable("keyword.moonspire.energy.name"), Component.translatable("keyword.moonspire.energy.description")) + 4;
             } else if (effect.kind() == CardEffectKind.EXHAUST && renderedTips.add("exhaust")) {
                 height += tipHeight(font, Component.translatable("keyword.moonspire.exhaust.name"), Component.translatable("keyword.moonspire.exhaust.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.INNATE && renderedTips.add("innate")) {
+                height += tipHeight(font, Component.translatable("keyword.moonspire.innate.name"), Component.translatable("keyword.moonspire.innate.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.RETAIN && renderedTips.add("retain")) {
+                height += tipHeight(font, Component.translatable("keyword.moonspire.retain.name"), Component.translatable("keyword.moonspire.retain.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.ETHEREAL && renderedTips.add("ethereal")) {
+                height += tipHeight(font, Component.translatable("keyword.moonspire.ethereal.name"), Component.translatable("keyword.moonspire.ethereal.description")) + 4;
             }
         }
         return Math.max(0, height - 4);

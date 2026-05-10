@@ -203,6 +203,8 @@ public final class BattleWorldOverlay {
 
     private static boolean positiveEffect(CardEffectKind kind) {
         return kind == CardEffectKind.HEAL
+                || kind == CardEffectKind.DRAW_CARDS
+                || kind == CardEffectKind.GAIN_ENERGY
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
