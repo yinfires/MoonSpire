@@ -16,14 +16,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.SpectralArrow;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -34,6 +42,15 @@ public class BattleState {
     private static final int MIN_KNOCKBACK_RELEASE_TICKS = 4;
     private static final int CARD_EFFECT_START_DELAY_TICKS = 10;
     private static final int REPEATED_EFFECT_VISUAL_INTERVAL_TICKS = 14;
+    private static final int MELEE_LUNGE_TICKS = 8;
+    private static final int MELEE_RECOVER_TICKS = 6;
+    private static final int BOW_DRAW_TICKS = 20;
+    private static final int CROSSBOW_LOAD_TICKS = 25;
+    private static final int MIN_PROJECTILE_TICKS = 5;
+    private static final int MAX_PROJECTILE_TICKS = 18;
+    private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
+    private static final double LUNGE_STOP_DISTANCE = 1.55D;
+    private static final double LUNGE_REACH = 1.35D;
 
     private final UUID id = UUID.randomUUID();
     private final ServerPlayer leader;
@@ -61,6 +78,7 @@ public class BattleState {
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
     private final List<PendingCardStep> pendingCardSteps = new ArrayList<>();
     private int pendingCardBatchDelay;
+    private BattleAnimation pendingAnimation;
     private CombatantState pendingUsedCardOwner;
     private CardInstance pendingUsedCard;
     private PendingHandSelection pendingHandSelection;
@@ -391,6 +409,7 @@ public class BattleState {
 
     private void beginBattle() {
         freezeAi();
+        clearParticipantHandAnimations();
         resetParticipantsToStart();
         openingProtectionTicks = 20;
         for (CombatantState state : allStates()) {
@@ -398,6 +417,19 @@ public class BattleState {
         }
         beginRound();
         beginPlayerTurn();
+    }
+
+    private void clearParticipantHandAnimations() {
+        for (CombatantState state : allStates()) {
+            LivingEntity entity = state.entity();
+            if (entity.isUsingItem()) {
+                entity.stopUsingItem();
+            }
+            entity.swinging = false;
+            entity.swingTime = 0;
+            entity.attackAnim = 0.0F;
+            entity.oAttackAnim = 0.0F;
+        }
     }
 
     private void beginRound() {
@@ -618,7 +650,7 @@ public class BattleState {
         if (triggersAttackUse(card, user)) {
             PendingEffect bleed = bleedEffectForAttack(user);
             if (bleed != null) {
-                pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), null, List.of(bleed))));
+                pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), ItemStack.EMPTY, null, List.of(bleed))));
             }
         }
         List<CardEffect> currentEffects = new ArrayList<>();
@@ -659,6 +691,10 @@ public class BattleState {
     }
 
     private void addEffectSteps(CombatantState user, CombatantState selectedTarget, CardInstance card, List<CardEffect> effects) {
+        addEffectSteps(user, selectedTarget, card, effects, ItemStack.EMPTY);
+    }
+
+    private void addEffectSteps(CombatantState user, CombatantState selectedTarget, CardInstance card, List<CardEffect> effects, ItemStack projectileStack) {
         boolean remoteDamage = card.hasEffect(CardEffectKind.REMOTE);
         int maxCount = 0;
         for (CardEffect effect : effects) {
@@ -677,7 +713,7 @@ public class BattleState {
                 }
             }
             if (!batchEffects.isEmpty()) {
-                pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), card, batchEffects)));
+                pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), projectileStack, card, batchEffects)));
             }
         }
     }
@@ -786,6 +822,33 @@ public class BattleState {
         knockbackTicks.put(target.getId(), KNOCKBACK_RELEASE_TICKS);
     }
 
+    private ItemStack projectileStackForArrow(CardInstance arrow) {
+        ResourceLocation itemId = itemId(arrow.sourceStack());
+        if (itemId != null && itemId.equals(BuiltInRegistries.ITEM.getKey(Items.SPECTRAL_ARROW))) {
+            return new ItemStack(Items.SPECTRAL_ARROW);
+        }
+        return new ItemStack(Items.ARROW);
+    }
+
+    private ResourceLocation itemId(ItemStack stack) {
+        return stack == null || stack.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(stack.getItem());
+    }
+
+    private int rangedPrepareTicks(CardInstance card) {
+        ItemStack stack = card.sourceStack();
+        if (!stack.isEmpty() && stack.is(Items.CROSSBOW)) {
+            return CROSSBOW_LOAD_TICKS;
+        }
+        return BOW_DRAW_TICKS;
+    }
+
+    private BattleVisualEvent.AnimationType rangedAnimationType(CardInstance card) {
+        ItemStack stack = card.sourceStack();
+        return !stack.isEmpty() && stack.is(Items.CROSSBOW)
+                ? BattleVisualEvent.AnimationType.CROSSBOW_LOAD
+                : BattleVisualEvent.AnimationType.BOW_DRAW;
+    }
+
     private PendingEffect bleedEffectForAttack(CombatantState user) {
         int bleed = user.effectAmount(BattleEffectType.BLEED);
         if (bleed <= 0) {
@@ -795,34 +858,59 @@ public class BattleState {
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int delayTicks) {
-        emitVisual(attacker, target, stack, playedCard, result, 0, 0, delayTicks);
+        emitVisual(attacker, target, stack, ItemStack.EMPTY, playedCard, result, 0, 0, delayTicks, BattleVisualEvent.AnimationType.NONE, 0);
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int delayTicks) {
-        emitVisual(attacker, target, stack, playedCard, result, gainedBlock, 0, delayTicks);
+        emitVisual(attacker, target, stack, ItemStack.EMPTY, playedCard, result, gainedBlock, 0, delayTicks, BattleVisualEvent.AnimationType.NONE, 0);
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks) {
+        emitVisual(attacker, target, stack, ItemStack.EMPTY, playedCard, result, gainedBlock, healedHealth, delayTicks, BattleVisualEvent.AnimationType.NONE, 0);
+    }
+
+    private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, ItemStack projectileStack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks, BattleVisualEvent.AnimationType animationType, int animationTicks) {
         pendingVisualEvents.add(new BattleVisualEvent(
                 attacker.getId(),
                 target.getId(),
                 stack.copy(),
+                projectileStack.copy(),
                 playedCard == null ? null : playedCard.copyForBattle(),
                 result.blockedDamage(),
                 result.healthDamage(),
                 Math.max(0, gainedBlock),
                 Math.max(0, healedHealth),
                 Math.max(0, delayTicks),
+                animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType,
+                Math.max(0, animationTicks),
                 result.blockedDamage() > 0,
                 result.healthDamage() > 0,
                 gainedBlock > 0));
     }
 
     private boolean hasPendingCardBatches() {
-        return !pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingHandSelection != null || pendingUsedCard != null;
+        return pendingAnimation != null || !pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingHandSelection != null || pendingUsedCard != null;
     }
 
     private void tickPendingCardBatches() {
+        if (pendingAnimation != null) {
+            if (!pendingAnimation.tick()) {
+                return;
+            }
+            BattleAnimation completed = pendingAnimation;
+            pendingAnimation = null;
+            completeAnimatedBatch(completed.batch());
+            if (!pendingCardBatches.isEmpty()) {
+                pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
+            } else {
+                pendingCardBatchDelay = 0;
+                advancePendingCardSteps();
+                if (pendingCardBatches.isEmpty() && pendingCardSteps.isEmpty() && pendingHandSelection == null) {
+                    finishPendingUsedCard();
+                }
+            }
+            return;
+        }
         if (pendingHandSelection != null) {
             pendingCardBatchDelay = 0;
             return;
@@ -842,7 +930,10 @@ public class BattleState {
             return;
         }
         PendingCardBatch batch = pendingCardBatches.remove(0);
-        applyPendingCardBatch(batch);
+        if (beginBattleAnimation(batch)) {
+            return;
+        }
+        applyPendingCardBatch(batch, false);
         if (pendingCardBatches.isEmpty()) {
             pendingCardBatchDelay = 0;
             advancePendingCardSteps();
@@ -852,6 +943,36 @@ public class BattleState {
         } else {
             pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
         }
+    }
+
+    private boolean beginBattleAnimation(PendingCardBatch batch) {
+        PendingEffect animated = firstAnimatedEffect(batch);
+        if (animated == null) {
+            return false;
+        }
+        if (batch.card() != null && batch.card().hasEffect(CardEffectKind.REMOTE)) {
+            ItemStack projectileStack = batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
+            int drawTicks = rangedPrepareTicks(batch.card());
+            emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), drawTicks);
+            pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
+            return true;
+        }
+        emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS);
+        pendingAnimation = new LungeAnimation(batch, animated.target());
+        return true;
+    }
+
+    private PendingEffect firstAnimatedEffect(PendingCardBatch batch) {
+        for (PendingEffect effect : batch.effects()) {
+            if (effect.kind() == CardEffectKind.DAMAGE && !effect.effectDamage() && effect.target() != null && !effect.target().fakeDead()) {
+                return effect;
+            }
+        }
+        return null;
+    }
+
+    private void completeAnimatedBatch(PendingCardBatch batch) {
+        applyPendingCardBatch(batch, true);
     }
 
     private void advancePendingCardSteps() {
@@ -948,7 +1069,7 @@ public class BattleState {
                 effects.add(arrowEffect);
             }
         }
-        addEffectSteps(resolution.user(), resolution.selectedTarget(), resolution.card(), effects);
+        addEffectSteps(resolution.user(), resolution.selectedTarget(), resolution.card(), effects, projectileStackForArrow(arrow));
     }
 
     private PendingHandSelectionSnapshot pendingHandSelectionSnapshotFor(CombatantState local) {
@@ -958,7 +1079,7 @@ public class BattleState {
         return new PendingHandSelectionSnapshot(pendingHandSelection.action(), pendingHandSelection.requiredCount(), pendingHandSelection.user().entity().getId(), pendingHandSelection.candidateIds());
     }
 
-    private void applyPendingCardBatch(PendingCardBatch batch) {
+    private void applyPendingCardBatch(PendingCardBatch batch, boolean suppressCardVisual) {
         Map<CombatantState, BattleDamageResult> damageResults = new LinkedHashMap<>();
         Map<CombatantState, Integer> blockGains = new LinkedHashMap<>();
         Map<CombatantState, Integer> heals = new LinkedHashMap<>();
@@ -1034,19 +1155,23 @@ public class BattleState {
         boolean emittedCardVisual = false;
         for (Map.Entry<CombatantState, BattleDamageResult> entry : damageResults.entrySet()) {
             CombatantState target = entry.getKey();
-            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), suppressCardVisual || emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
             emittedCardVisual = true;
         }
         for (CombatantState target : effectOnlyTargets) {
             if (damageResults.containsKey(target)) {
                 continue;
             }
-            emitVisual(batch.user().entity(), target.entity(), batch.stack(), emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), suppressCardVisual || emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
             emittedCardVisual = true;
         }
-        if (!emittedCardVisual && batch.card() != null) {
+        if (!suppressCardVisual && !emittedCardVisual && batch.card() != null) {
             emitVisual(batch.user().entity(), batch.user().entity(), batch.stack(), batch.card(), new BattleDamageResult(0, 0, 0), 0);
         }
+    }
+
+    private static ItemStack visualStack(PendingCardBatch batch, boolean suppressCardVisual) {
+        return suppressCardVisual ? ItemStack.EMPTY : batch.stack();
     }
 
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
@@ -1101,6 +1226,15 @@ public class BattleState {
         actor.setYBodyRot(yaw);
     }
 
+    private void facePosition(LivingEntity actor, Vec3 target) {
+        double dx = target.x - actor.getX();
+        double dz = target.z - actor.getZ();
+        float yaw = (float) (Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
+        actor.setYRot(yaw);
+        actor.setYHeadRot(yaw);
+        actor.setYBodyRot(yaw);
+    }
+
     private void lockBattleEntities() {
         for (CombatantState state : allStates()) {
             LivingEntity entity = state.entity();
@@ -1110,6 +1244,13 @@ public class BattleState {
             }
             if (entity instanceof ServerPlayer player) {
                 player.getInventory().selected = lock.hotbarSlot();
+            }
+            if (pendingAnimation != null && pendingAnimation.movesEntity(entity)) {
+                entity.xxa = 0.0F;
+                entity.yya = 0.0F;
+                entity.zza = 0.0F;
+                entity.setJumping(false);
+                continue;
             }
             int releaseTicks = knockbackTicks.getOrDefault(entity.getId(), 0);
             Vec3 nextLockedPos = freezeEntity(entity, lock.lockedPos(), releaseTicks);
@@ -1483,8 +1624,10 @@ public class BattleState {
         }
     }
 
-    private record PendingCardBatch(CombatantState user, ItemStack stack, CardInstance card, List<PendingEffect> effects) {
+    private record PendingCardBatch(CombatantState user, ItemStack stack, ItemStack projectileStack, CardInstance card, List<PendingEffect> effects) {
         private PendingCardBatch {
+            stack = stack == null ? ItemStack.EMPTY : stack.copy();
+            projectileStack = projectileStack == null ? ItemStack.EMPTY : projectileStack.copy();
             effects = List.copyOf(effects);
         }
     }
@@ -1508,5 +1651,207 @@ public class BattleState {
         private PendingHandSelection {
             candidateIds = List.copyOf(candidateIds);
         }
+    }
+
+    private sealed interface BattleAnimation permits LungeAnimation, ProjectileAnimation {
+        PendingCardBatch batch();
+
+        boolean tick();
+
+        boolean movesEntity(LivingEntity entity);
+    }
+
+    private final class LungeAnimation implements BattleAnimation {
+        private final PendingCardBatch batch;
+        private final CombatantState target;
+        private final LivingEntity actor;
+        private final Vec3 start;
+        private final Vec3 strike;
+        private final boolean noPhysicsBeforeAnimation;
+        private int ticks;
+        private boolean returning;
+
+        private LungeAnimation(PendingCardBatch batch, CombatantState target) {
+            this.batch = batch;
+            this.target = target;
+            this.actor = batch.user().entity();
+            this.start = actor.position();
+            this.noPhysicsBeforeAnimation = actor.noPhysics;
+            Vec3 targetPos = target.entity().position();
+            Vec3 direction = targetPos.subtract(start);
+            Vec3 horizontal = new Vec3(direction.x, 0.0D, direction.z);
+            Vec3 normalized = horizontal.lengthSqr() > 0.0001D ? horizontal.normalize() : actor.getLookAngle().multiply(1.0D, 0.0D, 1.0D).normalize();
+            double distance = Math.max(0.0D, Math.min(LUNGE_REACH, horizontal.length() - LUNGE_STOP_DISTANCE));
+            this.strike = start.add(normalized.scale(distance));
+        }
+
+        @Override
+        public PendingCardBatch batch() {
+            return batch;
+        }
+
+        @Override
+        public boolean tick() {
+            if (!actor.isAlive() || target.fakeDead()) {
+                actor.noPhysics = noPhysicsBeforeAnimation;
+                return true;
+            }
+            faceTarget(actor, target.entity());
+            if (!returning) {
+                ticks++;
+                moveActor(lerp(start, strike, ticks / (double) MELEE_LUNGE_TICKS));
+                if (ticks >= MELEE_LUNGE_TICKS) {
+                    ticks = 0;
+                    returning = true;
+                    return false;
+                }
+                return false;
+            }
+            ticks++;
+            moveActor(lerp(strike, start, ticks / (double) MELEE_RECOVER_TICKS));
+            if (ticks >= MELEE_RECOVER_TICKS) {
+                moveActor(start);
+                actor.noPhysics = noPhysicsBeforeAnimation;
+                EntityLock lock = locks.get(actor.getId());
+                if (lock != null) {
+                    locks.put(actor.getId(), lock.withLockedPos(actor.position()));
+                }
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean movesEntity(LivingEntity entity) {
+            return entity == actor;
+        }
+
+        private void moveActor(Vec3 pos) {
+            Vec3 delta = pos.subtract(actor.position());
+            actor.noPhysics = true;
+            actor.move(MoverType.SELF, delta);
+            actor.setDeltaMovement(Vec3.ZERO);
+            actor.hasImpulse = true;
+        }
+    }
+
+    private final class ProjectileAnimation implements BattleAnimation {
+        private final PendingCardBatch batch;
+        private final CombatantState target;
+        private final ItemStack projectileStack;
+        private final int prepareTicks;
+        private final int flightTicks;
+        private AbstractArrow arrow;
+        private int ticks;
+
+        private ProjectileAnimation(PendingCardBatch batch, CombatantState target, ItemStack projectileStack, int prepareTicks) {
+            this.batch = batch;
+            this.target = target;
+            this.projectileStack = projectileStack.copy();
+            this.prepareTicks = Math.max(0, prepareTicks);
+            this.flightTicks = projectileFlightTicks(batch.user().entity(), target.entity());
+        }
+
+        @Override
+        public PendingCardBatch batch() {
+            return batch;
+        }
+
+        @Override
+        public boolean tick() {
+            LivingEntity actor = batch.user().entity();
+            if (!actor.isAlive() || target.fakeDead()) {
+                discardArrow();
+                return true;
+            }
+            faceTarget(actor, target.entity());
+            if (ticks < prepareTicks) {
+                ticks++;
+                return false;
+            }
+            if (arrow == null) {
+                spawnArrow(actor, target.entity());
+            }
+            ticks++;
+            guideArrow(target.entity());
+            if (ticks >= prepareTicks + flightTicks || arrowCloseToTarget(target.entity())) {
+                placeArrowAtTarget(target.entity());
+                discardArrow();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean movesEntity(LivingEntity entity) {
+            return false;
+        }
+
+        private void spawnArrow(LivingEntity actor, LivingEntity targetEntity) {
+            Level level = actor.level();
+            ItemStack arrowStack = projectileStack.is(Items.SPECTRAL_ARROW) ? new ItemStack(Items.SPECTRAL_ARROW) : new ItemStack(Items.ARROW);
+            ItemStack weaponStack = batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack().copy();
+            arrow = arrowStack.is(Items.SPECTRAL_ARROW)
+                    ? new SpectralArrow(level, actor, arrowStack, weaponStack)
+                    : new Arrow(level, actor, arrowStack, weaponStack);
+            Vec3 startPos = actor.getEyePosition().add(actor.getLookAngle().scale(0.6D));
+            arrow.setPos(startPos);
+            arrow.setOwner(actor);
+            arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
+            arrow.setBaseDamage(0.0D);
+            arrow.setNoGravity(true);
+            arrow.setNoPhysics(true);
+            arrow.noPhysics = true;
+            Vec3 direction = targetPoint(targetEntity).subtract(startPos).normalize();
+            arrow.shoot(direction.x, direction.y, direction.z, 2.4F, 0.0F);
+            level.addFreshEntity(arrow);
+        }
+
+        private void guideArrow(LivingEntity targetEntity) {
+            if (arrow == null || arrow.isRemoved()) {
+                return;
+            }
+            Vec3 targetPoint = targetPoint(targetEntity);
+            Vec3 delta = targetPoint.subtract(arrow.position());
+            double remainingTicks = Math.max(1.0D, prepareTicks + flightTicks - ticks + 1.0D);
+            Vec3 step = delta.scale(1.0D / remainingTicks);
+            arrow.setNoGravity(true);
+            arrow.setNoPhysics(true);
+            arrow.noPhysics = true;
+            arrow.setDeltaMovement(step);
+            arrow.setPos(arrow.position().add(step));
+            arrow.hasImpulse = true;
+        }
+
+        private boolean arrowCloseToTarget(LivingEntity targetEntity) {
+            return arrow == null || arrow.isRemoved() || arrow.position().distanceToSqr(targetPoint(targetEntity)) <= PROJECTILE_BLOCK_DISTANCE * PROJECTILE_BLOCK_DISTANCE;
+        }
+
+        private void placeArrowAtTarget(LivingEntity targetEntity) {
+            if (arrow != null && !arrow.isRemoved()) {
+                arrow.setPos(targetPoint(targetEntity));
+            }
+        }
+
+        private void discardArrow() {
+            if (arrow != null && !arrow.isRemoved()) {
+                arrow.discard();
+            }
+            arrow = null;
+        }
+    }
+
+    private int projectileFlightTicks(LivingEntity actor, LivingEntity target) {
+        double distance = actor.getEyePosition().distanceTo(targetPoint(target));
+        return Math.max(MIN_PROJECTILE_TICKS, Math.min(MAX_PROJECTILE_TICKS, (int) Math.ceil(distance / 1.6D)));
+    }
+
+    private Vec3 targetPoint(LivingEntity entity) {
+        return entity.getBoundingBox().getCenter();
+    }
+
+    private static Vec3 lerp(Vec3 from, Vec3 to, double amount) {
+        double t = Math.max(0.0D, Math.min(1.0D, amount));
+        return from.add(to.subtract(from).scale(t));
     }
 }

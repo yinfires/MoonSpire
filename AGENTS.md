@@ -26,6 +26,9 @@
 - When a dragged hand card is released without being played, use the release/current card position as the animation start and let normal hand target interpolation pull it back. Do not clear `dragState` and then immediately reset the hand animation to the final layout position.
 - Make play attempts report whether a card was actually used before starting played-card or return-to-hand animations. Invalid target, invalid play area, insufficient energy, or locked action should all take the smooth return path.
 - After card UI animation changes, compile and also reason through the frame order: input release, local state mutation, snapshot sync, animation target update, and render interpolation.
+- For world combat card animations that imitate vanilla item use, reuse vanilla state and timing as much as possible instead of hand-assembling poses. Bow/crossbow visuals should be driven by sustained item-use state, vanilla arm poses, and vanilla sounds where possible; do not toggle held items only for a render callback, because per-frame set/restore causes flicker and prevents vanilla use-time animation from accumulating.
+- Battle visual state that represents world animation timing must advance on client tick cadence, not render-frame cadence. Render-frame progression is appropriate for UI interpolation, but bow draw/crossbow loading, temporary held items, and other vanilla-like world states need stable 20 TPS lifetime unless the underlying vanilla animation explicitly uses partial ticks.
+- When entering battle, clear both server and client use-item state and also suppress default held-item arm poses for combatants that are not currently playing a battle visual. A player entering battle while holding a bow, crossbow, shield, food, or another use item must not keep the pre-battle raised-hand pose.
 
 ## Video References
 

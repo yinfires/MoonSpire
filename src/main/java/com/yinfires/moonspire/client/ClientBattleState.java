@@ -96,6 +96,7 @@ public final class ClientBattleState {
         snapshot = next;
         snapshotVersion++;
         if (!previous.active() && next.active()) {
+            clearVisualStates();
             enterBattleCamera();
         }
         if (previous.active() && !next.active()) {
@@ -106,7 +107,7 @@ public final class ClientBattleState {
             damageNumbers.clear();
             blockGainAnimations.clear();
             pendingVisualEvents.clear();
-            visualStates.clear();
+            clearVisualStates();
             clearFakeDeathStarts();
             monsterPlayedCard = null;
             monsterPlayedCardTicks = 0.0F;
@@ -126,7 +127,7 @@ public final class ClientBattleState {
     }
 
     public static void clear() {
-        setSnapshot(BattleSnapshot.inactive());
+        setSnapshot(BattleSnapshot.inactive(serverBattleId, serverSnapshotSequence + 1L));
     }
 
     public static boolean active() {
@@ -312,7 +313,7 @@ public final class ClientBattleState {
                 continue;
             }
             BattleVisualEvent event = scheduled.event;
-            visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState()).showItem(event.itemStack());
+            visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState()).showItem(event.itemStack(), event.animationType(), event.animationTicks());
             if (event.healthDamage() > 0) {
                 visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash();
             }
@@ -376,6 +377,20 @@ public final class ClientBattleState {
         return state == null ? 0 : state.knockbackTicks();
     }
 
+    public static boolean visualUsingItem(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.usingTicks() > 0;
+    }
+
+    public static BattleVisualEvent.AnimationType visualAnimationType(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? BattleVisualEvent.AnimationType.NONE : state.animationType();
+    }
+
+    public static void clearVisualStates() {
+        visualStates.clear();
+    }
+
     public static int fakeDeathRenderTicks(int entityId) {
         Long start = fakeDeathStarts.get(entityId);
         if (start == null) {
@@ -385,6 +400,14 @@ public final class ClientBattleState {
     }
 
     public static void tickDamageNumbers() {
+        tickDamageNumbers(true);
+    }
+
+    public static void tickClientLogic() {
+        tickDamageNumbers(true);
+    }
+
+    public static void tickDamageNumbers(boolean tickVisualStates) {
         Iterator<DamageNumber> iterator = damageNumbers.iterator();
         while (iterator.hasNext()) {
             DamageNumber number = iterator.next();
@@ -400,6 +423,9 @@ public final class ClientBattleState {
             if (animation.done(now)) {
                 blockIterator.remove();
             }
+        }
+        if (!tickVisualStates) {
+            return;
         }
         Iterator<VisualState> visualIterator = visualStates.values().iterator();
         while (visualIterator.hasNext()) {
@@ -519,7 +545,9 @@ public final class ClientBattleState {
 
     public static final class VisualState {
         private ItemStack itemStack = ItemStack.EMPTY;
+        private BattleVisualEvent.AnimationType animationType = BattleVisualEvent.AnimationType.NONE;
         private int itemTicks;
+        private int usingTicks;
         private int hurtTicks;
         private int knockbackTicks;
 
@@ -531,10 +559,25 @@ public final class ClientBattleState {
             return knockbackTicks;
         }
 
-        private void showItem(ItemStack stack) {
+        public int usingTicks() {
+            return usingTicks;
+        }
+
+        public BattleVisualEvent.AnimationType animationType() {
+            if (itemTicks <= 0 && usingTicks <= 0) {
+                return BattleVisualEvent.AnimationType.NONE;
+            }
+            return animationType;
+        }
+
+        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks) {
             if (stack != null && !stack.isEmpty()) {
                 itemStack = stack.copy();
-                itemTicks = 18;
+                itemTicks = Math.max(18, animationTicks + 8);
+                this.animationType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
+                if (animationType == BattleVisualEvent.AnimationType.BOW_DRAW || animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
+                    usingTicks = Math.max(usingTicks, Math.max(1, animationTicks));
+                }
             }
         }
 
@@ -546,6 +589,13 @@ public final class ClientBattleState {
         private void tick() {
             if (itemTicks > 0) {
                 itemTicks--;
+                if (itemTicks <= 0) {
+                    itemStack = ItemStack.EMPTY;
+                    animationType = BattleVisualEvent.AnimationType.NONE;
+                }
+            }
+            if (usingTicks > 0) {
+                usingTicks--;
             }
             if (hurtTicks > 0) {
                 hurtTicks--;
@@ -556,7 +606,7 @@ public final class ClientBattleState {
         }
 
         private boolean done() {
-            return itemTicks <= 0 && hurtTicks <= 0 && knockbackTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && hurtTicks <= 0 && knockbackTicks <= 0;
         }
     }
 

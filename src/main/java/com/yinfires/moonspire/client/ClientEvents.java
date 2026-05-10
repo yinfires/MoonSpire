@@ -10,22 +10,29 @@ import com.yinfires.moonspire.client.ui.MoonSpireClientConfig;
 import com.yinfires.moonspire.network.ChallengeTargetPayload;
 import com.yinfires.moonspire.network.EndTurnPayload;
 import com.yinfires.moonspire.network.RequestDeveloperCenterPayload;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.Util;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
@@ -60,8 +67,12 @@ public final class ClientEvents {
     public static final KeyMapping UI_DEBUG = new KeyMapping("key.moonspire.ui_debug", KeyConflictContext.UNIVERSAL, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, CATEGORY);
     private static final ResourceLocation BATTLE_HUD_LAYER = ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "battle_hud");
     private static final double CHALLENGE_RANGE = 10.0D;
-    private static final Map<Integer, ItemStack> TEMP_MAIN_HANDS = new HashMap<>();
+    private static final Map<Integer, TemporaryHandState> TEMP_MAIN_HANDS = new HashMap<>();
+    private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
+    private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
+    private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
     private static long lastUiDebugKeyMillis;
+    private static boolean battleRenderActive;
 
     private ClientEvents() {
     }
@@ -97,8 +108,14 @@ public final class ClientEvents {
         public static void clientTick(ClientTickEvent.Post event) {
             Minecraft minecraft = Minecraft.getInstance();
             if (ClientBattleState.active() && (minecraft.level == null || minecraft.player == null)) {
+                clearBattleRenderState(minecraft, true);
                 ClientBattleState.clear();
                 return;
+            }
+            boolean active = ClientBattleState.active();
+            if (active != battleRenderActive) {
+                clearBattleRenderState(minecraft, true);
+                battleRenderActive = active;
             }
             suppressVanillaBattleKeys(minecraft);
             while (CHALLENGE.consumeClick()) {
@@ -111,12 +128,16 @@ public final class ClientEvents {
                 ClientScreens.openDeckScreen();
             }
             if (ClientBattleState.active()) {
+                ClientBattleState.tickClientLogic();
                 freezeLocalPlayer(minecraft);
+                clearNonVisualUseStates(minecraft);
                 ClientBattleState.updateCameraAnchor(minecraft);
                 if (minecraft.screen == null) {
                     minecraft.setScreen(new BattleScreen());
                 }
                 playVisualEvents(minecraft);
+                syncVisualHandOverrides(minecraft);
+                tickScheduledBattleSounds(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
             }
@@ -240,8 +261,11 @@ public final class ClientEvents {
             }
             ItemStack override = ClientBattleState.visualMainHandOverride(event.getEntity().getId());
             if (!override.isEmpty()) {
-                TEMP_MAIN_HANDS.put(event.getEntity().getId(), event.getEntity().getItemBySlot(EquipmentSlot.MAINHAND).copy());
-                event.getEntity().setItemSlot(EquipmentSlot.MAINHAND, override.copy());
+                syncVisualHandOverride(event.getEntity(), override);
+            }
+            if (event.getRenderer().getModel() instanceof HumanoidModel<?> humanoidModel) {
+                applyBattleArmPose(event.getEntity(), humanoidModel);
+                suppressDefaultBattleArmPose(event.getEntity(), humanoidModel);
             }
         }
 
@@ -253,8 +277,7 @@ public final class ClientEvents {
             if (!ClientBattleState.visualMainHandOverride(event.getEntity().getId()).isEmpty()) {
                 return;
             }
-            TEMP_MAIN_HANDS.put(event.getEntity().getId(), event.getEntity().getItemBySlot(EquipmentSlot.MAINHAND).copy());
-            event.getEntity().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+            applyTemporaryMainHand(event.getEntity(), ItemStack.EMPTY, false);
         }
 
         @SubscribeEvent
@@ -265,6 +288,7 @@ public final class ClientEvents {
         @SubscribeEvent
         public static void restoreTemporaryHands(RenderLivingEvent.Post<?, ?> event) {
             restoreMainHand(event.getEntity());
+            restoreArmPose(event.getEntity());
         }
 
         @SubscribeEvent
@@ -295,8 +319,9 @@ public final class ClientEvents {
 
         @SubscribeEvent
         public static void clearBattleStateOnLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+            clearBattleRenderState(Minecraft.getInstance(), true);
             ClientBattleState.clear();
-            TEMP_MAIN_HANDS.clear();
+            battleRenderActive = false;
         }
 
         private static void suppressVanillaBattleKeys(Minecraft minecraft) {
@@ -309,6 +334,10 @@ public final class ClientEvents {
             minecraft.options.keyRight.setDown(false);
             minecraft.options.keyJump.setDown(false);
             minecraft.options.keyShift.setDown(false);
+            minecraft.options.keyAttack.setDown(false);
+            minecraft.options.keyUse.setDown(false);
+            minecraft.options.keyAttack.consumeClick();
+            minecraft.options.keyUse.consumeClick();
             minecraft.options.keyInventory.consumeClick();
             minecraft.options.keyDrop.consumeClick();
             minecraft.options.keySwapOffhand.consumeClick();
@@ -333,10 +362,195 @@ public final class ClientEvents {
             minecraft.player.setJumping(false);
         }
 
+        private static void applyTemporaryMainHand(LivingEntity entity, ItemStack stack, boolean useItem) {
+            TemporaryHandState state = TEMP_MAIN_HANDS.computeIfAbsent(
+                    entity.getId(),
+                    id -> new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy()));
+            entity.setItemSlot(EquipmentSlot.MAINHAND, stack.copy());
+            if (useItem && !entity.isUsingItem()) {
+                entity.startUsingItem(InteractionHand.MAIN_HAND);
+                state.startedUsing = true;
+            }
+        }
+
+        private static void syncVisualHandOverrides(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                return;
+            }
+            Set<Integer> activeVisualHands = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualHandOverride(minecraft.level.getEntity(combatant.entityId()), activeVisualHands);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualHandOverride(minecraft.level.getEntity(combatant.entityId()), activeVisualHands);
+            }
+            for (int entityId : VISUAL_MAIN_HANDS.keySet().toArray(Integer[]::new)) {
+                if (!activeVisualHands.contains(entityId) && minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                    restoreVisualMainHand(living);
+                }
+            }
+        }
+
+        private static void syncVisualHandOverride(Entity entity, Set<Integer> activeVisualHands) {
+            if (!(entity instanceof LivingEntity living)) {
+                return;
+            }
+            ItemStack override = ClientBattleState.visualMainHandOverride(living.getId());
+            if (override.isEmpty()) {
+                restoreVisualMainHand(living);
+                return;
+            }
+            activeVisualHands.add(living.getId());
+            syncVisualHandOverride(living, override);
+        }
+
+        private static void syncVisualHandOverride(LivingEntity entity, ItemStack stack) {
+            TemporaryHandState state = VISUAL_MAIN_HANDS.computeIfAbsent(
+                    entity.getId(),
+                    id -> new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy()));
+            if (!ItemStack.matches(entity.getItemBySlot(EquipmentSlot.MAINHAND), stack)) {
+                entity.setItemSlot(EquipmentSlot.MAINHAND, stack.copy());
+            }
+            if (ClientBattleState.visualUsingItem(entity.getId()) && !entity.isUsingItem()) {
+                entity.startUsingItem(InteractionHand.MAIN_HAND);
+                state.startedUsing = true;
+            } else if (!ClientBattleState.visualUsingItem(entity.getId()) && state.startedUsing && entity.isUsingItem()) {
+                entity.stopUsingItem();
+            }
+        }
+
+        private static void restoreVisualMainHand(LivingEntity entity) {
+            TemporaryHandState state = VISUAL_MAIN_HANDS.remove(entity.getId());
+            if (state != null) {
+                entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
+                if (state.startedUsing && entity.isUsingItem()) {
+                    entity.stopUsingItem();
+                }
+            }
+        }
+
         private static void restoreMainHand(LivingEntity entity) {
-            ItemStack original = TEMP_MAIN_HANDS.remove(entity.getId());
-            if (original != null) {
-                entity.setItemSlot(EquipmentSlot.MAINHAND, original);
+            TemporaryHandState state = TEMP_MAIN_HANDS.remove(entity.getId());
+            if (state != null) {
+                entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
+                if (state.startedUsing && entity.isUsingItem() && !ClientBattleState.visualUsingItem(entity.getId())) {
+                    entity.stopUsingItem();
+                }
+            }
+        }
+
+        private static void suppressDefaultBattleArmPose(LivingEntity entity, HumanoidModel<?> model) {
+            if (!ClientBattleState.active() || ClientBattleState.snapshot().combatant(entity.getId()) == null) {
+                return;
+            }
+            if (!ClientBattleState.visualMainHandOverride(entity.getId()).isEmpty()) {
+                return;
+            }
+            TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
+            model.leftArmPose = HumanoidModel.ArmPose.EMPTY;
+            model.rightArmPose = HumanoidModel.ArmPose.EMPTY;
+        }
+
+        private static void applyBattleArmPose(LivingEntity entity, HumanoidModel<?> model) {
+            HumanoidModel.ArmPose pose = battleArmPose(entity.getId());
+            if (pose == null) {
+                return;
+            }
+            TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
+            if (entity.getMainArm() == HumanoidArm.RIGHT) {
+                model.rightArmPose = pose;
+                if (model.leftArmPose == HumanoidModel.ArmPose.EMPTY) {
+                    model.leftArmPose = HumanoidModel.ArmPose.ITEM;
+                }
+            } else {
+                model.leftArmPose = pose;
+                if (model.rightArmPose == HumanoidModel.ArmPose.EMPTY) {
+                    model.rightArmPose = HumanoidModel.ArmPose.ITEM;
+                }
+            }
+        }
+
+        private static HumanoidModel.ArmPose battleArmPose(int entityId) {
+            BattleVisualEvent.AnimationType animationType = ClientBattleState.visualAnimationType(entityId);
+            if (animationType == BattleVisualEvent.AnimationType.BOW_DRAW && ClientBattleState.visualUsingItem(entityId)) {
+                return HumanoidModel.ArmPose.BOW_AND_ARROW;
+            }
+            if (animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
+                return ClientBattleState.visualUsingItem(entityId)
+                        ? HumanoidModel.ArmPose.CROSSBOW_CHARGE
+                        : HumanoidModel.ArmPose.CROSSBOW_HOLD;
+            }
+            return null;
+        }
+
+        private static void restoreArmPose(LivingEntity entity) {
+            TemporaryArmPoseState state = TEMP_ARM_POSES.remove(entity.getId());
+            if (state != null && Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(entity) instanceof net.minecraft.client.renderer.entity.LivingEntityRenderer<?, ?> renderer
+                    && renderer.getModel() instanceof HumanoidModel<?> model) {
+                model.leftArmPose = state.leftArmPose;
+                model.rightArmPose = state.rightArmPose;
+            }
+        }
+
+        private static void clearBattleRenderState(Minecraft minecraft, boolean stopUsingItems) {
+            if (minecraft.level != null) {
+                for (int entityId : TEMP_MAIN_HANDS.keySet().toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                        restoreMainHand(living);
+                    }
+                }
+                for (int entityId : VISUAL_MAIN_HANDS.keySet().toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                        restoreVisualMainHand(living);
+                    }
+                }
+                for (int entityId : TEMP_ARM_POSES.keySet().toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                        restoreArmPose(living);
+                    }
+                }
+                for (var combatant : ClientBattleState.snapshot().players()) {
+                    clearEntityHandAnimation(minecraft.level.getEntity(combatant.entityId()), stopUsingItems);
+                }
+                for (var combatant : ClientBattleState.snapshot().enemies()) {
+                    clearEntityHandAnimation(minecraft.level.getEntity(combatant.entityId()), stopUsingItems);
+                }
+            }
+            clearEntityHandAnimation(minecraft.player, stopUsingItems);
+            TEMP_MAIN_HANDS.clear();
+            VISUAL_MAIN_HANDS.clear();
+            TEMP_ARM_POSES.clear();
+            SCHEDULED_BATTLE_SOUNDS.clear();
+            ClientBattleState.clearVisualStates();
+        }
+
+        private static void clearNonVisualUseStates(Minecraft minecraft) {
+            if (minecraft.level != null) {
+                for (var combatant : ClientBattleState.snapshot().players()) {
+                    clearEntityUseState(minecraft.level.getEntity(combatant.entityId()));
+                }
+                for (var combatant : ClientBattleState.snapshot().enemies()) {
+                    clearEntityUseState(minecraft.level.getEntity(combatant.entityId()));
+                }
+            }
+            clearEntityUseState(minecraft.player);
+        }
+
+        private static void clearEntityUseState(Entity entity) {
+            if (entity instanceof LivingEntity living && !ClientBattleState.visualUsingItem(living.getId()) && living.isUsingItem()) {
+                living.stopUsingItem();
+            }
+        }
+
+        private static void clearEntityHandAnimation(Entity entity, boolean stopUsingItem) {
+            if (entity instanceof LivingEntity living) {
+                if (stopUsingItem && living.isUsingItem()) {
+                    living.stopUsingItem();
+                }
+                living.swinging = false;
+                living.swingTime = 0;
+                living.attackAnim = 0.0F;
+                living.oAttackAnim = 0.0F;
             }
         }
 
@@ -349,8 +563,12 @@ public final class ClientEvents {
                 Entity attacker = minecraft.level.getEntity(event.attackerId());
                 Entity target = minecraft.level.getEntity(event.targetId());
                 boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
-                if (playedCardVisual && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
+                if (playedCardVisual && shouldSwing && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+                }
+                if (attacker instanceof LivingEntity livingAttacker) {
+                    scheduleUseSounds(livingAttacker, event);
                 }
                 if (target != null) {
                     if (event.shieldSound()) {
@@ -367,6 +585,70 @@ public final class ClientEvents {
                     }
                 }
             }
+        }
+
+        private static void scheduleUseSounds(LivingEntity attacker, BattleVisualEvent event) {
+            if (event.animationType() == BattleVisualEvent.AnimationType.BOW_DRAW) {
+                scheduleBattleSound(attacker, SoundEvents.ARROW_SHOOT, event.animationTicks(), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_START.value(), 0, 0.5F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_MIDDLE.value(), Math.max(1, event.animationTicks() / 2), 0.5F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_END.value(), Math.max(1, event.animationTicks()), 0.5F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_SHOOT, Math.max(1, event.animationTicks() + 1), 1.0F, 1.0F);
+            }
+        }
+
+        private static void scheduleBattleSound(LivingEntity entity, SoundEvent sound, int delayTicks, float volume, float pitch) {
+            SCHEDULED_BATTLE_SOUNDS.add(new ScheduledBattleSound(entity.getId(), sound, Math.max(0, delayTicks), volume, pitch));
+        }
+
+        private static void tickScheduledBattleSounds(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                SCHEDULED_BATTLE_SOUNDS.clear();
+                return;
+            }
+            Iterator<ScheduledBattleSound> iterator = SCHEDULED_BATTLE_SOUNDS.iterator();
+            while (iterator.hasNext()) {
+                ScheduledBattleSound sound = iterator.next();
+                if (sound.delayTicks > 0) {
+                    sound.delayTicks--;
+                    continue;
+                }
+                Entity entity = minecraft.level.getEntity(sound.entityId);
+                if (entity != null) {
+                    minecraft.level.playLocalSound(entity.getX(), entity.getY(), entity.getZ(), sound.sound, SoundSource.PLAYERS, sound.volume, sound.pitch, false);
+                }
+                iterator.remove();
+            }
+        }
+
+    }
+
+    private static final class TemporaryHandState {
+        private final ItemStack originalMainHand;
+        private boolean startedUsing;
+
+        private TemporaryHandState(ItemStack originalMainHand) {
+            this.originalMainHand = originalMainHand;
+        }
+    }
+
+    private record TemporaryArmPoseState(HumanoidModel.ArmPose leftArmPose, HumanoidModel.ArmPose rightArmPose) {
+    }
+
+    private static final class ScheduledBattleSound {
+        private final int entityId;
+        private final SoundEvent sound;
+        private int delayTicks;
+        private final float volume;
+        private final float pitch;
+
+        private ScheduledBattleSound(int entityId, SoundEvent sound, int delayTicks, float volume, float pitch) {
+            this.entityId = entityId;
+            this.sound = sound;
+            this.delayTicks = delayTicks;
+            this.volume = volume;
+            this.pitch = pitch;
         }
     }
 

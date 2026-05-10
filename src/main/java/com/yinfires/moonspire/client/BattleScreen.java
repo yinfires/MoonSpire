@@ -229,7 +229,7 @@ public class BattleScreen extends NoBlurScreen {
     @Override
     public void tick() {
         uiTicks++;
-        ClientBattleState.tickDamageNumbers();
+        ClientBattleState.tickDamageNumbers(false);
         if (turnBannerTicks > 0) {
             turnBannerTicks--;
         }
