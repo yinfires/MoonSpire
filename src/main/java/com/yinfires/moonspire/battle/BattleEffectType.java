@@ -2,6 +2,7 @@ package com.yinfires.moonspire.battle;
 
 public enum BattleEffectType {
     BLEED("bleed", "effect.moonspire.bleed.name", "effect.moonspire.bleed.description", "effect.moonspire.bleed.active_description", "gui/effects/bleeding.png"),
+    GLOWING("glowing", "effect.moonspire.glowing.name", "effect.moonspire.glowing.description", "effect.moonspire.glowing.active_description", "gui/effects/glowing.png"),
     GUARD("guard", "effect.moonspire.guard.name", "effect.moonspire.guard.description", "effect.moonspire.guard.active_description", "gui/effects/guard.png"),
     STRENGTH("strength", "effect.moonspire.strength.name", "effect.moonspire.strength.description", "effect.moonspire.strength.active_description", "gui/effects/strength.png", true),
     REGENERATION("regeneration", "effect.moonspire.regeneration.name", "effect.moonspire.regeneration.description", "effect.moonspire.regeneration.active_description", "gui/effects/regeneration.png"),

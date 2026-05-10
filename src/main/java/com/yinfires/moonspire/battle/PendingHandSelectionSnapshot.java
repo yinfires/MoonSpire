@@ -48,6 +48,7 @@ public record PendingHandSelectionSnapshot(Action action, int requiredCount, int
     public enum Action {
         NONE,
         EXHAUST,
-        DISCARD
+        DISCARD,
+        CONSUME_ARROW
     }
 }

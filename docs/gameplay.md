@@ -350,6 +350,15 @@
 - 玩法描述：所有新增状态都能在战斗条目、世界头顶 UI、卡牌关键词提示和怪物意图里显示；攻击伤害预览会把力量、负力量、虚弱、迅捷、缓慢、守护和速度纳入同一条计算链，显示值与实际结算保持一致。
   - 代码实现：`BattleCombatantSnapshot` 同步新增状态层数，`CardRenderHelper.previewAttack()` 和 `BattleScreen.previewDamageAmount()` 使用攻击者与防守者快照计算预览；`BattleScreen` 和 `BattleWorldOverlay` 按效果正负分类汇总怪物意图；`zh_cn.json` 与 `en_us.json` 补齐卡牌效果、状态名称、状态说明、开发者中心效果名称和目标化描述翻译键。
   - 变更记录：同步客户端渲染、翻译资源、关键词提示和怪物意图展示。
+- 玩法描述：卡牌现在支持“远程”“消耗箭造成伤害”“箭”“给予发光”和“保留时减少耗费”。远程伤害无视速度造成伤害，但仍受力量、虚弱、守护、发光和格挡影响；消耗箭造成伤害会从手牌中消耗一张带“箭”关键词的牌，没有箭时该牌没有任何效果但仍会支付费用并进入弃牌堆，只有一张箭时自动消耗，多张箭时只展示箭牌供选择。被消耗的箭只把自身基础伤害和附加效果附带到消耗箭的卡牌上，不附带固有、消耗、虚无、保留、远程、箭、保留降费这类影响卡牌自身的效果。保留降费在自己的回合结束时对仍保留在手牌里的牌生效，最低降到 0，降低后的费用持续到本场战斗结束。
+  - 代码实现：`CardEffectKind`、`DeveloperCardEffect.Kind`、`DeveloperCardDefinition` 和 `DeveloperCenterScreen` 增加新效果；`BattleState.queueCard()` 将 `CONSUME_ARROW` 拆成限制候选 UUID 的 `PendingHandSelectionStep`，`PendingHandSelectionSnapshot.Action.CONSUME_ARROW` 让客户端手牌选择层只显示箭牌；`resolveConsumedArrow()` 只读取被消耗箭的基础 `DAMAGE` 和 `GLOWING` 等可附加效果；`CombatantState.reduceRetainedCardCosts()` 在拥有者自己的回合结束、弃置非保留手牌前修改战斗牌实例费用。
+  - 变更记录：新增远程、消耗箭、箭、发光、保留降费效果，并让无箭的消耗箭牌按“无效果出牌”处理。
+- 玩法描述：发光是负面战斗状态。拥有发光的单位受到的直接伤害增加 10%，该增伤与虚弱、速度、守护等百分比增减伤在同一乘区中相乘，最后统一四舍五入；流血、中毒、烧伤等效果伤害默认不受这些直接伤害增减影响。随机目标卡牌会优先选择合法的发光目标，多个合法发光目标中优先选择层数最高者，同层数随机。发光在拥有者自己的回合结束时减少 1 层，拥有发光时实体显示原版发光视觉。
+  - 代码实现：`BattleDamageCalculator.directDamage()` 统一处理直接伤害百分比乘区和最终 `round`；`CombatantState.applyCardDamage()` 将目标发光状态传入直接伤害计算，`applyEffectDamage()` 保持不读取这些增减伤状态；`BattleState.randomTarget()` 优先筛选发光目标并按层数排序；`CombatantState.syncEntityGlowing()` 在状态增减、回合衰减和战斗结束时同步原版实体发光标记。
+  - 变更记录：新增发光状态、发光图标、实体发光表现、随机目标优先规则和直接伤害 1.1 乘区。
+- 玩法描述：弓、弩、箭和光灵箭现在有固定转换牌。弓转换为 1 费“远程。消耗一根箭，造成 7 点伤害。”；弩转换为 2 费“远程。消耗一根箭，造成 13 点伤害。保留时减少 1 点耗费。保留。”；箭转换为 1 费“箭。造成 3 点伤害。消耗。”；光灵箭转换为 1 费“箭。造成 3 点伤害。给予 1 层发光。消耗。”。
+  - 代码实现：`MoonSpireCardRegistry.specialConvertedCardDefinition()` 对 `Items.BOW`、`Items.CROSSBOW`、`Items.ARROW` 和 `Items.SPECTRAL_ARROW` 返回专用 `RegisteredCardDefinition`，并继续使用物品自己的翻译键作为卡牌名称与物品图标作为卡面图案。
+  - 变更记录：为弓、弩、箭和光灵箭添加专用转换牌，覆盖通用装备转换数值。
 
 ## 本次卡牌文本展示修正
 
@@ -359,6 +368,9 @@
 - 玩法描述：同一张卡里如果同时出现获得力量和扣除力量，卡牌关键词提示只显示一份“力量”说明，不再重复展示两个相同关键词详情。
   - 代码实现：`CardRenderHelper.renderKeywordTips()` 和 `keywordTipsHeight()` 使用去重集合按关键词标识只渲染一次提示，并让高度计算与实际渲染保持一致。
   - 变更记录：修复同一关键词由多个效果触发时提示框重复的问题。
+- 玩法描述：如果某个卡牌效果描述中直接出现了关键词名称，该词也必须按关键词样式显示，并在卡牌放大预览旁展示对应关键词详情。例如“消耗一根箭”里的“箭”会显示为关键词并展示“箭”的说明；“保留时减少耗费”里的“保留”也会展示保留说明。
+  - 代码实现：`CardRenderHelper.descriptionLines()` 将这些词作为独立的关键词组件传入翻译文本；`renderKeywordTips()` 和 `keywordTipsHeight()` 除了读取显式关键词效果，也会把 `CONSUME_ARROW` 映射到“箭”提示、把 `RETAIN_REDUCE_COST` 映射到“保留”提示，并继续用去重集合避免重复。
+  - 变更记录：新增效果描述内关键词的高亮与关键词详情展示规则。
 
 ## 本次卡牌数值与速度预览修正
 

@@ -1519,12 +1519,20 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         for (com.yinfires.moonspire.card.CardEffect effect : definition.effects()) {
             if (effect.kind() == CardEffectKind.DAMAGE && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.DAMAGE, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.REMOTE) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.REMOTE, 1));
+            } else if (effect.kind() == CardEffectKind.CONSUME_ARROW && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.CONSUME_ARROW, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.ARROW) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.ARROW, 1));
             } else if (effect.kind() == CardEffectKind.HEAL && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.HEAL, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BLOCK && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BLOCK, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BLEED && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BLEED, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.GLOWING && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GLOWING, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.GUARD && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GUARD, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.STRENGTH && effect.amount() > 0) {
@@ -1555,6 +1563,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.RETAIN, 1));
             } else if (effect.kind() == CardEffectKind.ETHEREAL) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.ETHEREAL, 1));
+            } else if (effect.kind() == CardEffectKind.RETAIN_REDUCE_COST && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.RETAIN_REDUCE_COST, effect.amount()));
             } else if (effect.kind() == CardEffectKind.EXHAUST_HAND && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EXHAUST_HAND, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.DISCARD_HAND && effect.amount() > 0) {
@@ -1803,9 +1813,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         String query = effectSearchBox == null ? "" : effectSearchBox.getValue().toLowerCase(Locale.ROOT);
         return List.of(
                         DeveloperCardEffect.Kind.DAMAGE,
+                        DeveloperCardEffect.Kind.REMOTE,
+                        DeveloperCardEffect.Kind.CONSUME_ARROW,
+                        DeveloperCardEffect.Kind.ARROW,
                         DeveloperCardEffect.Kind.HEAL,
                         DeveloperCardEffect.Kind.BLOCK,
                         DeveloperCardEffect.Kind.BLEED,
+                        DeveloperCardEffect.Kind.GLOWING,
                         DeveloperCardEffect.Kind.GUARD,
                         DeveloperCardEffect.Kind.STRENGTH,
                         DeveloperCardEffect.Kind.LOSE_STRENGTH,
@@ -1821,6 +1835,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.INNATE,
                         DeveloperCardEffect.Kind.RETAIN,
                         DeveloperCardEffect.Kind.ETHEREAL,
+                        DeveloperCardEffect.Kind.RETAIN_REDUCE_COST,
                         DeveloperCardEffect.Kind.EXHAUST_HAND,
                         DeveloperCardEffect.Kind.DISCARD_HAND)
                 .stream()

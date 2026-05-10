@@ -198,6 +198,7 @@ public class BattleState {
             if (lock != null) {
                 lock.restoreBeforeDeath(state.entity());
             }
+            state.entity().setGlowingTag(false);
         }
         for (CombatantState state : enemyStates) {
             if (state.fakeDead() && state.entity().isAlive()) {
@@ -296,6 +297,7 @@ public class BattleState {
         if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
             for (CombatantState playerState : alivePlayers()) {
                 applyOwnTurnEndEffects(playerState);
+                playerState.reduceRetainedCardCosts();
                 playerState.deck().discardHand(true);
             }
             beginMonsterTurn();
@@ -454,6 +456,7 @@ public class BattleState {
         phaseTicks = 0;
         for (CombatantState state : aliveEnemies()) {
             applyOwnTurnEndEffects(state);
+            state.reduceRetainedCardCosts();
             state.deck().discardHand(true);
         }
         resetParticipantsToStart();
@@ -612,7 +615,7 @@ public class BattleState {
         pendingHandSelection = null;
         pendingUsedCardOwner = user;
         pendingUsedCard = card;
-        if (card.hasAttack()) {
+        if (triggersAttackUse(card, user)) {
             PendingEffect bleed = bleedEffectForAttack(user);
             if (bleed != null) {
                 pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), null, List.of(bleed))));
@@ -621,6 +624,14 @@ public class BattleState {
         List<CardEffect> currentEffects = new ArrayList<>();
         for (CardEffect effect : card.effects()) {
             if (effect.kind().isKeyword()) {
+                continue;
+            }
+            if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
+                if (!currentEffects.isEmpty()) {
+                    addEffectSteps(user, selectedTarget, card, currentEffects);
+                    currentEffects = new ArrayList<>();
+                }
+                addConsumeArrowStep(user, selectedTarget, card, effect);
                 continue;
             }
             if (effect.kind().isHandSelection()) {
@@ -648,6 +659,7 @@ public class BattleState {
     }
 
     private void addEffectSteps(CombatantState user, CombatantState selectedTarget, CardInstance card, List<CardEffect> effects) {
+        boolean remoteDamage = card.hasEffect(CardEffectKind.REMOTE);
         int maxCount = 0;
         for (CardEffect effect : effects) {
             if (effect.amount() > 0 && effect.kind().isResolvedEffect()) {
@@ -661,13 +673,36 @@ public class BattleState {
                     continue;
                 }
                 for (CombatantState effectTarget : targetsForEffect(effect, user, selectedTarget)) {
-                    batchEffects.add(new PendingEffect(effect.kind(), effect.amount(), effectTarget));
+                    batchEffects.add(new PendingEffect(effect.kind(), effect.amount(), effectTarget, false, remoteDamage && effect.kind() == CardEffectKind.DAMAGE));
                 }
             }
             if (!batchEffects.isEmpty()) {
                 pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), card, batchEffects)));
             }
         }
+    }
+
+    private void addConsumeArrowStep(CombatantState user, CombatantState selectedTarget, CardInstance card, CardEffect effect) {
+        if (effect.amount() <= 0) {
+            return;
+        }
+        List<UUID> arrowIds = user.deck().hand().stream()
+                .filter(candidate -> candidate.hasEffect(CardEffectKind.ARROW))
+                .map(CardInstance::id)
+                .toList();
+        if (arrowIds.isEmpty()) {
+            return;
+        }
+        ArrowResolution resolution = new ArrowResolution(user, selectedTarget, card, effect.amount());
+        pendingCardSteps.add(new PendingHandSelectionStep(PendingHandSelectionSnapshot.Action.CONSUME_ARROW, 1, user, arrowIds, resolution));
+    }
+
+    private boolean triggersAttackUse(CardInstance card, CombatantState user) {
+        if (card.hasEnemyEffect(CardEffectKind.DAMAGE)) {
+            return true;
+        }
+        return card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.CONSUME_ARROW && effect.amount() > 0)
+                && user.deck().hand().stream().anyMatch(handCard -> handCard.hasEffect(CardEffectKind.ARROW));
     }
 
     private List<CombatantState> targetsForEffect(CardEffect effect, CombatantState user, CombatantState selectedTarget) {
@@ -701,7 +736,11 @@ public class BattleState {
         if (candidates.isEmpty()) {
             return List.of();
         }
-        return List.of(candidates.get(leader.getRandom().nextInt(candidates.size())));
+        int maxGlowing = candidates.stream().mapToInt(state -> state.effectAmount(BattleEffectType.GLOWING)).max().orElse(0);
+        List<CombatantState> pool = maxGlowing > 0
+                ? candidates.stream().filter(state -> state.effectAmount(BattleEffectType.GLOWING) == maxGlowing).toList()
+                : candidates;
+        return List.of(pool.get(leader.getRandom().nextInt(pool.size())));
     }
 
     private boolean validExplicitTarget(CombatantState user, int targetEntityId, CardInstance card) {
@@ -752,7 +791,7 @@ public class BattleState {
         if (bleed <= 0) {
             return null;
         }
-        return new PendingEffect(CardEffectKind.DAMAGE, bleed, user, true);
+        return new PendingEffect(CardEffectKind.DAMAGE, bleed, user, true, false);
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int delayTicks) {
@@ -830,24 +869,27 @@ public class BattleState {
     }
 
     private void beginPendingHandSelection(PendingHandSelectionStep step) {
-        int available = step.target().deck().hand().size();
+        List<UUID> candidateIds = step.candidateIds().isEmpty()
+                ? step.target().deck().hand().stream().map(CardInstance::id).toList()
+                : currentCandidateIds(step.target(), step.candidateIds());
+        int available = candidateIds.size();
         int required = Math.max(0, step.requiredCount());
         if (required <= 0 || available <= 0 || step.target().fakeDead()) {
             return;
         }
         if (!(step.target().entity() instanceof ServerPlayer) || available <= required) {
-            completeHandSelection(step.target(), step.action(), step.target().deck().removeFirstHandCards(Math.min(required, available)));
+            List<UUID> selectedIds = candidateIds.subList(0, Math.min(required, available));
+            completeHandSelection(step.target(), step.action(), step.target().deck().removeHandByIds(selectedIds), step.arrowResolution());
             return;
         }
-        List<UUID> candidateIds = step.target().deck().hand().stream().map(CardInstance::id).toList();
-        pendingHandSelection = new PendingHandSelection(step.target(), step.action(), required, candidateIds);
+        pendingHandSelection = new PendingHandSelection(step.target(), step.action(), required, candidateIds, step.arrowResolution());
     }
 
     private void completePendingHandSelection(List<CardInstance> selectedCards) {
         PendingHandSelection selection = pendingHandSelection;
         pendingHandSelection = null;
         if (selection != null) {
-            completeHandSelection(selection.user(), selection.action(), selectedCards);
+            completeHandSelection(selection.user(), selection.action(), selectedCards, selection.arrowResolution());
         }
         advancePendingCardSteps();
         if (pendingCardBatches.isEmpty() && pendingCardSteps.isEmpty() && pendingHandSelection == null) {
@@ -869,12 +911,44 @@ public class BattleState {
         return currentIds;
     }
 
-    private void completeHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, List<CardInstance> selectedCards) {
+    private void completeHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, List<CardInstance> selectedCards, ArrowResolution resolution) {
         if (action == PendingHandSelectionSnapshot.Action.EXHAUST) {
             user.deck().exhaustAll(selectedCards);
         } else if (action == PendingHandSelectionSnapshot.Action.DISCARD) {
             user.deck().discardAll(selectedCards);
+        } else if (action == PendingHandSelectionSnapshot.Action.CONSUME_ARROW) {
+            user.deck().exhaustAll(selectedCards);
+            if (!selectedCards.isEmpty()) {
+                resolveConsumedArrow(resolution, selectedCards.getFirst());
+            }
         }
+    }
+
+    private List<UUID> currentCandidateIds(CombatantState user, List<UUID> candidateIds) {
+        Set<UUID> allowed = new LinkedHashSet<>(candidateIds == null ? List.of() : candidateIds);
+        List<UUID> currentIds = new ArrayList<>();
+        for (CardInstance card : user.deck().hand()) {
+            if (allowed.contains(card.id())) {
+                currentIds.add(card.id());
+            }
+        }
+        return currentIds;
+    }
+
+    private void resolveConsumedArrow(ArrowResolution resolution, CardInstance arrow) {
+        if (resolution == null || arrow == null) {
+            return;
+        }
+        List<CardEffect> effects = new ArrayList<>();
+        effects.add(new CardEffect(CardEffectKind.DAMAGE, resolution.amount(), CardTarget.SINGLE_ENEMY));
+        for (CardEffect arrowEffect : arrow.effects()) {
+            if (arrowEffect.kind() == CardEffectKind.DAMAGE && arrowEffect.target().targetsEnemy()) {
+                effects.add(new CardEffect(CardEffectKind.DAMAGE, arrowEffect.amount(), arrowEffect.target(), arrowEffect.count()));
+            } else if (arrowEffect.kind() == CardEffectKind.GLOWING) {
+                effects.add(arrowEffect);
+            }
+        }
+        addEffectSteps(resolution.user(), resolution.selectedTarget(), resolution.card(), effects);
     }
 
     private PendingHandSelectionSnapshot pendingHandSelectionSnapshotFor(CombatantState local) {
@@ -898,7 +972,7 @@ public class BattleState {
             if (effect.kind() == CardEffectKind.DAMAGE) {
                 BattleDamageResult result = effect.effectDamage()
                         ? effect.target().applyEffectDamage(effect.amount(), killCredit)
-                        : effect.target().applyCardDamage(effect.amount(), batch.user(), killCredit);
+                        : effect.target().applyCardDamage(effect.amount(), batch.user(), killCredit, effect.remoteDamage());
                 damageResults.merge(effect.target(), result, BattleState::mergeDamageResult);
                 if (!effect.effectDamage() && result.healthDamage() > 0 && !effect.target().fakeDead()) {
                     knockbackTargets.add(effect.target());
@@ -915,6 +989,9 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 effect.target().addEffect(BattleEffectType.BLEED, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.GLOWING) {
+                effect.target().addEffect(BattleEffectType.GLOWING, effect.amount());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.GUARD) {
                 effect.target().addEffect(BattleEffectType.GUARD, effect.amount());
@@ -1004,6 +1081,7 @@ public class BattleState {
             state.reduceEffect(BattleEffectType.BURN, 1);
         }
         state.reduceEffect(BattleEffectType.WEAKNESS, 1);
+        state.reduceEffect(BattleEffectType.GLOWING, 1);
         state.decayEndOfTurnEffects();
     }
 
@@ -1399,9 +1477,9 @@ public class BattleState {
         }
     }
 
-    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage) {
+    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage) {
         private PendingEffect(CardEffectKind kind, int amount, CombatantState target) {
-            this(kind, amount, target, false);
+            this(kind, amount, target, false, false);
         }
     }
 
@@ -1417,10 +1495,16 @@ public class BattleState {
     private record PendingBatchStep(PendingCardBatch batch) implements PendingCardStep {
     }
 
-    private record PendingHandSelectionStep(PendingHandSelectionSnapshot.Action action, int requiredCount, CombatantState target) implements PendingCardStep {
+    private record PendingHandSelectionStep(PendingHandSelectionSnapshot.Action action, int requiredCount, CombatantState target, List<UUID> candidateIds, ArrowResolution arrowResolution) implements PendingCardStep {
+        private PendingHandSelectionStep(PendingHandSelectionSnapshot.Action action, int requiredCount, CombatantState target) {
+            this(action, requiredCount, target, List.of(), null);
+        }
     }
 
-    private record PendingHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, int requiredCount, List<UUID> candidateIds) {
+    private record ArrowResolution(CombatantState user, CombatantState selectedTarget, CardInstance card, int amount) {
+    }
+
+    private record PendingHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, int requiredCount, List<UUID> candidateIds, ArrowResolution arrowResolution) {
         private PendingHandSelection {
             candidateIds = List.copyOf(candidateIds);
         }

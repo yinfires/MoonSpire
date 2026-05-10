@@ -4,9 +4,13 @@ import java.util.Locale;
 
 public enum CardEffectKind {
     DAMAGE(CardTarget.SINGLE_ENEMY),
+    REMOTE(CardTarget.SELF),
+    CONSUME_ARROW(CardTarget.SINGLE_ENEMY),
+    ARROW(CardTarget.SELF),
     HEAL(CardTarget.SELF),
     BLOCK(CardTarget.SELF),
     BLEED(CardTarget.SINGLE_ENEMY),
+    GLOWING(CardTarget.SINGLE_ENEMY),
     GUARD(CardTarget.SELF),
     STRENGTH(CardTarget.SELF),
     LOSE_STRENGTH(CardTarget.SINGLE_ENEMY),
@@ -22,6 +26,7 @@ public enum CardEffectKind {
     INNATE(CardTarget.SELF),
     RETAIN(CardTarget.SELF),
     ETHEREAL(CardTarget.SELF),
+    RETAIN_REDUCE_COST(CardTarget.SELF),
     EXHAUST_HAND(CardTarget.SELF),
     DISCARD_HAND(CardTarget.SELF);
 
@@ -44,7 +49,7 @@ public enum CardEffectKind {
     }
 
     public boolean isKeyword() {
-        return this == EXHAUST || isPassiveKeyword();
+        return this == EXHAUST || this == REMOTE || this == ARROW || isPassiveKeyword();
     }
 
     public boolean usesAmount() {
@@ -52,15 +57,15 @@ public enum CardEffectKind {
     }
 
     public boolean usesTarget() {
-        return !isKeyword();
+        return !isKeyword() && this != RETAIN_REDUCE_COST;
     }
 
     public boolean isResolvedEffect() {
-        return usesAmount() && !isHandSelection();
+        return usesAmount() && !isHandSelection() && this != CONSUME_ARROW && this != RETAIN_REDUCE_COST;
     }
 
     public boolean makesCardPlayable() {
-        return !isPassiveKeyword();
+        return !isPassiveKeyword() && this != REMOTE && this != ARROW && this != RETAIN_REDUCE_COST;
     }
 
     public static CardEffectKind byName(String name) {

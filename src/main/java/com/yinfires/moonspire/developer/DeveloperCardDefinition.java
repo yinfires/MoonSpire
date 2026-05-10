@@ -95,9 +95,13 @@ public record DeveloperCardDefinition(
     private static CardEffectKind cardEffectKind(DeveloperCardEffect.Kind kind) {
         return switch (kind) {
             case DAMAGE -> CardEffectKind.DAMAGE;
+            case REMOTE -> CardEffectKind.REMOTE;
+            case CONSUME_ARROW -> CardEffectKind.CONSUME_ARROW;
+            case ARROW -> CardEffectKind.ARROW;
             case HEAL -> CardEffectKind.HEAL;
             case BLOCK -> CardEffectKind.BLOCK;
             case BLEED -> CardEffectKind.BLEED;
+            case GLOWING -> CardEffectKind.GLOWING;
             case GUARD -> CardEffectKind.GUARD;
             case STRENGTH -> CardEffectKind.STRENGTH;
             case LOSE_STRENGTH -> CardEffectKind.LOSE_STRENGTH;
@@ -113,6 +117,7 @@ public record DeveloperCardDefinition(
             case INNATE -> CardEffectKind.INNATE;
             case RETAIN -> CardEffectKind.RETAIN;
             case ETHEREAL -> CardEffectKind.ETHEREAL;
+            case RETAIN_REDUCE_COST -> CardEffectKind.RETAIN_REDUCE_COST;
             case EXHAUST_HAND -> CardEffectKind.EXHAUST_HAND;
             case DISCARD_HAND -> CardEffectKind.DISCARD_HAND;
         };

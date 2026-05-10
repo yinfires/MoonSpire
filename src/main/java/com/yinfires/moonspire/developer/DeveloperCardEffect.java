@@ -45,9 +45,12 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
                 || kind == Kind.DRAW_CARDS
                 || kind == Kind.GAIN_ENERGY
                 || kind == Kind.EXHAUST
+                || kind == Kind.REMOTE
+                || kind == Kind.ARROW
                 || kind == Kind.INNATE
                 || kind == Kind.RETAIN
                 || kind == Kind.ETHEREAL
+                || kind == Kind.RETAIN_REDUCE_COST
                 || kind == Kind.EXHAUST_HAND
                 || kind == Kind.DISCARD_HAND ? CardTarget.SELF : CardTarget.SINGLE_ENEMY;
     }
@@ -66,9 +69,13 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
 
     public enum Kind {
         DAMAGE,
+        REMOTE,
+        CONSUME_ARROW,
+        ARROW,
         HEAL,
         BLOCK,
         BLEED,
+        GLOWING,
         GUARD,
         STRENGTH,
         LOSE_STRENGTH,
@@ -84,11 +91,12 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         INNATE,
         RETAIN,
         ETHEREAL,
+        RETAIN_REDUCE_COST,
         EXHAUST_HAND,
         DISCARD_HAND;
 
         public boolean usesTarget() {
-            return !isKeyword();
+            return !isKeyword() && this != RETAIN_REDUCE_COST;
         }
 
         public boolean usesAmount() {
@@ -104,7 +112,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         }
 
         public boolean isKeyword() {
-            return this == EXHAUST || isPassiveKeyword();
+            return this == EXHAUST || this == REMOTE || this == ARROW || isPassiveKeyword();
         }
 
         public static Kind byName(String name) {

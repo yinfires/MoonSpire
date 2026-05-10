@@ -546,8 +546,8 @@ public class BattleScreen extends NoBlurScreen {
                 }
                 List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true, -1, entry.entityId());
                 int totalAmount = Math.max(0, effect.amount()) * Math.max(1, effect.count());
-                if (effect.kind() == CardEffectKind.DAMAGE && targets.contains(snapshot.player().entityId())) {
-                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0) * Math.max(1, effect.count());
+                if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && targets.contains(snapshot.player().entityId())) {
+                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GLOWING) > 0) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(entry.entityId())) {
                     block += totalAmount;
                 } else if (negativeEffect(effect.kind()) && targets.contains(snapshot.player().entityId())) {
@@ -1493,8 +1493,8 @@ public class BattleScreen extends NoBlurScreen {
         try {
             renderHandSelectionCards(graphics, snapshot, mouseX, mouseY, partialTick, false);
             Component title = handSelectionOverlay.ready(selection)
-                    ? Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.confirm_exhaust" : "screen.moonspire.hand_selection.confirm_discard")
-                    : Component.translatable(selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST ? "screen.moonspire.hand_selection.choose_exhaust" : "screen.moonspire.hand_selection.choose_discard", selection.requiredCount());
+                    ? Component.translatable(handSelectionConfirmKey(selection.action()))
+                    : Component.translatable(handSelectionChooseKey(selection.action()), selection.requiredCount());
             CardRenderHelper.drawOutlinedScreenText(graphics, font, title, width / 2, Math.max(34, height / 5), 1.45F, 0xFFFFFFFF, 0xFF101010);
             ButtonRect confirm = handSelectionConfirmButton();
             boolean ready = handSelectionOverlay.ready(selection);
@@ -1651,7 +1651,7 @@ public class BattleScreen extends NoBlurScreen {
                     CardInstance card = cardById(snapshot.hand(), cardId);
                     HandCardAnimation animation = handAnimations.get(cardId);
                     if (card != null && animation != null) {
-                        if (selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST) {
+                        if (selection.action() == PendingHandSelectionSnapshot.Action.EXHAUST || selection.action() == PendingHandSelectionSnapshot.Action.CONSUME_ARROW) {
                             flyingCards.add(FlyingCardAnimation.exhaustInPlace(card, animation.currentX(), animation.currentY(), animation.currentScale()));
                         } else {
                             flyingCards.add(FlyingCardAnimation.toDiscard(card, animation.currentX(), animation.currentY(), discardPileCenterX(), discardPileCenterY()));
@@ -2004,7 +2004,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
-        int attack = card.enemyEffectAmount(CardEffectKind.DAMAGE);
+        int attack = card.enemyDirectDamageAmount();
         int defense = card.selfEffectAmount(CardEffectKind.BLOCK);
         List<Integer> damageAmounts = new ArrayList<>(card.effects().size());
         List<Integer> blockAmounts = new ArrayList<>(card.effects().size());
@@ -2014,18 +2014,18 @@ public class BattleScreen extends NoBlurScreen {
             int damageAmount = effect.amount();
             int blockAmount = effect.amount();
             BattleCombatantSnapshot singleTarget = singlePreviewTarget(card, effect.target(), snapshot, monsterCard);
-            if (effect.kind() == CardEffectKind.DAMAGE) {
+            if (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) {
                 int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
                 boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
                 if (singleTarget.entityId() >= 0) {
-                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak);
+                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GLOWING) > 0);
                 } else {
-                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), 1, 1, 0, 0, attackerStrength, attackerWeak);
+                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), 1, 1, 0, 0, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false);
                 }
             }
             damageAmounts.add(damageAmount);
             blockAmounts.add(blockAmount);
-            if (effect.kind() == CardEffectKind.DAMAGE && effect.target().targetsEnemy()) {
+            if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy()) {
                 previewAttackTotal += damageAmount * effect.count();
                 hasPreviewAttack = true;
             }
@@ -2052,7 +2052,8 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WEAKNESS
-                || kind == CardEffectKind.SLOWNESS;
+                || kind == CardEffectKind.SLOWNESS
+                || kind == CardEffectKind.GLOWING;
     }
 
     private BattleCombatantSnapshot singlePreviewTarget(CardInstance card, CardTarget target, BattleSnapshot snapshot, boolean monsterCard) {
@@ -2930,6 +2931,22 @@ public class BattleScreen extends NoBlurScreen {
         return true;
     }
 
+    private static String handSelectionChooseKey(PendingHandSelectionSnapshot.Action action) {
+        return switch (action) {
+            case EXHAUST -> "screen.moonspire.hand_selection.choose_exhaust";
+            case CONSUME_ARROW -> "screen.moonspire.hand_selection.choose_arrow";
+            case DISCARD, NONE -> "screen.moonspire.hand_selection.choose_discard";
+        };
+    }
+
+    private static String handSelectionConfirmKey(PendingHandSelectionSnapshot.Action action) {
+        return switch (action) {
+            case EXHAUST -> "screen.moonspire.hand_selection.confirm_exhaust";
+            case CONSUME_ARROW -> "screen.moonspire.hand_selection.confirm_arrow";
+            case DISCARD, NONE -> "screen.moonspire.hand_selection.confirm_discard";
+        };
+    }
+
     private boolean cardActionsLocked(BattleSnapshot snapshot) {
         return snapshot.resolvingEffects() || snapshot.pendingHandSelection().active() || handSelectionConfirmation.active() || awaitingUseCardSnapshot || awaitingEndTurnSnapshot || snapshot.localPlayerEndedTurn();
     }
@@ -3112,8 +3129,14 @@ public class BattleScreen extends NoBlurScreen {
             hiddenIds.addAll(handSelectionOverlay.selectedIds());
         }
         hiddenIds.addAll(handSelectionConfirmation.selectedIds());
+        Set<UUID> selectionVisibleIds = snapshot.pendingHandSelection().active()
+                ? new HashSet<>(snapshot.pendingHandSelection().candidateCardIds())
+                : Set.of();
+        if (snapshot.pendingHandSelection().active()) {
+            selectionVisibleIds.addAll(handSelectionOverlay.selectedIds());
+        }
         for (CardInstance card : snapshot.hand()) {
-            if (!hiddenIds.contains(card.id())) {
+            if (!hiddenIds.contains(card.id()) && (!snapshot.pendingHandSelection().active() || selectionVisibleIds.contains(card.id()))) {
                 visibleCards.add(card);
             }
         }

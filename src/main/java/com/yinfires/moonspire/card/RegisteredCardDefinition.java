@@ -57,6 +57,7 @@ public record RegisteredCardDefinition(
                 attack,
                 defense,
                 cost,
+                0,
                 effects,
                 sourceType,
                 developerCardId,

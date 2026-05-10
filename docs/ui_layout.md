@@ -40,6 +40,7 @@ Moon Spire 的自定义界面底图都放在：
 | `card_list_toggle.png` | 开发者中心卡牌库展开/收起开关 | 固定 24x56 贴图 | 独立于普通按钮贴图使用；按钮中心固定在卡牌库面板左边界与内容区垂直中线的交点 |
 | `effects/bleeding.png` | 流血效果图标 | 普通 64x64 贴图，缩放到效果槽尺寸 | `BattleEffectType` 通过 `iconTexturePath` 绑定贴图；流血点数显示在图标右下角，不能被贴图替代或隐藏；世界头顶效果使用覆盖式渲染，避免被生物模型遮住 |
 | `effects/guard.png` | 守护效果图标 | 复制自原版抗性提升 `assets/minecraft/textures/mob_effect/resistance.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.GUARD` 通过 `iconTexturePath` 绑定贴图；守护点数显示在图标右下角，tooltip 按层数显示减伤百分比 |
+| `effects/glowing.png` | 发光效果图标 | 复制自原版发光 `assets/minecraft/textures/mob_effect/glowing.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.GLOWING` 通过 `iconTexturePath` 绑定贴图；发光层数显示在图标右下角，拥有该状态的实体同步启用原版发光视觉 |
 | `animations/block_gain.png` | 获得格挡时的世界动画图标 | 普通 18x18 贴图，按获得者实体包围盒计算统一边长并等比缩放为覆盖身体的 billboard | 由 `BattleVisualEvent.gainedBlock` 触发，`ClientBattleState` 维护动画时间；`BattleWorldOverlay` 使用和战斗状态图标一致的全局可透视渲染，落点固定锚定在实体身体中心而不是头顶条，淡入后原地停留并淡出，保持原始比例，避免与持续状态图标目录混淆 |
 | `cards/card_base.png` | 默认卡面底图 | 普通贴图拉伸 | 默认卡面仍使用 `default` id，排布坐标来自 `card_faces.json` 的 `default` 条目，当前底图已替换为用户提供的 `new` 图样 |
 
@@ -265,7 +266,7 @@ Moon Spire 的自定义界面底图都放在：
 
 ## 本次战斗状态资源补充
 
-- 新增战斗状态图标均位于 `src/main/resources/assets/moonspire/textures/gui/effects/`，并由 `BattleEffectType.iconTexturePath` 绑定：`strength.png` 复制自原版力量效果，`regeneration.png` 复制自原版生命恢复效果，`haste.png` 复制自原版迅捷/速度效果，`poison.png` 复制自原版中毒效果，`weakness.png` 复制自原版虚弱效果，`slowness.png` 复制自原版缓慢效果，`burn.png` 来源为 `D:\图片\素材\烧伤.png`。
-- 力量、再生、迅捷、中毒、烧伤、虚弱、缓慢和已有流血、守护一样，在战斗条目和世界头顶状态栏中使用图标右下角显示层数；力量为负数时层数字体必须显示为红色，tooltip 使用负力量专用文案显示“造成的伤害减少 X 点”。
+- 新增战斗状态图标均位于 `src/main/resources/assets/moonspire/textures/gui/effects/`，并由 `BattleEffectType.iconTexturePath` 绑定：`strength.png` 复制自原版力量效果，`regeneration.png` 复制自原版生命恢复效果，`haste.png` 复制自原版迅捷/速度效果，`poison.png` 复制自原版中毒效果，`weakness.png` 复制自原版虚弱效果，`slowness.png` 复制自原版缓慢效果，`glowing.png` 复制自原版发光效果，`burn.png` 来源为 `D:\图片\素材\烧伤.png`。
+- 力量、再生、迅捷、中毒、烧伤、虚弱、缓慢、发光和已有流血、守护一样，在战斗条目和世界头顶状态栏中使用图标右下角显示层数；力量为负数时层数字体必须显示为红色，tooltip 使用负力量专用文案显示“造成的伤害减少 X 点”。
 - 治疗表现通过 `BattleVisualEvent.healedHealth` 同步，不使用攻击挥手动画；客户端在目标头顶显示绿色 `+X` 飘字。中毒、烧伤和再生这类由状态自动触发的视觉事件不携带卡牌或物品图标，因此只播放数值、受击或治疗反馈，不让拥有者做出出牌挥手动作。
 - 新增效果会出现在卡牌描述、关键词提示、状态 tooltip、怪物意图汇总、开发者中心效果选择列表和战斗条目预览中；所有可见文字都来自 `zh_cn.json` / `en_us.json` 翻译键。

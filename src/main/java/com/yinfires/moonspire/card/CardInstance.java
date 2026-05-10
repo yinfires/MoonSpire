@@ -22,6 +22,7 @@ public record CardInstance(
         int attack,
         int defense,
         int cost,
+        int battleCostReduction,
         List<CardEffect> effects,
         CardSourceType sourceType,
         String developerCardId,
@@ -44,6 +45,7 @@ public record CardInstance(
         attack = Math.max(0, attack);
         defense = Math.max(0, defense);
         cost = Math.max(0, cost);
+        battleCostReduction = Math.max(0, battleCostReduction);
         effects = normalizedEffects(attack, defense, effects);
         sourceType = sourceType == null ? CardSourceType.UNKNOWN : sourceType;
         developerCardId = developerCardId == null ? "" : developerCardId;
@@ -63,11 +65,11 @@ public record CardInstance(
             int cost,
             List<CardEffect> effects,
             CardSourceType sourceType) {
-        this(id, "", sourceStack, nameKey, descriptionKey, attack, defense, cost, effects, sourceType, "", "", "", 0, 0, 1.0F, "default");
+        this(id, "", sourceStack, nameKey, descriptionKey, attack, defense, cost, 0, effects, sourceType, "", "", "", 0, 0, 1.0F, "default");
     }
 
     public static CardInstance simpleMonsterCard(String name, int attack, int defense, int cost) {
-        return new CardInstance(UUID.randomUUID(), "", ItemStack.EMPTY, name, "", attack, defense, cost, List.of(), CardSourceType.MONSTER, "", "", "", 0, 0, 1.0F, "default");
+        return new CardInstance(UUID.randomUUID(), "", ItemStack.EMPTY, name, "", attack, defense, cost, 0, List.of(), CardSourceType.MONSTER, "", "", "", 0, 0, 1.0F, "default");
     }
 
     public String nameKey() {
@@ -87,6 +89,10 @@ public record CardInstance(
     }
 
     public int cost() {
+        return Math.max(0, baseCost() - battleCostReduction);
+    }
+
+    public int baseCost() {
         return currentDefinition().map(RegisteredCardDefinition::cost).orElse(cost);
     }
 
@@ -149,7 +155,8 @@ public record CardInstance(
         tag.putString("descriptionKey", descriptionKey());
         tag.putInt("attack", attack());
         tag.putInt("defense", defense());
-        tag.putInt("cost", cost());
+        tag.putInt("cost", baseCost());
+        tag.putInt("battleCostReduction", battleCostReduction);
         ListTag effectTags = new ListTag();
         for (CardEffect effect : effects()) {
             CompoundTag effectTag = new CompoundTag();
@@ -207,6 +214,7 @@ public record CardInstance(
                 attack,
                 defense,
                 Math.max(0, tag.getInt("cost")),
+                Math.max(0, tag.getInt("battleCostReduction")),
                 effects,
                 sourceType,
                 tag.getString("developerCardId"),
@@ -219,7 +227,11 @@ public record CardInstance(
     }
 
     public CardInstance copyForBattle() {
-        return new CardInstance(UUID.randomUUID(), cardId, sourceStack.copy(), nameKey(), descriptionKey(), attack(), defense(), cost(), List.copyOf(effects()), sourceType(), developerCardId(), artPath(), artItemId(), artX(), artY(), artScale(), faceId());
+        return new CardInstance(UUID.randomUUID(), cardId, sourceStack.copy(), nameKey(), descriptionKey(), attack(), defense(), baseCost(), battleCostReduction, List.copyOf(effects()), sourceType(), developerCardId(), artPath(), artItemId(), artX(), artY(), artScale(), faceId());
+    }
+
+    public CardInstance withAdditionalBattleCostReduction(int amount) {
+        return new CardInstance(id, cardId, sourceStack.copy(), nameKey(), descriptionKey(), attack(), defense(), baseCost(), battleCostReduction + Math.max(0, amount), List.copyOf(effects()), sourceType(), developerCardId(), artPath(), artItemId(), artX(), artY(), artScale(), faceId());
     }
 
     public Component nameComponent() {
@@ -247,6 +259,13 @@ public record CardInstance(
     public int enemyEffectAmount(CardEffectKind kind) {
         return effects().stream()
                 .filter(effect -> effect.kind() == kind && effect.target().targetsEnemy())
+                .mapToInt(effect -> effect.amount() * effect.count())
+                .sum();
+    }
+
+    public int enemyDirectDamageAmount() {
+        return effects().stream()
+                .filter(effect -> (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy())
                 .mapToInt(effect -> effect.amount() * effect.count())
                 .sum();
     }
@@ -296,7 +315,7 @@ public record CardInstance(
     }
 
     public boolean hasAttack() {
-        return hasEnemyEffect(CardEffectKind.DAMAGE);
+        return enemyDirectDamageAmount() > 0;
     }
 
     public boolean hasDefense() {
@@ -315,7 +334,8 @@ public record CardInstance(
         buf.writeUtf(card.descriptionKey());
         buf.writeVarInt(card.attack());
         buf.writeVarInt(card.defense());
-        buf.writeVarInt(card.cost());
+        buf.writeVarInt(card.baseCost());
+        buf.writeVarInt(card.battleCostReduction);
         List<CardEffect> currentEffects = card.effects();
         buf.writeVarInt(currentEffects.size());
         for (CardEffect effect : currentEffects) {
@@ -340,6 +360,7 @@ public record CardInstance(
         int attack = buf.readVarInt();
         int defense = buf.readVarInt();
         int cost = buf.readVarInt();
+        int battleCostReduction = buf.readVarInt();
         int effectCount = Math.min(32, buf.readVarInt());
         List<CardEffect> effects = new ArrayList<>(effectCount);
         for (int i = 0; i < effectCount; i++) {
@@ -354,6 +375,7 @@ public record CardInstance(
                 attack,
                 defense,
                 cost,
+                battleCostReduction,
                 List.copyOf(effects),
                 buf.readEnum(CardSourceType.class),
                 buf.readUtf(),

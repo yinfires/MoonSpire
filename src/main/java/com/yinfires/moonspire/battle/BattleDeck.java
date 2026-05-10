@@ -104,6 +104,12 @@ public class BattleDeck {
         return card;
     }
 
+    public void replaceHandCard(int index, CardInstance card) {
+        if (card != null && index >= 0 && index < hand.size()) {
+            hand.set(index, card);
+        }
+    }
+
     public void discard(CardInstance card) {
         if (card != null) {
             discardPile.add(card);

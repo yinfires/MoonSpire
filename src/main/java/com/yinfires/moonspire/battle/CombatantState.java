@@ -1,4 +1,5 @@
 package com.yinfires.moonspire.battle;
+import com.yinfires.moonspire.card.CardInstance;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -141,8 +142,12 @@ public class CombatantState {
     }
 
     public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill) {
+        return applyCardDamage(amount, attacker, creditedPlayerKill, false);
+    }
+
+    public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill, boolean ignoreSpeed) {
         int incoming = Math.max(0, amount + attacker.effectAmount(BattleEffectType.STRENGTH));
-        int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), this.roundSpeed(), defense, effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0);
+        int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), this.roundSpeed(), defense, effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0, ignoreSpeed, effectAmount(BattleEffectType.GLOWING) > 0);
         return applyBlockableDamage(incoming, modifiedIncoming, creditedPlayerKill);
     }
 
@@ -178,6 +183,7 @@ public class CombatantState {
         } else {
             effects.remove(type);
         }
+        syncEntityGlowing();
     }
 
     public int effectAmount(BattleEffectType type) {
@@ -194,6 +200,7 @@ public class CombatantState {
         } else {
             effects.remove(type);
         }
+        syncEntityGlowing();
     }
 
     public void decayEndOfTurnEffects() {
@@ -204,6 +211,20 @@ public class CombatantState {
                 effects.put(BattleEffectType.BLEED, next);
             } else {
                 effects.remove(BattleEffectType.BLEED);
+            }
+        }
+        syncEntityGlowing();
+    }
+
+    public void reduceRetainedCardCosts() {
+        for (int i = 0; i < deck().hand().size(); i++) {
+            CardInstance card = deck().hand().get(i);
+            if (!card.hasEffect(com.yinfires.moonspire.card.CardEffectKind.RETAIN)) {
+                continue;
+            }
+            int reduction = card.effectAmount(com.yinfires.moonspire.card.CardEffectKind.RETAIN_REDUCE_COST);
+            if (reduction > 0 && card.cost() > 0) {
+                deck().replaceHandCard(i, card.withAdditionalBattleCostReduction(reduction));
             }
         }
     }
@@ -272,6 +293,11 @@ public class CombatantState {
         if (entity.isAlive()) {
             entity.setHealth(Math.max(1.0F, entity.getHealth()));
         }
+        syncEntityGlowing();
+    }
+
+    private void syncEntityGlowing() {
+        entity.setGlowingTag(effectAmount(BattleEffectType.GLOWING) > 0);
     }
 
     private List<BattleEffectSnapshot> effectSnapshots() {

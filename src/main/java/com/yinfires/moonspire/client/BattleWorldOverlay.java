@@ -216,7 +216,8 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WEAKNESS
-                || kind == CardEffectKind.SLOWNESS;
+                || kind == CardEffectKind.SLOWNESS
+                || kind == CardEffectKind.GLOWING;
     }
 
     private static ResourceLocation effectIconTexture(BattleEffectType type) {

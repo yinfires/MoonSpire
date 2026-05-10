@@ -14,19 +14,23 @@ public final class BattleDamageCalculator {
     }
 
     public static int directDamage(int baseDamage, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, boolean weakened) {
+        return directDamage(baseDamage, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, weakened, false, false);
+    }
+
+    public static int directDamage(int baseDamage, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, boolean weakened, boolean ignoreSpeed, boolean glowingTarget) {
         int incoming = Math.max(0, baseDamage);
         if (incoming <= 0) {
             return 0;
         }
-        return Math.round(incoming * weaknessFactor(weakened) * speedFactor(attackerSpeed, defenderSpeed, defenderBlock) * guardFactor(defenderGuard));
+        return Math.round(incoming * weaknessFactor(weakened) * speedFactor(attackerSpeed, defenderSpeed, defenderBlock, ignoreSpeed) * guardFactor(defenderGuard) * glowingFactor(glowingTarget));
     }
 
     public static int guardReductionPercent(int stacks) {
         return Math.min(MAX_GUARD_REDUCTION_STACKS, Math.max(0, stacks)) * GUARD_REDUCTION_PERCENT_PER_STACK;
     }
 
-    private static float speedFactor(int attackerSpeed, int defenderSpeed, int defenderBlock) {
-        if (defenderBlock > 0) {
+    private static float speedFactor(int attackerSpeed, int defenderSpeed, int defenderBlock, boolean ignoreSpeed) {
+        if (ignoreSpeed || defenderBlock > 0) {
             return 1.0F;
         }
         int advantage = attackerSpeed - defenderSpeed;
@@ -48,5 +52,9 @@ public final class BattleDamageCalculator {
 
     private static float weaknessFactor(boolean weakened) {
         return weakened ? 0.75F : 1.0F;
+    }
+
+    private static float glowingFactor(boolean glowingTarget) {
+        return glowingTarget ? 1.1F : 1.0F;
     }
 }

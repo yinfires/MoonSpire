@@ -122,12 +122,16 @@ public final class MoonSpireCardRegistry {
     }
 
     public static boolean canConvert(ItemStack stack) {
-        return !stack.isEmpty() && (stack.getItem() instanceof TieredItem || stack.getItem() instanceof ArmorItem || attackFromAttributes(stack) > 0.0D);
+        return !stack.isEmpty() && (specialConvertedCard(stack) || stack.getItem() instanceof TieredItem || stack.getItem() instanceof ArmorItem || attackFromAttributes(stack) > 0.0D);
     }
 
     public static RegisteredCardDefinition convertedCard(ItemStack stack) {
         if (!canConvert(stack)) {
             return null;
+        }
+        RegisteredCardDefinition special = specialConvertedCardDefinition(stack);
+        if (special != null) {
+            return special;
         }
         String id = itemCardId(stack);
         if (id.isBlank()) {
@@ -174,6 +178,44 @@ public final class MoonSpireCardRegistry {
             if (normalizedId.equals(itemCardId(stack)) && canConvert(stack)) {
                 return convertedCard(stack);
             }
+        }
+        return null;
+    }
+
+    private static boolean specialConvertedCard(ItemStack stack) {
+        return stack.is(Items.BOW) || stack.is(Items.CROSSBOW) || stack.is(Items.ARROW) || stack.is(Items.SPECTRAL_ARROW);
+    }
+
+    private static RegisteredCardDefinition specialConvertedCardDefinition(ItemStack stack) {
+        String id = itemCardId(stack);
+        if (id.isBlank()) {
+            return null;
+        }
+        String artItemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        if (stack.is(Items.BOW)) {
+            return new RegisteredCardDefinition(id, stack.getDescriptionId(), "", 1, 0, 0, List.of(
+                    new CardEffect(CardEffectKind.REMOTE, 1),
+                    new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY)), CardSourceType.WEAPON, "", artItemId, 0, 0, 1.0F, "default", "");
+        }
+        if (stack.is(Items.CROSSBOW)) {
+            return new RegisteredCardDefinition(id, stack.getDescriptionId(), "", 2, 0, 0, List.of(
+                    new CardEffect(CardEffectKind.REMOTE, 1),
+                    new CardEffect(CardEffectKind.CONSUME_ARROW, 13, CardTarget.SINGLE_ENEMY),
+                    new CardEffect(CardEffectKind.RETAIN_REDUCE_COST, 1),
+                    new CardEffect(CardEffectKind.RETAIN, 1)), CardSourceType.WEAPON, "", artItemId, 0, 0, 1.0F, "default", "");
+        }
+        if (stack.is(Items.ARROW)) {
+            return new RegisteredCardDefinition(id, stack.getDescriptionId(), "", 1, 0, 0, List.of(
+                    new CardEffect(CardEffectKind.ARROW, 1),
+                    new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                    new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.UNKNOWN, "", artItemId, 0, 0, 1.0F, "default", "");
+        }
+        if (stack.is(Items.SPECTRAL_ARROW)) {
+            return new RegisteredCardDefinition(id, stack.getDescriptionId(), "", 1, 0, 0, List.of(
+                    new CardEffect(CardEffectKind.ARROW, 1),
+                    new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                    new CardEffect(CardEffectKind.GLOWING, 1, CardTarget.SINGLE_ENEMY),
+                    new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.UNKNOWN, "", artItemId, 0, 0, 1.0F, "default", "");
         }
         return null;
     }
