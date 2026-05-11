@@ -32,7 +32,7 @@ public class DeckScreen extends NoBlurScreen {
                 setCardsNanos = MoonSpirePerfDiagnostics.now() - setCardsStart;
             }
             cardPanel.render(graphics, font, width, height, mouseX, mouseY, BOTTOM_RESERVE, card -> false,
-                    (previewGraphics, previewFont, card, x, y, selectedCard) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false));
+                    (previewGraphics, previewFont, card, x, y, selectedCard, contentKey) -> CardRenderHelper.renderCard(previewGraphics, previewFont, card, x, y, selectedCard, false, contentKey));
             renderWidgets(graphics, mouseX, mouseY, partialTick);
             if (MoonSpirePerfDiagnostics.enabled() && perfFrameIndex < 10) {
                 perfFrameIndex++;

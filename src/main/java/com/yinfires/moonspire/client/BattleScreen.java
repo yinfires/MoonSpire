@@ -20,6 +20,7 @@ import com.yinfires.moonspire.client.ui.MoonSpireModalLayer;
 import com.yinfires.moonspire.client.ui.MoonSpireUiLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireUiRect;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
+import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.network.CancelBattlePayload;
 import com.yinfires.moonspire.network.EndTurnPayload;
 import com.yinfires.moonspire.network.RequestBattlePilePayload;
@@ -27,7 +28,6 @@ import com.yinfires.moonspire.network.SelectBattleTargetPayload;
 import com.yinfires.moonspire.network.SelectHandCardsPayload;
 import com.yinfires.moonspire.network.UseCardPayload;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -133,8 +133,9 @@ public class BattleScreen extends NoBlurScreen {
     private PileRequestKey stablePileUpdateKey;
     private int stablePileDisplayCount = -1;
     private int pileOverlayPerfFrameIndex;
-    private final Map<CardValueCacheKey, CardRenderHelper.CardValues> frameCardValues = new HashMap<>();
-    private long frameCardValuesIndex = -1L;
+    private final Map<CardRenderDataCacheKey, CardRenderData> cardRenderDataCache = new HashMap<>();
+    private long cardRenderDataSnapshotVersion = -1L;
+    private long cardRenderDataDeveloperRevision = -1L;
     private long battleRenderPerfStart;
     private long battleRenderSnapshotNanos;
     private long battleRenderEntriesNanos;
@@ -146,6 +147,18 @@ public class BattleScreen extends NoBlurScreen {
     private long battleRenderBottomEndTurnNanos;
     private long battleRenderBottomFlushNanos;
     private long battleRenderBottomHandNanos;
+    private long battleRenderHandBaseNanos;
+    private long battleRenderHandBaseFlushNanos;
+    private long battleRenderHandPoseNanos;
+    private long battleRenderHandDepthNanos;
+    private long battleRenderHandTextNanos;
+    private long battleRenderHandContentKeyNanos;
+    private long battleRenderHandValuesNanos;
+    private long battleRenderHandTextVisibilityNanos;
+    private long battleRenderHandTextSubmitNanos;
+    private long battleRenderHandHoverNanos;
+    private int battleRenderHandCardOffscreenSkips;
+    private int battleRenderHandDescOffscreenSkips;
     private long battleRenderFlyingNanos;
     private long battleRenderDraggedNanos;
     private long battleRenderMonsterPlayedNanos;
@@ -167,6 +180,7 @@ public class BattleScreen extends NoBlurScreen {
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
             currentFrameTicks = animationFrameTicks();
             beginBattleRenderPerf();
+            prepareCardRenderDataCache();
             if (syncedSnapshotVersion != ClientBattleState.snapshotVersion()) {
                 syncSnapshotAnimations(snapshot);
                 syncedSnapshotVersion = ClientBattleState.snapshotVersion();
@@ -1206,6 +1220,8 @@ public class BattleScreen extends NoBlurScreen {
         for (HandCardAnimation animation : handAnimations.values()) {
             animation.advance(currentFrameTicks);
         }
+        UUID selectedCardId = selectedHandCardId(snapshot, selectedIndex);
+        List<HandRenderEntry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             CardInstance card = visibleCards.get(i);
             if (hoveredIndex == i) {
@@ -1213,14 +1229,18 @@ public class BattleScreen extends NoBlurScreen {
             }
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHandCard(graphics, snapshot, card, animation, partialTick, card.id().equals(selectedHandCardId(snapshot, selectedIndex)), true);
+                entries.add(new HandRenderEntry(card, animation, card.id().equals(selectedCardId), cardRenderData(snapshot, card, true)));
             }
         }
+        renderHandCards(graphics, snapshot, entries, partialTick);
         if (hoveredIndex >= 0) {
             CardInstance card = visibleCards.get(hoveredIndex);
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHoveredHandCard(graphics, snapshot, card, animation, layout.card(hoveredIndex), partialTick);
+                CardRenderData renderData = cardRenderData(snapshot, card, true);
+                long hoverStart = perfStart();
+                renderHoveredHandCard(graphics, snapshot, card, animation, layout.card(hoveredIndex), partialTick, renderData);
+                battleRenderHandHoverNanos += elapsedPerf(hoverStart);
             }
         }
         recordPerf(PerfBucket.HAND_RENDER, start);
@@ -1278,9 +1298,7 @@ public class BattleScreen extends NoBlurScreen {
         return masks;
     }
 
-    private void renderHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean showDescription) {
-        boolean unaffordable = card.cost() > snapshot.player().energyLeft();
-        boolean playable = playable(card, snapshot);
+    private void pushHandCardPose(GuiGraphics graphics, HandCardAnimation animation, float partialTick, boolean selected) {
         float x = animation.x(partialTick);
         float y = animation.y(partialTick);
         float angle = animation.angle(partialTick);
@@ -1291,102 +1309,161 @@ public class BattleScreen extends NoBlurScreen {
         float selectedScale = selected ? 1.08F : 1.0F;
         graphics.pose().scale(scale * selectedScale, scale * selectedScale, 1.0F);
         graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
+    }
+
+    private boolean renderHandCardBaseAndArt(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean clipCard) {
+        return renderHandCardBaseAndArt(graphics, snapshot, card, animation, partialTick, selected, clipCard, null);
+    }
+
+    private boolean renderHandCardBaseAndArt(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean clipCard, String contentKey) {
+        long poseStart = perfStart();
+        pushHandCardPose(graphics, animation, partialTick, selected);
+        battleRenderHandPoseNanos += elapsedPerf(poseStart);
+        long baseStart = perfStart();
+        boolean playable = playable(card, snapshot);
         renderSmallPlayableGlow(graphics, playable, 0.0F, 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        CardRenderHelper.CardValues values = cardValues(snapshot, card);
-        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, selected, unaffordable, values, false, showDescription);
-        graphics.disableScissor();
-        renderSmallPlayableOutline(graphics, playable, 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        graphics.pose().popPose();
-    }
-
-    private void renderHandDescriptions(GuiGraphics graphics, BattleSnapshot snapshot, List<CardInstance> visibleCards, int hoveredIndex, float partialTick) {
-        List<HandCardScreenBounds> coverBounds = new ArrayList<>();
-        int selectedIndex = ClientBattleState.selectedHandIndex();
-        UUID selectedCardId = selectedHandCardId(snapshot, selectedIndex);
-        for (int i = visibleCards.size() - 1; i >= 0; i--) {
-            if (hoveredIndex == i) {
-                continue;
-            }
-            CardInstance card = visibleCards.get(i);
-            HandCardAnimation animation = handAnimations.get(card.id());
-            if (animation == null) {
-                continue;
-            }
-            boolean selected = card.id().equals(selectedCardId);
-            HandCardScreenBounds bounds = handCardScreenBounds(animation, partialTick, selected);
-            if (!coveredByPreviousCards(bounds, coverBounds)) {
-                renderHandDescription(graphics, snapshot, card, animation, partialTick, selected, coverBounds);
-            }
-            coverBounds.add(bounds);
+        if (clipCard) {
+            CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         }
-    }
-
-    private boolean coveredByPreviousCards(HandCardScreenBounds bounds, List<HandCardScreenBounds> coverBounds) {
-        for (HandCardScreenBounds cover : coverBounds) {
-            if (cover.left() <= bounds.left() && cover.right() >= bounds.right() && cover.top() <= bounds.top() && cover.bottom() >= bounds.bottom()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void renderHandDescription(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, List<HandCardScreenBounds> coverBounds) {
-        CardRenderHelper.CardLocalArea desc = CardRenderHelper.smallDescriptionArea(card);
-        HandCardScreenBounds descBounds = handLocalAreaScreenBounds(animation, partialTick, selected, desc.x(), desc.y(), desc.width(), desc.height());
-        List<Integer> cuts = new ArrayList<>();
-        cuts.add((int) Math.floor(descBounds.left()));
-        cuts.add((int) Math.ceil(descBounds.right()));
-        for (HandCardScreenBounds cover : coverBounds) {
-            float left = Math.max(descBounds.left(), cover.left());
-            float right = Math.min(descBounds.right(), cover.right());
-            float top = Math.max(descBounds.top(), cover.top());
-            float bottom = Math.min(descBounds.bottom(), cover.bottom());
-            if (right > left && bottom > top) {
-                cuts.add((int) Math.floor(left));
-                cuts.add((int) Math.ceil(right));
-            }
-        }
-        Collections.sort(cuts);
-        for (int i = 0; i < cuts.size() - 1; i++) {
-            int left = cuts.get(i);
-            int right = cuts.get(i + 1);
-            if (right - left <= 1 || coveredByHandBounds(left, right, descBounds, coverBounds)) {
-                continue;
-            }
-            graphics.enableScissor(left, (int) Math.floor(descBounds.top()), right, (int) Math.ceil(descBounds.bottom()));
-            renderHandDescriptionUnclipped(graphics, snapshot, card, animation, partialTick, selected);
+        boolean itemArtRendered = CardRenderHelper.renderSmallCardBaseAndArt(graphics, card, 0, 0, false, contentKey);
+        if (clipCard) {
             graphics.disableScissor();
         }
+        renderSmallPlayableOutline(graphics, playable, 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
+        graphics.pose().popPose();
+        battleRenderHandBaseNanos += elapsedPerf(baseStart);
+        return itemArtRendered;
     }
 
-    private boolean coveredByHandBounds(int left, int right, HandCardScreenBounds descBounds, List<HandCardScreenBounds> coverBounds) {
-        float centerX = (left + right) / 2.0F;
-        float centerY = (descBounds.top() + descBounds.bottom()) / 2.0F;
-        for (HandCardScreenBounds cover : coverBounds) {
-            if (centerX >= cover.left() && centerX <= cover.right() && centerY >= cover.top() && centerY <= cover.bottom()) {
-                return true;
+    private void renderHandCardTextUnclipped(GuiGraphics graphics, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean unaffordable, CardRenderHelper.CardValues values, boolean showDescription) {
+        renderHandCardTextUnclipped(graphics, card, animation, partialTick, selected, unaffordable, values, CardRenderHelper.SmallCardTextVisibility.all(showDescription));
+    }
+
+    private void renderHandCardTextUnclipped(GuiGraphics graphics, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean unaffordable, CardRenderHelper.CardValues values, CardRenderHelper.SmallCardTextVisibility visibility) {
+        renderHandCardTextUnclipped(graphics, card, animation, partialTick, selected, unaffordable, values, visibility, null);
+    }
+
+    private void renderHandCardTextUnclipped(GuiGraphics graphics, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected, boolean unaffordable, CardRenderHelper.CardValues values, CardRenderHelper.SmallCardTextVisibility visibility, String contentKey) {
+        long poseStart = perfStart();
+        pushHandCardPose(graphics, animation, partialTick, selected);
+        battleRenderHandPoseNanos += elapsedPerf(poseStart);
+        CardRenderHelper.renderSmallCardText(graphics, font, card, 0, 0, unaffordable, values, visibility, contentKey);
+        graphics.pose().popPose();
+    }
+
+    private void renderHandCards(GuiGraphics graphics, BattleSnapshot snapshot, List<HandRenderEntry> entries, float partialTick) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        List<HandRenderEntry> visibleEntries = visibleHandEntries(entries, partialTick);
+        if (visibleEntries.isEmpty()) {
+            return;
+        }
+        boolean itemArtRendered = false;
+        for (int i = 0; i < visibleEntries.size(); i++) {
+            HandRenderEntry entry = visibleEntries.get(i);
+            itemArtRendered |= renderHandCardBaseAndArt(graphics, snapshot, entry.card(), entry.animation(), partialTick, entry.selected(), true, entry.renderData().contentKey());
+        }
+        long flushStart = perfStart();
+        graphics.flush();
+        battleRenderHandBaseFlushNanos += elapsedPerf(flushStart);
+        if (itemArtRendered) {
+            long depthStart = perfStart();
+            CardRenderHelper.clearBatchedItemArtDepth(graphics);
+            battleRenderHandDepthNanos += elapsedPerf(depthStart);
+        }
+        long textStart = perfStart();
+        renderHandCardTextEntries(graphics, snapshot, visibleEntries, partialTick);
+        battleRenderHandTextNanos += elapsedPerf(textStart);
+    }
+
+    private List<HandRenderEntry> visibleHandEntries(List<HandRenderEntry> entries, float partialTick) {
+        List<HandRenderEntry> visibleEntries = new ArrayList<>(entries.size());
+        for (int i = 0; i < entries.size(); i++) {
+            HandRenderEntry entry = entries.get(i);
+            HandCardScreenBounds cardBounds = handCardScreenBounds(entry.animation(), partialTick, entry.selected());
+            if (outsideScreen(cardBounds)) {
+                battleRenderHandCardOffscreenSkips++;
+            } else {
+                visibleEntries.add(entry);
             }
         }
-        return false;
+        return visibleEntries;
     }
 
-    private void renderHandDescriptionUnclipped(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected) {
-        float x = animation.x(partialTick);
-        float y = animation.y(partialTick);
-        float angle = animation.angle(partialTick);
-        float scale = animation.scale(partialTick);
-        graphics.pose().pushPose();
-        graphics.pose().translate(x, y, 0.0F);
-        graphics.pose().mulPose(Axis.ZP.rotationDegrees(angle));
-        float selectedScale = selected ? 1.08F : 1.0F;
-        graphics.pose().scale(scale * selectedScale, scale * selectedScale, 1.0F);
-        graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
-        CardRenderHelper.renderSmallCardDescription(graphics, font, card, 0, 0, cardValues(snapshot, card));
-        graphics.pose().popPose();
+    private void renderHandCardTextEntries(GuiGraphics graphics, BattleSnapshot snapshot, List<HandRenderEntry> visibleEntries, float partialTick) {
+        for (int i = 0; i < visibleEntries.size(); i++) {
+            HandRenderEntry entry = visibleEntries.get(i);
+            CardRenderHelper.CardValues values = entry.renderData().values();
+            boolean unaffordable = entry.card().cost() > snapshot.player().energyLeft();
+            String contentKey = entry.renderData().contentKey();
+            long visibilityStart = perfStart();
+            boolean showDescription = handDescriptionVisible(entry, values, contentKey, partialTick);
+            battleRenderHandTextVisibilityNanos += elapsedPerf(visibilityStart);
+            CardRenderHelper.SmallCardTextVisibility visibility = CardRenderHelper.SmallCardTextVisibility.all(showDescription);
+            long submitStart = perfStart();
+            renderHandCardTextUnclipped(graphics, entry.card(), entry.animation(), partialTick, entry.selected(), unaffordable, values, visibility, contentKey);
+            battleRenderHandTextSubmitNanos += elapsedPerf(submitStart);
+        }
+    }
+
+    private boolean handDescriptionVisible(HandRenderEntry entry, CardRenderHelper.CardValues values, float partialTick) {
+        return handDescriptionVisible(entry, values, null, partialTick);
+    }
+
+    private boolean handDescriptionVisible(HandRenderEntry entry, CardRenderHelper.CardValues values, String contentKey, float partialTick) {
+        CardRenderHelper.CardLocalArea descArea = CardRenderHelper.smallDescriptionArea(entry.card());
+        HandCardScreenBounds descBounds = handAreaBounds(entry, descArea, partialTick);
+        if (outsideScreen(descBounds)) {
+            battleRenderHandDescOffscreenSkips++;
+            return false;
+        }
+        if (!insideScreen(descBounds)) {
+            HandCardScreenBounds textBounds = handAreaBounds(entry, CardRenderHelper.smallDescriptionTextArea(font, entry.card(), values, contentKey), partialTick);
+            if (outsideScreen(textBounds)) {
+                battleRenderHandDescOffscreenSkips++;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private HandCardScreenBounds handAreaBounds(HandRenderEntry entry, CardRenderHelper.CardLocalArea area, float partialTick) {
+        if (area.width() <= 0 || area.height() <= 0) {
+            return HandCardScreenBounds.empty();
+        }
+        return handLocalAreaScreenBounds(entry.animation(), partialTick, entry.selected(), area.x(), area.y(), area.width(), area.height());
+    }
+
+    private boolean outsideScreen(HandCardScreenBounds bounds) {
+        if (bounds.isEmpty()) {
+            return true;
+        }
+        return bounds.right() <= 0.0F || bounds.left() >= width || bounds.bottom() <= 0.0F || bounds.top() >= height;
+    }
+
+    private boolean insideScreen(HandCardScreenBounds bounds) {
+        return bounds.left() >= 0.0F && bounds.right() <= width && bounds.top() >= 0.0F && bounds.bottom() <= height;
+    }
+
+    private void renderHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean selected) {
+        CardRenderData renderData = cardRenderData(snapshot, card, true);
+        boolean itemArtRendered = renderHandCardBaseAndArt(graphics, snapshot, card, animation, partialTick, selected, true, renderData.contentKey());
+        if (itemArtRendered) {
+            long depthStart = perfStart();
+            CardRenderHelper.clearBatchedItemArtDepth(graphics);
+            battleRenderHandDepthNanos += elapsedPerf(depthStart);
+        }
+        long textStart = perfStart();
+        renderHandCardTextUnclipped(graphics, card, animation, partialTick, selected, card.cost() > snapshot.player().energyLeft(), renderData.values(), true);
+        battleRenderHandTextNanos += elapsedPerf(textStart);
     }
 
     private void renderHoveredHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, HandCardBounds baseBounds, float partialTick) {
+        renderHoveredHandCard(graphics, snapshot, card, animation, baseBounds, partialTick, cardRenderData(snapshot, card));
+    }
+
+    private void renderHoveredHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, HandCardBounds baseBounds, float partialTick, CardRenderData renderData) {
         long start = perfStart();
         boolean unaffordable = card.cost() > snapshot.player().energyLeft();
         float progress = smoothStep(animation.hover(partialTick));
@@ -1398,7 +1475,7 @@ public class BattleScreen extends NoBlurScreen {
         float scale = lerp(baseScale * (CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH), previewScale, progress);
         float angle = lerp(animation.angle(partialTick), 0.0F, progress);
         renderDetailedPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
-        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, true);
+        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, true, renderData);
         renderDetailedPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
         if (progress > 0.88F) {
             CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), width, height);
@@ -1411,7 +1488,7 @@ public class BattleScreen extends NoBlurScreen {
         DragGlow dragGlow = dragGlowFor(card, playableHere);
         boolean basePlayable = playable(card, snapshot);
         renderDetailedPlayableGlow(graphics, basePlayable, centerX, centerY, scale, dragGlow.pulse());
-        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, 0.0F, card.cost() > snapshot.player().energyLeft(), false);
+        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, 0.0F, card.cost() > snapshot.player().energyLeft(), false, cardRenderData(snapshot, card, true));
         renderDetailedPlayableOutline(graphics, basePlayable, centerX, centerY, scale, dragGlow.pulse());
         recordPerf(PerfBucket.TARGET_CARD, start);
     }
@@ -1421,6 +1498,7 @@ public class BattleScreen extends NoBlurScreen {
         DragGlow dragGlow = dragGlowFor(card, playableHere);
         boolean basePlayable = playable(card, snapshot);
         boolean unaffordable = card.cost() > snapshot.player().energyLeft();
+        CardRenderData renderData = cardRenderData(snapshot, card, true);
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 80.0F);
         graphics.pose().translate(centerX, centerY, 0.0F);
@@ -1428,7 +1506,7 @@ public class BattleScreen extends NoBlurScreen {
         graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
         renderSmallPlayableGlow(graphics, basePlayable, dragGlow.pulse(), 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, cardValues(snapshot, card), false, true);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, renderData.values(), false, true, renderData.contentKey());
         graphics.disableScissor();
         renderSmallPlayableOutline(graphics, basePlayable, dragGlow.pulse(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         graphics.pose().popPose();
@@ -1438,6 +1516,7 @@ public class BattleScreen extends NoBlurScreen {
     private void renderTargetingHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, float partialTick, boolean playableHere) {
         long start = perfStart();
         boolean unaffordable = card.cost() > snapshot.player().energyLeft();
+        CardRenderData renderData = cardRenderData(snapshot, card, true);
         float x = animation.x(partialTick);
         float y = animation.y(partialTick);
         float scale = animation.scale(partialTick);
@@ -1449,7 +1528,7 @@ public class BattleScreen extends NoBlurScreen {
         DragGlow dragGlow = dragGlowFor(card, playableHere);
         renderSmallPlayableGlow(graphics, playable(card, snapshot), dragGlow.pulse(), 0.0F, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         CardRenderHelper.enablePoseScissor(graphics, 0, 0, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, cardValues(snapshot, card), false, true);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, renderData.values(), false, true, renderData.contentKey());
         graphics.disableScissor();
         renderSmallPlayableOutline(graphics, playable(card, snapshot), dragGlow.pulse(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
         graphics.pose().popPose();
@@ -1466,10 +1545,10 @@ public class BattleScreen extends NoBlurScreen {
         updatePileOverlayCards(snapshot);
         long updateNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - updateStart : 0L;
         pileOverlay.render(graphics, font, width, height, mouseX, mouseY, CARD_GRID_BOTTOM_RESERVE, card -> false, CardRenderHelper.CardValues::original,
-                (previewGraphics, previewFont, card, x, y, selected) -> {
+                (previewGraphics, previewFont, card, x, y, selected, contentKey) -> {
                     previewGraphics.pose().pushPose();
                     previewGraphics.pose().translate(x, y, 0.0F);
-                    CardRenderHelper.renderCard(previewGraphics, previewFont, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false);
+                    CardRenderHelper.renderCard(previewGraphics, previewFont, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false, contentKey);
                     previewGraphics.pose().popPose();
                 });
         if (MoonSpirePerfDiagnostics.enabled() && pileOverlayPerfFrameIndex < 10) {
@@ -1609,7 +1688,7 @@ public class BattleScreen extends NoBlurScreen {
             }
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHandCard(graphics, snapshot, card, animation, partialTick, false, true);
+                renderHandCard(graphics, snapshot, card, animation, partialTick, false);
             }
         }
         for (UUID selectedId : handSelectionOverlay.selectedIds()) {
@@ -1622,7 +1701,7 @@ public class BattleScreen extends NoBlurScreen {
             }
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHandCard(graphics, snapshot, card, animation, partialTick, true, true);
+                renderHandCard(graphics, snapshot, card, animation, partialTick, true);
             }
         }
         if (drawHoveredPreview && hoveredIndex >= 0) {
@@ -1842,6 +1921,18 @@ public class BattleScreen extends NoBlurScreen {
         battleRenderBottomEndTurnNanos = 0L;
         battleRenderBottomFlushNanos = 0L;
         battleRenderBottomHandNanos = 0L;
+        battleRenderHandBaseNanos = 0L;
+        battleRenderHandBaseFlushNanos = 0L;
+        battleRenderHandPoseNanos = 0L;
+        battleRenderHandDepthNanos = 0L;
+        battleRenderHandTextNanos = 0L;
+        battleRenderHandContentKeyNanos = 0L;
+        battleRenderHandValuesNanos = 0L;
+        battleRenderHandTextVisibilityNanos = 0L;
+        battleRenderHandTextSubmitNanos = 0L;
+        battleRenderHandHoverNanos = 0L;
+        battleRenderHandCardOffscreenSkips = 0;
+        battleRenderHandDescOffscreenSkips = 0;
         battleRenderFlyingNanos = 0L;
         battleRenderDraggedNanos = 0L;
         battleRenderMonsterPlayedNanos = 0L;
@@ -1868,6 +1959,18 @@ public class BattleScreen extends NoBlurScreen {
                         + " bottomEndTurnMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomEndTurnNanos)
                         + " bottomFlushMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomFlushNanos)
                         + " bottomHandMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomHandNanos)
+                        + " handBaseMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandBaseNanos)
+                        + " handBaseFlushMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandBaseFlushNanos)
+                        + " handPoseMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandPoseNanos)
+                        + " handDepthMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandDepthNanos)
+                        + " handTextMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandTextNanos)
+                        + " handContentKeyMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandContentKeyNanos)
+                        + " handValuesMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandValuesNanos)
+                        + " handTextVisibilityMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandTextVisibilityNanos)
+                        + " handTextSubmitMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandTextSubmitNanos)
+                        + " handHoverMs=" + MoonSpirePerfDiagnostics.millis(battleRenderHandHoverNanos)
+                        + " handCardOffscreenSkips=" + battleRenderHandCardOffscreenSkips
+                        + " handDescOffscreenSkips=" + battleRenderHandDescOffscreenSkips
                         + " flyingMs=" + MoonSpirePerfDiagnostics.millis(battleRenderFlyingNanos)
                         + " draggedMs=" + MoonSpirePerfDiagnostics.millis(battleRenderDraggedNanos)
                         + " monsterPlayedMs=" + MoonSpirePerfDiagnostics.millis(battleRenderMonsterPlayedNanos)
@@ -2091,6 +2194,14 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderScaledDetailedCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips, float alpha, CardRenderHelper.CardValues values) {
+        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, suppressTips, alpha, values, null);
+    }
+
+    private void renderScaledDetailedCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips, CardRenderData renderData) {
+        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, suppressTips, 1.0F, renderData.values(), renderData.contentKey());
+    }
+
+    private void renderScaledDetailedCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips, float alpha, CardRenderHelper.CardValues values, String contentKey) {
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 120.0F);
         graphics.pose().translate(centerX, centerY, 0.0F);
@@ -2098,7 +2209,7 @@ public class BattleScreen extends NoBlurScreen {
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.pose().translate(-CardRenderHelper.CARD_WIDTH / 2.0F, -CardRenderHelper.CARD_HEIGHT / 2.0F, 0.0F);
         graphics.setColor(1.0F, 1.0F, 1.0F, clamp(alpha, 0.0F, 1.0F));
-        renderCardBody(graphics, snapshot, card, unaffordable, values);
+        renderCardBody(graphics, snapshot, card, unaffordable, values, contentKey);
         graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
         graphics.pose().popPose();
         if (!suppressTips && scale >= 0.95F) {
@@ -2113,15 +2224,74 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderCardBody(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, boolean unaffordable, CardRenderHelper.CardValues values) {
-        CardRenderHelper.renderDetailedCard(graphics, font, card, 0, 0, false, values == null ? cardValues(snapshot, card) : values, unaffordable, false);
+        renderCardBody(graphics, snapshot, card, unaffordable, values, null);
+    }
+
+    private void renderCardBody(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, boolean unaffordable, CardRenderHelper.CardValues values, String contentKey) {
+        if (contentKey == null) {
+            CardRenderData renderData = cardRenderData(snapshot, card);
+            CardRenderHelper.renderDetailedCard(graphics, font, card, 0, 0, false, values == null ? renderData.values() : values, unaffordable, false, renderData.contentKey());
+            return;
+        }
+        CardRenderHelper.renderDetailedCard(graphics, font, card, 0, 0, false, values == null ? cardValues(snapshot, card) : values, unaffordable, false, contentKey);
     }
 
     private void renderCardPreview(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, int x, int y, boolean unaffordable) {
-        CardRenderHelper.renderDetailedCard(graphics, font, card, x, y, false, cardValues(snapshot, card), unaffordable, false);
+        CardRenderData renderData = cardRenderData(snapshot, card);
+        CardRenderHelper.renderDetailedCard(graphics, font, card, x, y, false, renderData.values(), unaffordable, false, renderData.contentKey());
         CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, x, y, width, height);
     }
 
+    private void prepareCardRenderDataCache() {
+        long snapshotVersion = ClientBattleState.snapshotVersion();
+        long developerRevision = DeveloperDataManager.cacheRevision();
+        if (cardRenderDataSnapshotVersion != snapshotVersion || cardRenderDataDeveloperRevision != developerRevision) {
+            cardRenderDataCache.clear();
+            cardRenderDataSnapshotVersion = snapshotVersion;
+            cardRenderDataDeveloperRevision = developerRevision;
+        }
+    }
+
+    private CardRenderData cardRenderData(BattleSnapshot snapshot, CardInstance card) {
+        return cardRenderData(snapshot, card, false);
+    }
+
+    private CardRenderData cardRenderData(BattleSnapshot snapshot, CardInstance card, boolean recordHandPerf) {
+        BattleCardPreviewContext context = previewContext(snapshot, card);
+        return cardRenderData(snapshot, card, context.attacker(), context.monsterCard(), recordHandPerf);
+    }
+
+    private CardRenderData cardRenderData(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
+        return cardRenderData(snapshot, card, attacker, monsterCard, false);
+    }
+
+    private CardRenderData cardRenderData(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard, boolean recordHandPerf) {
+        prepareCardRenderDataCache();
+        CardRenderDataCacheKey key = new CardRenderDataCacheKey(card.id(), attacker.entityId(), monsterCard, ClientBattleState.hoveredEntityId());
+        CardRenderData cached = cardRenderDataCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        long contentKeyStart = recordHandPerf ? perfStart() : 0L;
+        String contentKey = CardRenderHelper.contentKey(card);
+        if (recordHandPerf) {
+            battleRenderHandContentKeyNanos += elapsedPerf(contentKeyStart);
+        }
+        long valuesStart = recordHandPerf ? perfStart() : 0L;
+        CardRenderHelper.CardValues values = buildCardValues(snapshot, card, attacker, monsterCard);
+        if (recordHandPerf) {
+            battleRenderHandValuesNanos += elapsedPerf(valuesStart);
+        }
+        CardRenderData built = new CardRenderData(contentKey, values);
+        cardRenderDataCache.put(key, built);
+        return built;
+    }
+
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card) {
+        return cardRenderData(snapshot, card).values();
+    }
+
+    private BattleCardPreviewContext previewContext(BattleSnapshot snapshot, CardInstance card) {
         BattleCombatantSnapshot attacker = snapshot.player();
         boolean monsterCard = snapshot.monsterHand().contains(card) || snapshot.monsterIntentCards().contains(card);
         for (BattleEnemyIntentSnapshot intent : snapshot.enemyIntents()) {
@@ -2137,7 +2307,7 @@ public class BattleScreen extends NoBlurScreen {
         if (monsterCard && attacker.entityId() == snapshot.player().entityId()) {
             attacker = snapshot.monster();
         }
-        return cardValues(snapshot, card, attacker, monsterCard);
+        return new BattleCardPreviewContext(attacker, monsterCard);
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender) {
@@ -2145,15 +2315,10 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
-        if (frameCardValuesIndex != frameIndex) {
-            frameCardValues.clear();
-            frameCardValuesIndex = frameIndex;
-        }
-        CardValueCacheKey key = new CardValueCacheKey(card.id(), attacker.entityId(), monsterCard, ClientBattleState.hoveredEntityId());
-        CardRenderHelper.CardValues cached = frameCardValues.get(key);
-        if (cached != null) {
-            return cached;
-        }
+        return cardRenderData(snapshot, card, attacker, monsterCard).values();
+    }
+
+    private CardRenderHelper.CardValues buildCardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
         int attack = card.enemyDirectDamageAmount();
         int defense = card.selfEffectAmount(CardEffectKind.BLOCK);
         List<Integer> damageAmounts = new ArrayList<>(card.effects().size());
@@ -2183,9 +2348,7 @@ public class BattleScreen extends NoBlurScreen {
         if (hasPreviewAttack) {
             attack = previewAttackTotal;
         }
-        CardRenderHelper.CardValues values = new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
-        frameCardValues.put(key, values);
-        return values;
+        return new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
     }
 
     private static boolean positiveEffect(CardEffectKind kind) {
@@ -3666,6 +3829,14 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private record HandCardScreenBounds(float left, float top, float right, float bottom) {
+        private static HandCardScreenBounds empty() {
+            return new HandCardScreenBounds(0.0F, 0.0F, 0.0F, 0.0F);
+        }
+
+        private boolean isEmpty() {
+            return right <= left || bottom <= top;
+        }
+
         private boolean contains(double mouseX, double mouseY) {
             return mouseX >= left && mouseX <= right && mouseY >= top && mouseY <= bottom;
         }
@@ -3688,6 +3859,13 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private record ScreenRect(int left, int top, int right, int bottom) {
+        private boolean isEmpty() {
+            return right <= left || bottom <= top;
+        }
+
+        private boolean covers(ScreenRect other) {
+            return left <= other.left && top <= other.top && right >= other.right && bottom >= other.bottom;
+        }
     }
 
     private record PileIconBounds(float centerX, float centerY, int size) {
@@ -4077,7 +4255,16 @@ public class BattleScreen extends NoBlurScreen {
         AIM_LINE
     }
 
-    private record CardValueCacheKey(UUID cardId, int attackerEntityId, boolean monsterCard, int hoveredEntityId) {
+    private record BattleCardPreviewContext(BattleCombatantSnapshot attacker, boolean monsterCard) {
+    }
+
+    private record CardRenderData(String contentKey, CardRenderHelper.CardValues values) {
+    }
+
+    private record CardRenderDataCacheKey(UUID cardId, int attackerEntityId, boolean monsterCard, int hoveredEntityId) {
+    }
+
+    private record HandRenderEntry(CardInstance card, HandCardAnimation animation, boolean selected, CardRenderData renderData) {
     }
 
     private record HudTooltip(Component title, List<Component> paragraphs, MoonSpireUiRect avoidRect) {

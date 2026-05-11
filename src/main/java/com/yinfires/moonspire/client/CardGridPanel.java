@@ -4,10 +4,8 @@ import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Function;
@@ -32,7 +30,6 @@ final class CardGridPanel {
     private static final float PREVIEW_MIN_SCALE = 0.58F;
     private static final float GRID_SELECTED_SCALE_BONUS = 0.06F;
     private static final float MODAL_CONTENT_Z = 1100.0F;
-    private static final int WARMUP_CARDS_PER_FRAME = 3;
 
     private final Component title;
     private final List<CardInstance> cards = new ArrayList<>();
@@ -51,10 +48,6 @@ final class CardGridPanel {
     private int cachedLastVisibleIndex = -1;
     private Object contentKey = new Object();
     private int displayCountOverride = -1;
-    private final Set<String> warmedCardKeys = new HashSet<>();
-    private int warmupCompleteStart = -1;
-    private int warmupCompleteEnd = -1;
-    private int warmupCompleteScroll = Integer.MIN_VALUE;
     private int frameValuesStart = -1;
     private int frameValuesEnd = -1;
     private int framePoseScroll = Integer.MIN_VALUE;
@@ -84,10 +77,6 @@ final class CardGridPanel {
             }
         }
         invalidateLayout();
-        warmedCardKeys.clear();
-        warmupCompleteStart = -1;
-        warmupCompleteEnd = -1;
-        warmupCompleteScroll = Integer.MIN_VALUE;
         frameValuesStart = -1;
         frameValuesEnd = -1;
         framePoseScroll = Integer.MIN_VALUE;
@@ -119,7 +108,7 @@ final class CardGridPanel {
         previousScrollOffset = frameScrollOffset;
         long layoutNanos = elapsedSince(segmentStart);
         segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-        int warmed = warmupVisibleCards(font, layout, values);
+        int warmed = 0;
         long warmupNanos = elapsedSince(segmentStart);
         segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
         MoonSpireUiTextures.drawOverlay(graphics, width, height);
@@ -220,7 +209,7 @@ final class CardGridPanel {
                     previewAnimation.snapPositionToTarget();
                 }
                 previewAnimation.advance(animationFrameTicks());
-                renderAnimatedPreview(graphics, font, card, selected.test(card), previewAnimation, previewRenderer);
+                renderAnimatedPreview(graphics, font, card, warmupContentKeys.get(hoveredIndex), selected.test(card), previewAnimation, previewRenderer);
                 previewRendered = true;
                 if (previewAnimation.progress() > 0.86F) {
                     int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewAnimation.scale());
@@ -234,7 +223,7 @@ final class CardGridPanel {
                 previewAnimation.advance(animationFrameTicks());
                 CardInstance closingCard = previewAnimation.card(cards);
                 if (closingCard != null && previewAnimation.visible()) {
-                    renderAnimatedPreview(graphics, font, closingCard, selected.test(closingCard), previewAnimation, previewRenderer);
+                    renderAnimatedPreview(graphics, font, closingCard, warmupContentKey(closingCard), selected.test(closingCard), previewAnimation, previewRenderer);
                     previewRendered = true;
                 } else {
                     previewAnimation.clear();
@@ -335,41 +324,10 @@ final class CardGridPanel {
         Layout layout = layout(width, height, bottomReserve);
         constrainScroll(layout);
         prepareFrameValues(layout, values);
-        warmupVisibleCards(font, layout, values);
     }
 
     FrameStats lastFrameStats() {
         return lastFrameStats;
-    }
-
-    private int warmupVisibleCards(Font font, Layout layout, Function<CardInstance, CardRenderHelper.CardValues> values) {
-        int start = firstVisibleIndex(layout);
-        int end = Math.min(cards.size(), lastVisibleIndex(layout));
-        int scrollKey = (int) Math.round(clampedScrollOffset(layout));
-        if (warmupCompleteStart == start && warmupCompleteEnd == end && warmupCompleteScroll == scrollKey) {
-            return 0;
-        }
-        int warmedThisFrame = 0;
-        for (int i = start; i < end; i++) {
-            if (!cardIntersectsView(layout, cardBounds(layout, i))) {
-                continue;
-            }
-            CardInstance card = cards.get(i);
-            CardRenderHelper.CardValues cardValues = frameValue(i);
-            String key = CardRenderHelper.warmupKey(warmupContentKeys.get(i), cardValues);
-            if (!warmedCardKeys.add(key)) {
-                continue;
-            }
-            CardRenderHelper.warmupCard(font, card, cardValues);
-            warmedThisFrame++;
-            if (warmedThisFrame >= WARMUP_CARDS_PER_FRAME) {
-                return warmedThisFrame;
-            }
-        }
-        warmupCompleteStart = start;
-        warmupCompleteEnd = end;
-        warmupCompleteScroll = scrollKey;
-        return warmedThisFrame;
     }
 
     private void renderGridCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int baseW, int baseH, float baseScale, boolean selected, CardRenderHelper.CardValues values) {
@@ -416,12 +374,20 @@ final class CardGridPanel {
         graphics.pose().popPose();
     }
 
-    private void renderAnimatedPreview(GuiGraphics graphics, Font font, CardInstance card, boolean selected, PreviewAnimation animation, PreviewRenderer previewRenderer) {
+    private String warmupContentKey(CardInstance card) {
+        int index = cards.indexOf(card);
+        if (index >= 0 && index < warmupContentKeys.size()) {
+            return warmupContentKeys.get(index);
+        }
+        return CardRenderHelper.warmupContentKey(card);
+    }
+
+    private void renderAnimatedPreview(GuiGraphics graphics, Font font, CardInstance card, String contentKey, boolean selected, PreviewAnimation animation, PreviewRenderer previewRenderer) {
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 120.0F);
         graphics.pose().translate(animation.centerX(), animation.centerY(), 0.0F);
         graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
-        previewRenderer.render(graphics, font, card, -CardRenderHelper.CARD_WIDTH / 2, -CardRenderHelper.CARD_HEIGHT / 2, selected);
+        previewRenderer.render(graphics, font, card, -CardRenderHelper.CARD_WIDTH / 2, -CardRenderHelper.CARD_HEIGHT / 2, selected, contentKey);
         graphics.pose().popPose();
     }
 
@@ -721,7 +687,7 @@ final class CardGridPanel {
 
     @FunctionalInterface
     interface PreviewRenderer {
-        void render(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected);
+        void render(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, String contentKey);
     }
 
     private float animationFrameTicks() {

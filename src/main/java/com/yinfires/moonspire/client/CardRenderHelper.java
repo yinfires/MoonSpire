@@ -162,6 +162,16 @@ public final class CardRenderHelper {
     public record CardLocalArea(int x, int y, int width, int height) {
     }
 
+    public record SmallCardTextVisibility(boolean cost, boolean name, boolean type, boolean description) {
+        public static SmallCardTextVisibility all(boolean description) {
+            return new SmallCardTextVisibility(true, true, true, description);
+        }
+
+        public boolean any() {
+            return cost || name || type || description;
+        }
+    }
+
     public static CardRenderContext openFrameContext() {
         CardRenderContext context = new CardRenderContext(FRAME_CONTEXT.get());
         FRAME_CONTEXT.set(context);
@@ -212,16 +222,12 @@ public final class CardRenderHelper {
         }
     }
 
-    public static String warmupKey(CardInstance card, CardValues values) {
-        return warmupKey(warmupContentKey(card), values);
-    }
-
-    public static String warmupContentKey(CardInstance card) {
+    public static String contentKey(CardInstance card) {
         return dataVersionKey() + "|" + cardContentKey(card);
     }
 
-    public static String warmupKey(String contentKey, CardValues values) {
-        return contentKey + "|" + valuesKey(values);
+    public static String warmupContentKey(CardInstance card) {
+        return contentKey(card);
     }
 
     public static final class CardRenderContext implements AutoCloseable {
@@ -390,26 +396,6 @@ public final class CardRenderHelper {
         }
     }
 
-    public static void warmupCard(Font font, CardInstance card, CardValues values) {
-        if (font == null || card == null) {
-            return;
-        }
-        long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
-        DeveloperCardFace face = cardFace(card);
-        font.width(card.nameComponent());
-        font.width(Component.translatable(card.isAttackType() ? "card.moonspire.type.attack" : "card.moonspire.type.skill"));
-        DeveloperCardFace.Area descArea = face.descriptionArea();
-        int descWidth = sx(CARD_WIDTH, descArea.width());
-        float scale = DETAILED_DESCRIPTION_SCALE;
-        wrappedDescriptionLines(font, card, values, Math.max(1, (int) (descWidth / scale)));
-        customTexture(face.imagePath(), DeveloperPaths.cardFacesDirectory());
-        customTexture(card.artPath(), DeveloperPaths.cardArtDirectory());
-        artItem(card.artItemId());
-        if (MoonSpirePerfDiagnostics.enabled()) {
-            MoonSpirePerfDiagnostics.mark("client.card.warmup", MoonSpirePerfDiagnostics.now() - start);
-        }
-    }
-
     public record BarSegments(int healthWidth, int blockX, int blockWidth) {
     }
 
@@ -422,6 +408,10 @@ public final class CardRenderHelper {
 
     public static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean clipArt) {
         renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, false, CardValues.original(card), clipArt);
+    }
+
+    public static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean clipArt, String contentKey) {
+        renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, false, CardValues.original(card), clipArt, null, true, true, contentKey);
     }
 
     public static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean clipArt, DeveloperData data) {
@@ -440,8 +430,16 @@ public final class CardRenderHelper {
         renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, unaffordable, values, clipArt);
     }
 
+    public static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, CardValues values, boolean unaffordable, boolean clipArt, String contentKey) {
+        renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, unaffordable, values, clipArt, null, true, true, contentKey);
+    }
+
     public static void renderDetailedCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, CardValues values, boolean unaffordable, boolean clipArt) {
         renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, unaffordable, values, clipArt);
+    }
+
+    public static void renderDetailedCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, CardValues values, boolean unaffordable, boolean clipArt, String contentKey) {
+        renderCard(graphics, font, card, x, y, CARD_WIDTH, CARD_HEIGHT, selected, true, unaffordable, values, clipArt, null, true, true, contentKey);
     }
 
     public static void renderSmallCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean unaffordable) {
@@ -462,6 +460,45 @@ public final class CardRenderHelper {
 
     public static void renderSmallCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean unaffordable, CardValues values, boolean clipArt, boolean showDescription) {
         renderCard(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, selected, false, unaffordable, values, clipArt, null, showDescription);
+    }
+
+    public static void renderSmallCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, boolean unaffordable, CardValues values, boolean clipArt, boolean showDescription, String contentKey) {
+        renderCard(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, selected, false, unaffordable, values, clipArt, null, showDescription, true, contentKey);
+    }
+
+    public static boolean renderSmallCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, boolean clipArt) {
+        return renderSmallCardBaseAndArt(graphics, card, x, y, clipArt, null);
+    }
+
+    public static boolean renderSmallCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, boolean clipArt, String contentKey) {
+        return renderCardBaseAndArt(graphics, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, clipArt, null, true, false, contentKey);
+    }
+
+    public static void renderSmallCardBaseOnly(GuiGraphics graphics, CardInstance card, int x, int y) {
+        renderCardBase(graphics, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+    }
+
+    public static boolean renderSmallCardArtOnly(GuiGraphics graphics, CardInstance card, int x, int y, boolean clipArt) {
+        return renderCardArt(graphics, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, clipArt, null, true, false);
+    }
+
+    public static CardLocalArea smallArtArea(CardInstance card) {
+        return artArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+    }
+
+    public static void renderSmallCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean unaffordable, CardValues values, boolean showDescription) {
+        renderSmallCardText(graphics, font, card, x, y, unaffordable, values, SmallCardTextVisibility.all(showDescription));
+    }
+
+    public static void renderSmallCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean unaffordable, CardValues values, SmallCardTextVisibility visibility) {
+        renderSmallCardText(graphics, font, card, x, y, unaffordable, values, visibility, null);
+    }
+
+    public static void renderSmallCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean unaffordable, CardValues values, SmallCardTextVisibility visibility, String contentKey) {
+        if (!visibility.any()) {
+            return;
+        }
+        renderCardText(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, unaffordable, values, null, visibility.cost(), visibility.name(), visibility.type(), visibility.description(), contentKey);
     }
 
     public static void renderGridCardFast(GuiGraphics graphics, Font font, CardInstance card, int x, int y, boolean selected, CardValues values) {
@@ -743,6 +780,26 @@ public final class CardRenderHelper {
         return descriptionArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
     }
 
+    public static CardLocalArea smallDescriptionTextArea(Font font, CardInstance card, CardValues values) {
+        return descriptionTextArea(font, card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, values, null, null);
+    }
+
+    public static CardLocalArea smallDescriptionTextArea(Font font, CardInstance card, CardValues values, String contentKey) {
+        return descriptionTextArea(font, card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, values, null, contentKey);
+    }
+
+    public static CardLocalArea smallCostArea(CardInstance card) {
+        return costArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+    }
+
+    public static CardLocalArea smallNameArea(CardInstance card) {
+        return nameArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+    }
+
+    public static CardLocalArea smallTypeArea(CardInstance card) {
+        return typeArea(card, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, null);
+    }
+
     public static void renderSmallCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values) {
         renderCardDescription(graphics, font, card, x, y, SMALL_CARD_WIDTH, SMALL_CARD_HEIGHT, false, values, null, false);
     }
@@ -953,8 +1010,12 @@ public final class CardRenderHelper {
     }
 
     private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values, boolean clipArt, DeveloperData dataOverride, boolean showDescription, boolean renderItemArt) {
-        renderCardBaseAndArt(graphics, card, x, y, width, height, clipArt, dataOverride, renderItemArt, true);
-        renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription);
+        renderCard(graphics, font, card, x, y, width, height, selected, detailed, unaffordable, values, clipArt, dataOverride, showDescription, renderItemArt, null);
+    }
+
+    private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values, boolean clipArt, DeveloperData dataOverride, boolean showDescription, boolean renderItemArt, String contentKey) {
+        renderCardBaseAndArt(graphics, card, x, y, width, height, clipArt, dataOverride, renderItemArt, true, contentKey);
+        renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription, contentKey);
     }
 
     private static boolean renderCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, boolean clipArt, DeveloperData dataOverride, boolean renderItemArt, boolean clearItemDepth) {
@@ -963,15 +1024,25 @@ public final class CardRenderHelper {
 
     private static boolean renderCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, boolean clipArt, DeveloperData dataOverride, boolean renderItemArt, boolean clearItemDepth, String contentKey) {
         CardRenderPlan plan = renderPlan(card, dataOverride, contentKey);
-        DeveloperCardFace face = plan.face();
-        renderCardFaceBase(graphics, face.imagePath(), x, y, width, height);
+        renderCardBase(graphics, card, x, y, width, height, plan);
+        return renderCardArt(graphics, card, x, y, width, height, clipArt, plan, renderItemArt, clearItemDepth);
+    }
+
+    private static void renderCardBase(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, CardRenderPlan plan) {
+        CardRenderPlan effectivePlan = plan == null ? renderPlan(card, null, null) : plan;
+        renderCardFaceBase(graphics, effectivePlan.face().imagePath(), x, y, width, height);
+    }
+
+    private static boolean renderCardArt(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, boolean clipArt, CardRenderPlan plan, boolean renderItemArt, boolean clearItemDepth) {
+        CardRenderPlan effectivePlan = plan == null ? renderPlan(card, null, null) : plan;
+        DeveloperCardFace face = effectivePlan.face();
         DeveloperCardFace.Area artArea = face.artArea();
         int artX = x + sx(width, artArea.x());
         int artY = y + sy(height, artArea.y());
         int artWidth = sx(width, artArea.width());
         int artHeight = sy(height, artArea.height());
-        TextureRef artTexture = plan.artTexture();
-        ItemStack artItem = plan.artItem();
+        TextureRef artTexture = effectivePlan.artTexture();
+        ItemStack artItem = effectivePlan.artItem();
         boolean renderedItemArt = false;
         if (!artItem.isEmpty()) {
             if (!renderItemArt) {
@@ -993,42 +1064,93 @@ public final class CardRenderHelper {
         return renderedItemArt;
     }
 
+    private static CardLocalArea artArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
+        DeveloperCardFace.Area artArea = cardFace(card, dataOverride).artArea();
+        return new CardLocalArea(sx(width, artArea.x()), sy(height, artArea.y()), sx(width, artArea.width()), sy(height, artArea.height()));
+    }
+
     private static void renderCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, boolean unaffordable, CardValues values, DeveloperData dataOverride, boolean showDescription) {
         renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription, null);
     }
 
     private static void renderCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, boolean unaffordable, CardValues values, DeveloperData dataOverride, boolean showDescription, String contentKey) {
+        renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, true, true, true, showDescription, contentKey);
+    }
+
+    private static void renderCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, boolean unaffordable, CardValues values, DeveloperData dataOverride, boolean showCost, boolean showName, boolean showType, boolean showDescription, String contentKey) {
+        if (!showCost && !showName && !showType && !showDescription) {
+            return;
+        }
         boolean diag = MoonSpirePerfDiagnostics.enabled();
         DeveloperCardFace face = cardFace(card, dataOverride);
-        String effectiveContentKey = contentKey == null ? dataVersionKey() + "|" + cardContentKey(card) : contentKey;
-        TextContent textContent = dataOverride == null ? textContent(font, card, effectiveContentKey) : uncachedTextContent(font, card);
-        DeveloperCardFace.Area costArea = face.costArea();
-        long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-        drawCardCostNumber(graphics, font, Integer.toString(card.cost()), x + sx(width, costArea.x()) + sx(width, costArea.width()) / 2, y + sy(height, costArea.y()) + sy(height, costArea.height()) / 2, width, unaffordable);
-        recordTextCost(segmentStart);
+        String effectiveContentKey = contentKey == null ? contentKey(card) : contentKey;
+        TextContent textContent = showName || showType ? (dataOverride == null ? textContent(font, card, effectiveContentKey) : uncachedTextContent(font, card)) : null;
+        if (showCost) {
+            DeveloperCardFace.Area costArea = face.costArea();
+            long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+            drawCardCostNumber(graphics, font, Integer.toString(card.cost()), x + sx(width, costArea.x()) + sx(width, costArea.width()) / 2, y + sy(height, costArea.y()) + sy(height, costArea.height()) / 2, width, unaffordable);
+            recordTextCost(segmentStart);
+        }
 
         float nameScale = detailed ? 0.86F : 0.58F;
-        DeveloperCardFace.Area nameArea = face.nameArea();
-        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-        drawCenteredFit(graphics, font, textContent.name(), textContent.nameWidth(), x + sx(width, nameArea.x()), y + sy(height, nameArea.y()), sx(width, nameArea.width()), sy(height, nameArea.height()), 0xFF3A3025, nameScale);
-        recordTextName(segmentStart);
+        if (showName) {
+            DeveloperCardFace.Area nameArea = face.nameArea();
+            long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+            drawCenteredFit(graphics, font, textContent.name(), textContent.nameWidth(), x + sx(width, nameArea.x()), y + sy(height, nameArea.y()), sx(width, nameArea.width()), sy(height, nameArea.height()), 0xFF3A3025, nameScale);
+            recordTextName(segmentStart);
+        }
 
-        DeveloperCardFace.Area typeArea = face.typeArea();
-        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-        drawCenteredFit(graphics, font, textContent.type(), textContent.typeWidth(), x + sx(width, typeArea.x()), y + sy(height, typeArea.y()), sx(width, typeArea.width()), sy(height, typeArea.height()), 0xFF514B45, detailed ? 0.62F : 0.48F);
-        recordTextType(segmentStart);
+        if (showType) {
+            DeveloperCardFace.Area typeArea = face.typeArea();
+            long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+            drawCenteredFit(graphics, font, textContent.type(), textContent.typeWidth(), x + sx(width, typeArea.x()), y + sy(height, typeArea.y()), sx(width, typeArea.width()), sy(height, typeArea.height()), 0xFF514B45, detailed ? 0.62F : 0.48F);
+            recordTextType(segmentStart);
+        }
 
         if (!showDescription) {
             return;
         }
-        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+        long segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
         renderCardDescription(graphics, font, card, x, y, width, height, detailed, values, dataOverride, true, face, effectiveContentKey);
         recordTextDescription(segmentStart);
+    }
+
+    private static CardLocalArea costArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
+        DeveloperCardFace.Area area = cardFace(card, dataOverride).costArea();
+        return new CardLocalArea(sx(width, area.x()), sy(height, area.y()), sx(width, area.width()), sy(height, area.height()));
+    }
+
+    private static CardLocalArea nameArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
+        DeveloperCardFace.Area area = cardFace(card, dataOverride).nameArea();
+        return new CardLocalArea(sx(width, area.x()), sy(height, area.y()), sx(width, area.width()), sy(height, area.height()));
+    }
+
+    private static CardLocalArea typeArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
+        DeveloperCardFace.Area area = cardFace(card, dataOverride).typeArea();
+        return new CardLocalArea(sx(width, area.x()), sy(height, area.y()), sx(width, area.width()), sy(height, area.height()));
     }
 
     private static CardLocalArea descriptionArea(CardInstance card, int width, int height, DeveloperData dataOverride) {
         DeveloperCardFace.Area descArea = cardFace(card, dataOverride).descriptionArea();
         return new CardLocalArea(sx(width, descArea.x()), sy(height, descArea.y()), sx(width, descArea.width()), sy(height, descArea.height()));
+    }
+
+    private static CardLocalArea descriptionTextArea(Font font, CardInstance card, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, String contentKey) {
+        CardLocalArea descArea = descriptionArea(card, width, height, dataOverride);
+        DescriptionLayout layout = descriptionLayout(font, card, values, descArea.width(), descArea.height(), detailed, dataOverride, contentKey);
+        if (layout.lines().isEmpty()) {
+            return new CardLocalArea(descArea.x() + descArea.width() / 2, descArea.y() + descArea.height() / 2, 0, 0);
+        }
+        int maxLineWidth = 0;
+        for (TextLine line : layout.lines()) {
+            maxLineWidth = Math.max(maxLineWidth, line.width());
+        }
+        int textWidth = Math.min(descArea.width(), Math.max(1, (int) Math.ceil(maxLineWidth * layout.scale())));
+        int lineHeight = scaledLineHeight(font, layout.scale());
+        int textHeight = Math.min(descArea.height(), Math.max(1, layout.lines().size() * lineHeight - 2));
+        int textX = descArea.x() + (descArea.width() - textWidth) / 2;
+        int textY = descArea.y() + (descArea.height() - textHeight) / 2;
+        return new CardLocalArea(textX, textY, textWidth, textHeight);
     }
 
     private static void renderCardDescription(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean detailed, CardValues values, DeveloperData dataOverride, boolean clipDescription) {
@@ -1076,30 +1198,30 @@ public final class CardRenderHelper {
                 CARD_RENDER_PLAN_CACHE.clear();
                 descriptionCacheRevision = revision;
             }
-            String baseKey = contentKey == null ? dataVersionKey() + "|" + cardContentKey(card) : contentKey;
+            String baseKey = contentKey == null ? CardRenderHelper.contentKey(card) : contentKey;
             String key = baseKey + "|" + valuesKey(values) + "|" + descWidth + "|" + descHeight + "|" + detailed;
             DescriptionLayout cached = DESCRIPTION_LAYOUT_CACHE.get(key);
             if (cached != null) {
                 return cached;
             }
-            DescriptionLayout built = buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
+            DescriptionLayout built = buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride, baseKey);
             DESCRIPTION_LAYOUT_CACHE.put(key, built);
             return built;
         }
-        return buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride);
+        return buildDescriptionLayout(font, card, values, descWidth, descHeight, detailed, dataOverride, contentKey);
     }
 
-    private static DescriptionLayout buildDescriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride) {
+    private static DescriptionLayout buildDescriptionLayout(Font font, CardInstance card, CardValues values, int descWidth, int descHeight, boolean detailed, DeveloperData dataOverride, String contentKey) {
         float baseScale = detailed ? DETAILED_DESCRIPTION_SCALE : COMPACT_DESCRIPTION_SCALE;
         float minScale = detailed ? DETAILED_DESCRIPTION_MIN_SCALE : COMPACT_DESCRIPTION_MIN_SCALE;
         for (float scale = baseScale; scale >= minScale - 0.001F; scale -= DESCRIPTION_SCALE_STEP) {
             float normalizedScale = Math.max(minScale, scale);
-            List<FormattedCharSequence> lines = descriptionLinesAtScale(font, card, values, descWidth, normalizedScale, dataOverride);
+            List<FormattedCharSequence> lines = descriptionLinesAtScale(font, card, values, descWidth, normalizedScale, dataOverride, contentKey);
             if (descriptionFits(font, lines, normalizedScale, descHeight)) {
                 return new DescriptionLayout(widthLines(font, lines), normalizedScale);
             }
         }
-        List<FormattedCharSequence> fallbackLines = descriptionLinesAtScale(font, card, values, descWidth, minScale, dataOverride);
+        List<FormattedCharSequence> fallbackLines = descriptionLinesAtScale(font, card, values, descWidth, minScale, dataOverride, contentKey);
         int maxVisibleLines = Math.max(1, (descHeight + 2) / scaledLineHeight(font, minScale));
         if (fallbackLines.size() > maxVisibleLines) {
             fallbackLines = List.copyOf(fallbackLines.subList(0, maxVisibleLines));
@@ -1114,14 +1236,18 @@ public final class CardRenderHelper {
         return lines.size() * scaledLineHeight(font, scale) - 2 <= descHeight;
     }
 
-    private static List<FormattedCharSequence> descriptionLinesAtScale(Font font, CardInstance card, CardValues values, int descWidth, float scale, DeveloperData dataOverride) {
+    private static List<FormattedCharSequence> descriptionLinesAtScale(Font font, CardInstance card, CardValues values, int descWidth, float scale, DeveloperData dataOverride, String contentKey) {
         int wrapWidth = Math.max(1, (int) (descWidth / Math.max(0.01F, scale)));
         return dataOverride == null
-                ? wrappedDescriptionLines(font, card, values, wrapWidth)
+                ? wrappedDescriptionLines(font, card, values, wrapWidth, contentKey)
                 : buildWrappedDescription(font, card, values, wrapWidth);
     }
 
     private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, CardValues values, int width) {
+        return wrappedDescriptionLines(font, card, values, width, null);
+    }
+
+    private static List<FormattedCharSequence> wrappedDescriptionLines(Font font, CardInstance card, CardValues values, int width, String contentKey) {
         long revision = DeveloperDataManager.cacheRevision();
         if (descriptionCacheRevision != revision) {
             DESCRIPTION_WRAP_CACHE.clear();
@@ -1131,7 +1257,8 @@ public final class CardRenderHelper {
             CARD_RENDER_PLAN_CACHE.clear();
             descriptionCacheRevision = revision;
         }
-        String key = dataVersionKey() + "|" + cardContentKey(card) + "|" + valuesKey(values) + "|" + width;
+        String baseKey = contentKey == null ? CardRenderHelper.contentKey(card) : contentKey;
+        String key = baseKey + "|" + valuesKey(values) + "|" + width;
         List<FormattedCharSequence> cached = DESCRIPTION_WRAP_CACHE.get(key);
         CardRenderContext context = FRAME_CONTEXT.get();
         if (cached != null) {
@@ -1215,7 +1342,7 @@ public final class CardRenderHelper {
             CARD_RENDER_PLAN_CACHE.clear();
             descriptionCacheRevision = revision;
         }
-        String key = contentKey == null ? dataVersionKey() + "|" + cardContentKey(card) : contentKey;
+        String key = contentKey == null ? contentKey(card) : contentKey;
         CardRenderPlan cached = CARD_RENDER_PLAN_CACHE.get(key);
         if (cached != null) {
             return cached;
