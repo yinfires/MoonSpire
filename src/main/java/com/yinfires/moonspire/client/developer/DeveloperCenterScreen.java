@@ -88,11 +88,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static final int CARD_GRID_MAX_COLUMNS = 5;
     private static final int CARD_GRID_EXPANDED_MIN_COLUMNS = 3;
     private static final int CARD_GRID_MIN_CELL_W = 38;
-    private static final int CARD_GRID_EXPANDED_MIN_CELL_W = 16;
+    private static final int CARD_GRID_EXPANDED_MAX_CELL_W = 74;
+    private static final int CARD_GRID_EXPANDED_MIN_CELL_W = 10;
+    private static final int CARD_GRID_SELECTION_PAD = 3;
     private static final int CARD_GRID_GAP_X = 18;
     private static final int CARD_GRID_COMPACT_GAP_X = 2;
     private static final int CARD_GRID_GAP_Y = 20;
-    private static final int CARD_ID_LABEL_H = 18;
     private static final int CARD_ID_COPY_BUTTON_W = 50;
     private static final int CARD_ID_COPY_BUTTON_H = 18;
     private static final int CARD_ID_COPY_BUTTON_GAP = 6;
@@ -3115,12 +3116,18 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         cardScrollOffset = clampScroll(cardScrollOffset, grid);
         lastCardScrollOffset = cardScrollOffset;
         graphics.enableScissor(grid.viewX(), grid.viewY(), grid.viewX() + grid.viewW(), grid.viewY() + grid.viewH());
+        GridCell selectedCell = null;
         for (int i = firstVisibleIndex(grid); i < Math.min(cards.size(), lastVisibleIndex(grid)); i++) {
             GridCell cell = cell(grid, i);
             DeveloperCardDefinition card = cards.get(i);
             boolean selected = card.id().equals(selectedCardId);
-            renderScaledSmallCard(graphics, card, cell, selected);
-            drawCardGridIdLabel(graphics, MoonSpireCardRegistry.registeredDeveloperId(card.id()), grid, cell, selected);
+            renderScaledSmallCard(graphics, card, cell);
+            if (selected) {
+                selectedCell = cell;
+            }
+        }
+        if (selectedCell != null) {
+            renderScaledSmallCardOutline(graphics, selectedCell);
         }
         graphics.disableScissor();
         renderGridScrollbar(graphics, grid);
@@ -3166,28 +3173,24 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         graphics.pose().popPose();
     }
 
-    private void drawCardGridIdLabel(GuiGraphics graphics, String id, GridLayout grid, GridCell cell, boolean selected) {
-        float minScale = grid.cellW() < CARD_GRID_MIN_CELL_W ? 0.12F : 0.45F;
-        drawCenteredFitted(graphics, id, cell.x(), cell.y() + grid.cellH() + 2, grid.cellW(), CARD_ID_LABEL_H, selected ? 0xFFFFF3BF : 0xFFEDE8FF, minScale);
-    }
-
-    private void renderScaledSmallCard(GuiGraphics graphics, DeveloperCardDefinition card, GridCell cell, boolean selected) {
+    private void renderScaledSmallCard(GuiGraphics graphics, DeveloperCardDefinition card, GridCell cell) {
         float scale = cell.cellW() / (float) CardRenderHelper.SMALL_CARD_WIDTH;
         if (scale >= 0.995F) {
-            CardRenderHelper.renderSmallCard(graphics, font, card.toCardInstance(), cell.x(), cell.y(), selected, false, true, data);
-            if (selected) {
-                renderSelectableCardOutline(graphics, cell.x(), cell.y(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
-            }
+            CardRenderHelper.renderSmallCard(graphics, font, card.toCardInstance(), cell.x(), cell.y(), false, false, true, data);
             return;
         }
         graphics.pose().pushPose();
         graphics.pose().translate(cell.x(), cell.y(), 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
-        CardRenderHelper.renderSmallCard(graphics, font, card.toCardInstance(), 0, 0, selected, false, true, data);
+        CardRenderHelper.renderSmallCard(graphics, font, card.toCardInstance(), 0, 0, false, false, true, data);
         graphics.pose().popPose();
-        if (selected) {
-            renderSelectableCardOutline(graphics, cell.x(), cell.y(), Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale), Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * scale));
-        }
+    }
+
+    private void renderScaledSmallCardOutline(GuiGraphics graphics, GridCell cell) {
+        float scale = cell.cellW() / (float) CardRenderHelper.SMALL_CARD_WIDTH;
+        int cardW = scale >= 0.995F ? CardRenderHelper.SMALL_CARD_WIDTH : Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale);
+        int cardH = scale >= 0.995F ? CardRenderHelper.SMALL_CARD_HEIGHT : Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * scale);
+        renderSelectableCardOutline(graphics, cell.x(), cell.y(), cardW, cardH);
     }
 
     static void renderSelectableCardOutline(GuiGraphics graphics, int x, int y, int w, int h) {
@@ -3899,15 +3902,17 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         GridLayout cardGrid(int itemCount) {
             int scrollReserve = cardListExpanded ? CARD_GRID_COMPACT_SCROLL_RESERVE : CARD_GRID_SCROLL_RESERVE;
             int gapX = cardListExpanded ? CARD_GRID_COMPACT_GAP_X : CARD_GRID_GAP_X;
-            int availableW = Math.max(40, listW - scrollReserve);
+            int viewW = Math.max(1, listW - SCROLLBAR_HIT_WIDTH - 4);
+            int availableW = Math.max(1, Math.min(listW - scrollReserve, viewW) - CARD_GRID_SELECTION_PAD * 2);
             int columns = Math.max(1, Math.min(CARD_GRID_MAX_COLUMNS, (availableW + gapX) / (CardRenderHelper.SMALL_CARD_WIDTH + gapX)));
             if (cardListExpanded && columns < CARD_GRID_EXPANDED_MIN_COLUMNS) {
                 columns = CARD_GRID_EXPANDED_MIN_COLUMNS;
             }
             int minCellW = cardListExpanded ? CARD_GRID_EXPANDED_MIN_CELL_W : CARD_GRID_MIN_CELL_W;
-            int cellW = Math.min(CardRenderHelper.SMALL_CARD_WIDTH, Math.max(minCellW, (availableW - (columns - 1) * gapX) / columns));
+            int maxCellW = cardListExpanded ? CARD_GRID_EXPANDED_MAX_CELL_W : CardRenderHelper.SMALL_CARD_WIDTH;
+            int cellW = Math.min(maxCellW, Math.max(minCellW, (availableW - (columns - 1) * gapX) / columns));
             int cardH = Math.max(1, Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * (cellW / (float) CardRenderHelper.SMALL_CARD_WIDTH)));
-            return grid(ScrollArea.CARDS, listX, listW, cellW, cardH + CARD_ID_LABEL_H + 4, gapX, CARD_GRID_GAP_Y, columns, itemCount, CARD_GRID_PAD_TOP, CARD_ID_LABEL_H + CARD_GRID_PAD_BOTTOM);
+            return grid(ScrollArea.CARDS, listX, listW, cellW, cardH, gapX, CARD_GRID_GAP_Y, columns, itemCount, CARD_GRID_PAD_TOP, CARD_GRID_PAD_BOTTOM);
         }
 
         GridLayout itemGrid(int itemCount) {

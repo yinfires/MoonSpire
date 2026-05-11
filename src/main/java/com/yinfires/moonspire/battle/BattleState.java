@@ -11,6 +11,7 @@ import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
 import com.yinfires.moonspire.developer.DeveloperMonsterInitialEffect;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -54,6 +55,10 @@ public class BattleState {
     private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
     private static final double LUNGE_REACH = 1.35D;
+    private static final double MONSTER_AI_MIN_SCORE = 0.01D;
+    private static final int MONSTER_AI_HIGH_BLOCK_SOFT_CAP = 12;
+    private static final int MONSTER_AI_STATUS_SOFT_CAP = 4;
+    private static final int MONSTER_AI_LONG_STATUS_SOFT_CAP = 6;
 
     private final UUID id = UUID.randomUUID();
     private final ServerPlayer leader;
@@ -668,20 +673,20 @@ public class BattleState {
             return;
         }
         CombatantState enemy = enemyTurnOrder.get(currentEnemyIndex);
-        int index = chooseMonsterCard(enemy);
-        if (index < 0) {
+        MonsterCardChoice choice = chooseMonsterCard(enemy);
+        if (choice == null) {
             currentEnemyIndex++;
             monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
             return;
         }
-        CardInstance card = enemy.deck().peekHand(index);
+        CardInstance card = enemy.deck().peekHand(choice.handIndex());
         if (card == null || !enemy.spendEnergy(card.cost())) {
             currentEnemyIndex++;
             monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
             return;
         }
-        CardInstance used = enemy.deck().useHand(index);
-        CombatantState target = randomAlivePlayer();
+        CardInstance used = enemy.deck().useHand(choice.handIndex());
+        CombatantState target = choice.selectedTarget() == null || choice.selectedTarget().fakeDead() ? firstOpponent(enemy) : choice.selectedTarget();
         if (used == null || target == null) {
             currentEnemyIndex++;
             monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
@@ -697,18 +702,8 @@ public class BattleState {
                 .toList();
     }
 
-    private int chooseMonsterCard(CombatantState monster) {
-        return chooseMonsterCard(
-                monster.deck().hand(),
-                monster.energyLeft(),
-                monster.defense(),
-                monster.battleHealth(),
-                monster.maxBattleHealth());
-    }
-
-    private CardInstance monsterIntent(CombatantState monster) {
-        List<CardInstance> plannedCards = plannedMonsterCards(monster);
-        return plannedCards.isEmpty() ? null : plannedCards.getFirst();
+    private MonsterCardChoice chooseMonsterCard(CombatantState monster) {
+        return chooseMonsterCard(monster, MonsterAiView.live(monster), liveAiViews(alivePlayers()), liveAiViews(aliveEnemies()));
     }
 
     private List<CardInstance> monsterIntentCards(CombatantState monster) {
@@ -724,68 +719,489 @@ public class BattleState {
         }
         List<CardInstance> virtualHand = new ArrayList<>(monster.deck().hand());
         int energyLeft = phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
-        int defense = phase == BattlePhase.PLAYER_TURN ? 0 : monster.defense();
-        float health = monster.battleHealth();
+        MonsterAiView self = MonsterAiView.live(monster).withDefense(phase == BattlePhase.PLAYER_TURN ? 0 : monster.defense());
+        List<MonsterAiView> playerViews = liveAiViews(alivePlayers());
+        List<MonsterAiView> enemyViews = liveAiViews(aliveEnemies());
         List<CardInstance> planned = new ArrayList<>();
-        while (!virtualHand.isEmpty() && health > 0.0F) {
-            int index = chooseMonsterCard(virtualHand, energyLeft, defense, health, monster.maxBattleHealth());
-            if (index < 0) {
+        while (!virtualHand.isEmpty() && self.health() > 0.0F) {
+            MonsterCardChoice choice = chooseMonsterCard(virtualHand, energyLeft, self, playerViews, enemyViews);
+            if (choice == null) {
                 break;
             }
-            CardInstance card = virtualHand.remove(index);
+            CardInstance card = virtualHand.remove(choice.handIndex());
             planned.add(card);
             energyLeft -= Math.max(0, card.cost());
-            defense += Math.max(0, card.selfEffectAmount(CardEffectKind.BLOCK));
+            applyMonsterAiSimulation(card, virtualHand, self, playerViews, enemyViews, choice.selectedEntityId());
         }
         return planned;
     }
 
-    private int chooseMonsterCard(List<CardInstance> hand, int energyLeft, int defense, float health, float maxHealth) {
-        if (defense <= 0 && health < maxHealth * 0.65F) {
-            int defenseIndex = firstAffordableDefense(hand, energyLeft);
-            if (defenseIndex >= 0) {
-                return defenseIndex;
-            }
-        }
-        int attackIndex = firstAffordableAttack(hand, energyLeft);
-        if (attackIndex >= 0) {
-            return attackIndex;
-        }
-        int defenseIndex = firstAffordableDefense(hand, energyLeft);
-        if (defenseIndex >= 0) {
-            return defenseIndex;
-        }
-        return firstAffordableAction(hand, energyLeft);
+    private MonsterCardChoice chooseMonsterCard(CombatantState monster, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        return chooseMonsterCard(monster.deck().hand(), monster.energyLeft(), self, players, enemies);
     }
 
-    private int firstAffordableAttack(List<CardInstance> hand, int energyLeft) {
+    private MonsterCardChoice chooseMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        MonsterCardChoice best = null;
         for (int i = 0; i < hand.size(); i++) {
             CardInstance card = hand.get(i);
-            if (card.hasAttack() && card.cost() <= energyLeft) {
-                return i;
+            if (card.cost() > energyLeft || !card.hasAnyEffect()) {
+                continue;
+            }
+            MonsterCardChoice choice = scoreMonsterCard(i, card, hand, self, players, enemies);
+            if (choice == null || choice.score() <= MONSTER_AI_MIN_SCORE) {
+                continue;
+            }
+            if (best == null || choice.score() > best.score()) {
+                best = choice;
             }
         }
-        return -1;
+        return best;
     }
 
-    private int firstAffordableDefense(List<CardInstance> hand, int energyLeft) {
-        for (int i = 0; i < hand.size(); i++) {
-            CardInstance card = hand.get(i);
-            if (card.hasDefense() && card.cost() <= energyLeft) {
-                return i;
+    private MonsterCardChoice scoreMonsterCard(int handIndex, CardInstance card, List<CardInstance> hand, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        MonsterAiView selectedEnemy = bestExplicitEnemyTarget(card, hand, self, players);
+        MonsterAiView selectedAlly = bestExplicitAllyTarget(card, self, enemies);
+        double score = 0.0D;
+        for (CardEffect effect : card.effects()) {
+            if (effect.amount() <= 0 || !effect.kind().makesCardPlayable()) {
+                continue;
+            }
+            if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
+                score += scoreConsumeArrow(card, hand, effect, self, players, selectedEnemy);
+                continue;
+            }
+            if (effect.kind().isHandSelection()) {
+                score += scoreHandSelection(effect, self);
+                continue;
+            }
+            if (!effect.kind().isResolvedEffect()) {
+                continue;
+            }
+            if (effect.target() == CardTarget.RANDOM_ENEMY || effect.target() == CardTarget.RANDOM_ALLY) {
+                score += scoreRandomTargetEffect(card, effect, self, players, enemies);
+                continue;
+            }
+            for (MonsterAiView target : aiTargetsForEffect(effect, self, players, enemies, selectedEnemy, selectedAlly)) {
+                score += scoreMonsterEffect(card, effect, self, target, players.contains(target));
             }
         }
-        return -1;
+        MonsterAiView selected = selectedEnemy != null ? selectedEnemy : selectedAlly;
+        return score <= MONSTER_AI_MIN_SCORE ? null : new MonsterCardChoice(handIndex, selected == null ? -1 : selected.entityId(), selected == null ? null : selected.state(), score);
     }
 
-    private int firstAffordableAction(List<CardInstance> hand, int energyLeft) {
-        for (int i = 0; i < hand.size(); i++) {
-            CardInstance card = hand.get(i);
-            if (card.hasAnyEffect() && card.cost() <= energyLeft) {
-                return i;
+    private List<MonsterAiView> liveAiViews(List<CombatantState> states) {
+        List<MonsterAiView> views = new ArrayList<>();
+        for (CombatantState state : states) {
+            views.add(MonsterAiView.live(state));
+        }
+        return views;
+    }
+
+    private MonsterAiView bestExplicitEnemyTarget(CardInstance card, List<CardInstance> hand, MonsterAiView self, List<MonsterAiView> players) {
+        if (players.isEmpty() || card.effects().stream().noneMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ENEMY)) {
+            return null;
+        }
+        MonsterAiView best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (MonsterAiView target : players) {
+            double score = targetPriority(target);
+            for (CardEffect effect : card.effects()) {
+                if (effect.amount() <= 0 || !effect.kind().usesTarget() || effect.target() != CardTarget.SINGLE_ENEMY) {
+                    continue;
+                }
+                if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
+                    score += scoreConsumeArrowTarget(card, hand, effect, self, target);
+                } else {
+                    score += effectTargetPriority(card, effect.kind(), effect.amount(), Math.max(1, effect.count()), self, target);
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = target;
             }
         }
-        return -1;
+        return best;
+    }
+
+    private MonsterAiView bestExplicitAllyTarget(CardInstance card, MonsterAiView self, List<MonsterAiView> enemies) {
+        if (card.effects().stream().noneMatch(effect -> effect.amount() > 0 && effect.kind().usesTarget() && effect.target() == CardTarget.SINGLE_ALLY)) {
+            return null;
+        }
+        MonsterAiView best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (MonsterAiView target : enemies) {
+            if (target.entityId() == self.entityId()) {
+                continue;
+            }
+            double score = allyPriority(target);
+            for (CardEffect effect : card.effects()) {
+                if (effect.amount() <= 0 || !effect.kind().usesTarget() || effect.target() != CardTarget.SINGLE_ALLY) {
+                    continue;
+                }
+                score += scoreMonsterEffect(card, effect, self, target, false);
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = target;
+            }
+        }
+        return best;
+    }
+
+    private List<MonsterAiView> aiTargetsForEffect(CardEffect effect, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies, MonsterAiView selectedEnemy, MonsterAiView selectedAlly) {
+        if (!effect.kind().usesTarget()) {
+            return List.of();
+        }
+        return switch (effect.target()) {
+            case SELF -> List.of(self);
+            case SINGLE_ENEMY -> selectedEnemy == null ? List.of() : List.of(selectedEnemy);
+            case SINGLE_ALLY -> selectedAlly == null ? List.of() : List.of(selectedAlly);
+            case ALL_ENEMIES -> players;
+            case ALL_ALLIES -> enemies;
+            case ALL_UNITS -> concatAiViews(players, enemies);
+            case ALL_OTHER_UNITS -> concatAiViews(players, enemies).stream().filter(target -> target.entityId() != self.entityId()).toList();
+            case ALL_OTHER_ALLIES -> enemies.stream().filter(target -> target.entityId() != self.entityId()).toList();
+            case RANDOM_ENEMY -> singletonAiView(bestEnemyTarget(players, self, effect.amount()));
+            case RANDOM_ALLY -> singletonAiView(bestRandomAllyTarget(enemies, self, effect));
+        };
+    }
+
+    private List<MonsterAiView> singletonAiView(MonsterAiView view) {
+        return view == null ? List.of() : List.of(view);
+    }
+
+    private List<MonsterAiView> concatAiViews(List<MonsterAiView> first, List<MonsterAiView> second) {
+        List<MonsterAiView> result = new ArrayList<>(first.size() + second.size());
+        result.addAll(first);
+        result.addAll(second);
+        return result;
+    }
+
+    private MonsterAiView bestEnemyTarget(List<MonsterAiView> players, MonsterAiView self, int baseDamage) {
+        MonsterAiView best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (MonsterAiView target : players) {
+            double score = targetPriority(target);
+            if (baseDamage > 0) {
+                score += directDamageAmount(baseDamage, self, target, false) * 4.0D;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = target;
+            }
+        }
+        return best;
+    }
+
+    private MonsterAiView bestRandomAllyTarget(List<MonsterAiView> enemies, MonsterAiView self, CardEffect effect) {
+        MonsterAiView best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (MonsterAiView target : enemies) {
+            if (target.entityId() == self.entityId()) {
+                continue;
+            }
+            double score = allyPriority(target) + scoreMonsterEffect(null, effect, self, target, false);
+            if (score > bestScore) {
+                bestScore = score;
+                best = target;
+            }
+        }
+        return best;
+    }
+
+    private double scoreMonsterEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target) {
+        int totalAmount = effect.amount() * Math.max(1, effect.count());
+        return switch (effect.kind()) {
+            case DAMAGE -> scoreDamage(card, totalAmount, self, target);
+            case BLOCK -> scoreBlock(totalAmount, target);
+            case HEAL -> scoreHeal(totalAmount, target);
+            case BLEED -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BLEED, 2.2D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case GLOWING -> scoreNegativeStatus(totalAmount, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
+            case GUARD -> scorePositiveStatus(totalAmount, target, BattleEffectType.GUARD, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
+            case STRENGTH -> scorePositiveStatus(totalAmount, target, BattleEffectType.STRENGTH, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
+            case LOSE_STRENGTH -> scoreLoseStrength(totalAmount, target);
+            case REGENERATION -> scorePositiveStatus(totalAmount, target, BattleEffectType.REGENERATION, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case HASTE -> scorePositiveStatus(totalAmount, target, BattleEffectType.HASTE, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
+            case POISON -> scoreNegativeStatus(totalAmount, target, BattleEffectType.POISON, 2.8D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case BURN -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case WEAKNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
+            case SLOWNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.SLOWNESS, 2.6D, MONSTER_AI_STATUS_SOFT_CAP);
+            case DRAW_CARDS -> Math.max(0, totalAmount) * 1.6D;
+            case GAIN_ENERGY -> Math.max(0, totalAmount) * 2.0D;
+            default -> 0.0D;
+        };
+    }
+
+    private double scoreMonsterEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target, boolean targetIsPlayer) {
+        double score = scoreMonsterEffect(card, effect, self, target);
+        if (harmfulMonsterEffect(effect.kind())) {
+            return targetIsPlayer ? score : -score;
+        }
+        if (helpfulMonsterEffect(effect.kind())) {
+            return targetIsPlayer ? -score : score;
+        }
+        return score;
+    }
+
+    private double scoreRandomTargetEffect(CardInstance card, CardEffect effect, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        List<MonsterAiView> candidates = effect.target() == CardTarget.RANDOM_ENEMY
+                ? players
+                : enemies.stream().filter(target -> target.entityId() != self.entityId()).toList();
+        if (candidates.isEmpty()) {
+            return 0.0D;
+        }
+        double total = 0.0D;
+        for (MonsterAiView target : candidates) {
+            total += scoreMonsterEffect(card, effect, self, target, players.contains(target));
+        }
+        return total / candidates.size();
+    }
+
+    private double scoreDamage(CardInstance card, int amount, MonsterAiView self, MonsterAiView target) {
+        boolean remote = card != null && card.hasEffect(CardEffectKind.REMOTE);
+        int damage = directDamageAmount(amount, self, target, remote);
+        int healthDamage = Math.max(0, damage - target.defense());
+        double score = damage * 3.0D + healthDamage * 5.0D + targetPriority(target);
+        if (healthDamage >= target.health()) {
+            score += 120.0D;
+        }
+        return score;
+    }
+
+    private double scoreConsumeArrow(CardInstance card, List<CardInstance> hand, CardEffect effect, MonsterAiView self, List<MonsterAiView> players, MonsterAiView selectedEnemy) {
+        int damage = consumeArrowDamage(card, hand, effect);
+        if (damage <= 0) {
+            return 0.0D;
+        }
+        MonsterAiView target = selectedEnemy == null ? bestEnemyTarget(players, self, damage) : selectedEnemy;
+        return target == null ? 0.0D : scoreConsumeArrowTarget(card, hand, effect, self, target);
+    }
+
+    private double scoreConsumeArrowTarget(CardInstance card, List<CardInstance> hand, CardEffect effect, MonsterAiView self, MonsterAiView target) {
+        CardInstance arrow = firstArrowInHand(card, hand);
+        if (arrow == null) {
+            return 0.0D;
+        }
+        double score = scoreDamage(card, consumeArrowDamage(card, hand, effect), self, target);
+        for (CardEffect arrowEffect : arrow.effects()) {
+            if (arrowEffect.kind() == CardEffectKind.GLOWING && arrowEffect.amount() > 0) {
+                score += scoreMonsterEffect(card, arrowEffect, self, target, true);
+            }
+        }
+        return score;
+    }
+
+    private int consumeArrowDamage(CardInstance card, List<CardInstance> hand, CardEffect effect) {
+        CardInstance arrow = firstArrowInHand(card, hand);
+        if (arrow == null) {
+            return 0;
+        }
+        int amount = Math.max(0, effect.amount());
+        for (CardEffect arrowEffect : arrow.effects()) {
+            if (arrowEffect.kind() == CardEffectKind.DAMAGE && arrowEffect.target().targetsEnemy()) {
+                amount += Math.max(0, arrowEffect.amount()) * Math.max(1, arrowEffect.count());
+            }
+        }
+        return amount;
+    }
+
+    private CardInstance firstArrowInHand(CardInstance card, List<CardInstance> hand) {
+        if (card == null) {
+            return null;
+        }
+        for (CardInstance candidate : hand) {
+            if (candidate != card && candidate.hasEffect(CardEffectKind.ARROW)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private double scoreHandSelection(CardEffect effect, MonsterAiView self) {
+        return effect.target().targetsSelf() ? Math.max(0, effect.amount()) * 0.25D + (self.healthRatio() < 0.45D ? -2.0D : 0.0D) : 0.0D;
+    }
+
+    private double scoreBlock(int amount, MonsterAiView target) {
+        int block = Math.max(0, amount);
+        if (block <= 0) {
+            return 0.0D;
+        }
+        double missingHealthRatio = 1.0D - target.healthRatio();
+        double urgency = target.defense() <= 0 ? 1.4D : 1.0D;
+        if (target.healthRatio() < 0.35D) {
+            urgency += 1.0D;
+        } else if (target.healthRatio() < 0.65D) {
+            urgency += 0.45D;
+        }
+        double wastePenalty = Math.max(0, target.defense() - MONSTER_AI_HIGH_BLOCK_SOFT_CAP) * 0.7D;
+        return Math.max(0.0D, block * (2.2D + missingHealthRatio * 3.0D) * urgency - wastePenalty);
+    }
+
+    private double scoreHeal(int amount, MonsterAiView target) {
+        float missing = Math.max(0.0F, target.maxHealth() - target.health());
+        double healed = Math.min(Math.max(0, amount), missing);
+        if (healed <= 0.0D) {
+            return 0.0D;
+        }
+        return healed * (3.0D + (1.0D - target.healthRatio()) * 4.0D);
+    }
+
+    private double scorePositiveStatus(int amount, MonsterAiView target, BattleEffectType type, double weight, int softCap) {
+        int current = Math.max(0, target.effectAmount(type));
+        double need = Math.max(0.15D, 1.0D - current / (double) Math.max(1, softCap));
+        double healthFactor = type == BattleEffectType.GUARD || type == BattleEffectType.REGENERATION ? 1.0D + (1.0D - target.healthRatio()) : 1.0D;
+        return Math.max(0, amount) * weight * need * healthFactor;
+    }
+
+    private double scoreNegativeStatus(int amount, MonsterAiView target, BattleEffectType type, double weight, int softCap) {
+        int current = Math.max(0, target.effectAmount(type));
+        double need = Math.max(0.15D, 1.0D - current / (double) Math.max(1, softCap));
+        double pressure = 1.0D + (1.0D - target.healthRatio()) * 0.65D + Math.min(4, target.effectAmount(BattleEffectType.GLOWING)) * 0.08D;
+        return Math.max(0, amount) * weight * need * pressure + targetPriority(target) * 0.2D;
+    }
+
+    private double scoreLoseStrength(int amount, MonsterAiView target) {
+        int current = target.effectAmount(BattleEffectType.STRENGTH);
+        double value = current > 0 ? 4.0D : 2.0D;
+        return Math.max(0, amount) * value * (1.0D + Math.max(0, current) * 0.2D);
+    }
+
+    private double effectTargetPriority(CardInstance card, CardEffectKind kind, int amount, int count, MonsterAiView self, MonsterAiView target) {
+        if (kind == CardEffectKind.DAMAGE || kind == CardEffectKind.CONSUME_ARROW) {
+            return scoreDamage(card, amount * count, self, target);
+        }
+        if (kind == CardEffectKind.BLEED) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.BLEED, 2.2D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.GLOWING) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.LOSE_STRENGTH) {
+            return scoreLoseStrength(amount * count, target);
+        }
+        if (kind == CardEffectKind.POISON) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.POISON, 2.8D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.BURN) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.WEAKNESS) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.SLOWNESS) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.SLOWNESS, 2.6D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
+        return targetPriority(target);
+    }
+
+    private boolean harmfulMonsterEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.DAMAGE
+                || kind == CardEffectKind.CONSUME_ARROW
+                || kind == CardEffectKind.BLEED
+                || kind == CardEffectKind.GLOWING
+                || kind == CardEffectKind.LOSE_STRENGTH
+                || kind == CardEffectKind.POISON
+                || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WEAKNESS
+                || kind == CardEffectKind.SLOWNESS;
+    }
+
+    private boolean helpfulMonsterEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.BLOCK
+                || kind == CardEffectKind.HEAL
+                || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.STRENGTH
+                || kind == CardEffectKind.REGENERATION
+                || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.DRAW_CARDS
+                || kind == CardEffectKind.GAIN_ENERGY;
+    }
+
+    private int directDamageAmount(int amount, MonsterAiView attacker, MonsterAiView defender, boolean remote) {
+        int incoming = Math.max(0, amount + attacker.effectAmount(BattleEffectType.STRENGTH));
+        return BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), defender.effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0, remote, defender.effectAmount(BattleEffectType.GLOWING) > 0);
+    }
+
+    private double targetPriority(MonsterAiView target) {
+        return Math.max(0, target.effectAmount(BattleEffectType.GLOWING)) * 8.0D
+                + (1.0D - target.healthRatio()) * 28.0D
+                + Math.max(0, 10 - target.defense()) * 0.7D;
+    }
+
+    private double allyPriority(MonsterAiView target) {
+        return (1.0D - target.healthRatio()) * 24.0D
+                + Math.max(0, MONSTER_AI_HIGH_BLOCK_SOFT_CAP - target.defense()) * 0.5D;
+    }
+
+    private void applyMonsterAiSimulation(CardInstance card, List<CardInstance> hand, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies, int selectedEntityId) {
+        MonsterAiView selectedTarget = selectedEntityId < 0 ? null : findAiView(players, selectedEntityId);
+        if (selectedTarget == null && selectedEntityId >= 0) {
+            selectedTarget = findAiView(enemies, selectedEntityId);
+        }
+        for (CardEffect effect : card.effects()) {
+            if (effect.amount() <= 0 || !effect.kind().makesCardPlayable()) {
+                continue;
+            }
+            if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
+                CardInstance arrow = firstArrowInHand(card, hand);
+                if (selectedTarget != null) {
+                    int arrowDamage = consumeArrowDamage(card, hand, effect);
+                    if (arrowDamage > 0) {
+                        applyMonsterAiEffect(card, new CardEffect(CardEffectKind.DAMAGE, arrowDamage, CardTarget.SINGLE_ENEMY), self, selectedTarget);
+                    }
+                    if (arrow != null) {
+                        for (CardEffect arrowEffect : arrow.effects()) {
+                            if (arrowEffect.kind() == CardEffectKind.GLOWING && arrowEffect.amount() > 0) {
+                                applyMonsterAiEffect(card, arrowEffect, self, selectedTarget);
+                            }
+                        }
+                    }
+                }
+                if (arrow != null) {
+                    hand.remove(arrow);
+                }
+                continue;
+            }
+            if (!effect.kind().isResolvedEffect()) {
+                continue;
+            }
+            MonsterAiView selectedEnemy = selectedTarget != null && players.contains(selectedTarget) ? selectedTarget : bestExplicitEnemyTarget(card, hand, self, players);
+            MonsterAiView selectedAlly = selectedTarget != null && enemies.contains(selectedTarget) ? selectedTarget : bestExplicitAllyTarget(card, self, enemies);
+            for (MonsterAiView target : aiTargetsForEffect(effect, self, players, enemies, selectedEnemy, selectedAlly)) {
+                applyMonsterAiEffect(card, effect, self, target);
+            }
+        }
+    }
+
+    private MonsterAiView findAiView(List<MonsterAiView> views, int entityId) {
+        for (MonsterAiView view : views) {
+            if (view.entityId() == entityId) {
+                return view;
+            }
+        }
+        return null;
+    }
+
+    private void applyMonsterAiEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target) {
+        int amount = effect.amount() * Math.max(1, effect.count());
+        switch (effect.kind()) {
+            case DAMAGE -> target.takeDamage(directDamageAmount(amount, self, target, card.hasEffect(CardEffectKind.REMOTE)));
+            case BLOCK -> target.addDefense(amount);
+            case HEAL -> target.heal(amount);
+            case BLEED -> target.addEffect(BattleEffectType.BLEED, amount);
+            case GLOWING -> target.addEffect(BattleEffectType.GLOWING, amount);
+            case GUARD -> target.addEffect(BattleEffectType.GUARD, amount);
+            case STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, amount);
+            case LOSE_STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, -amount);
+            case REGENERATION -> target.addEffect(BattleEffectType.REGENERATION, amount);
+            case HASTE -> target.addEffect(BattleEffectType.HASTE, amount);
+            case POISON -> target.addEffect(BattleEffectType.POISON, amount);
+            case BURN -> target.addEffect(BattleEffectType.BURN, amount);
+            case WEAKNESS -> target.addEffect(BattleEffectType.WEAKNESS, amount);
+            case SLOWNESS -> target.addEffect(BattleEffectType.SLOWNESS, amount);
+            default -> {
+            }
+        }
     }
 
     private boolean canUseCard(CombatantState user, CardInstance card) {
@@ -1820,6 +2236,106 @@ public class BattleState {
     private record PendingHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, int requiredCount, List<UUID> candidateIds, ArrowResolution arrowResolution) {
         private PendingHandSelection {
             candidateIds = List.copyOf(candidateIds);
+        }
+    }
+
+    private record MonsterCardChoice(int handIndex, int selectedEntityId, CombatantState selectedTarget, double score) {
+    }
+
+    private static final class MonsterAiView {
+        private final CombatantState state;
+        private final int entityId;
+        private final float maxHealth;
+        private float health;
+        private int defense;
+        private int roundSpeed;
+        private final Map<BattleEffectType, Integer> effects;
+
+        private MonsterAiView(CombatantState state, int entityId, float health, float maxHealth, int defense, int roundSpeed, Map<BattleEffectType, Integer> effects) {
+            this.state = state;
+            this.entityId = entityId;
+            this.health = Math.max(0.0F, health);
+            this.maxHealth = Math.max(1.0F, maxHealth);
+            this.defense = Math.max(0, defense);
+            this.roundSpeed = Math.max(1, roundSpeed);
+            this.effects = new EnumMap<>(BattleEffectType.class);
+            this.effects.putAll(effects);
+        }
+
+        private static MonsterAiView live(CombatantState state) {
+            Map<BattleEffectType, Integer> effects = new EnumMap<>(BattleEffectType.class);
+            for (BattleEffectType type : BattleEffectType.values()) {
+                int amount = state.effectAmount(type);
+                if (amount != 0) {
+                    effects.put(type, amount);
+                }
+            }
+            return new MonsterAiView(state, state.entity().getId(), state.battleHealth(), state.maxBattleHealth(), state.defense(), state.roundSpeed(), effects);
+        }
+
+        private MonsterAiView withDefense(int defense) {
+            return new MonsterAiView(state, entityId, health, maxHealth, defense, roundSpeed, effects);
+        }
+
+        private CombatantState state() {
+            return state;
+        }
+
+        private int entityId() {
+            return entityId;
+        }
+
+        private float health() {
+            return health;
+        }
+
+        private float maxHealth() {
+            return maxHealth;
+        }
+
+        private double healthRatio() {
+            return Math.max(0.0D, Math.min(1.0D, health / maxHealth));
+        }
+
+        private int defense() {
+            return defense;
+        }
+
+        private int roundSpeed() {
+            return Math.max(1, roundSpeed + effectAmount(BattleEffectType.HASTE) - effectAmount(BattleEffectType.SLOWNESS));
+        }
+
+        private int effectAmount(BattleEffectType type) {
+            return effects.getOrDefault(type, 0);
+        }
+
+        private void addDefense(int amount) {
+            defense += Math.max(0, amount);
+        }
+
+        private void heal(int amount) {
+            health = Math.min(maxHealth, health + Math.max(0, amount));
+        }
+
+        private void takeDamage(int amount) {
+            int incoming = Math.max(0, amount);
+            int blocked = Math.min(defense, incoming);
+            defense -= blocked;
+            health = Math.max(0.0F, health - Math.max(0, incoming - blocked));
+        }
+
+        private void addEffect(BattleEffectType type, int amount) {
+            if (type == null || (!type.allowsNegativeStacks() && amount <= 0) || (type.allowsNegativeStacks() && amount == 0)) {
+                return;
+            }
+            int next = effects.getOrDefault(type, 0) + amount;
+            if (next == 0) {
+                effects.remove(type);
+            } else if (type.allowsNegativeStacks() || next > 0) {
+                effects.put(type, next);
+            } else {
+                effects.remove(type);
+            }
         }
     }
 

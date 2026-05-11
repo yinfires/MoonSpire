@@ -12,6 +12,31 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 
 public final class MonsterDeckProfile {
+    private static final List<String> ZOMBIE_DEFAULT_DECK = List.of(
+            "builtin_monster_claw",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_lunge",
+            "builtin_monster_claw",
+            "builtin_monster_rotten_guard");
+    private static final List<String> SKELETON_DEFAULT_DECK = List.of(
+            "builtin_monster_bone_shot",
+            "builtin_monster_sidestep",
+            "builtin_monster_aimed_volley",
+            "builtin_monster_bone_shot",
+            "builtin_monster_sidestep");
+    private static final List<String> SPIDER_DEFAULT_DECK = List.of(
+            "builtin_monster_pounce",
+            "builtin_monster_skitter",
+            "builtin_monster_bite",
+            "builtin_monster_pounce",
+            "builtin_monster_skitter");
+    private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
+            "builtin_monster_strike",
+            "builtin_monster_guard",
+            "builtin_monster_heavy_strike",
+            "builtin_monster_strike",
+            "builtin_monster_guard");
+
     private MonsterDeckProfile() {
     }
 
@@ -42,28 +67,13 @@ public final class MonsterDeckProfile {
     public static List<CardInstance> createDefaultDeck(LivingEntity monster) {
         EntityType<?> type = monster.getType();
         if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
-            return cards(
-                    card("builtin_monster_claw"),
-                    card("builtin_monster_rotten_guard"),
-                    card("builtin_monster_lunge"),
-                    card("builtin_monster_claw"),
-                    card("builtin_monster_rotten_guard"));
+            return cards(ZOMBIE_DEFAULT_DECK);
         }
         if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
-            return cards(
-                    card("builtin_monster_bone_shot"),
-                    card("builtin_monster_sidestep"),
-                    card("builtin_monster_aimed_volley"),
-                    card("builtin_monster_bone_shot"),
-                    card("builtin_monster_sidestep"));
+            return cards(SKELETON_DEFAULT_DECK);
         }
         if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
-            return cards(
-                    card("builtin_monster_pounce"),
-                    card("builtin_monster_skitter"),
-                    card("builtin_monster_bite"),
-                    card("builtin_monster_pounce"),
-                    card("builtin_monster_skitter"));
+            return cards(SPIDER_DEFAULT_DECK);
         }
         return fallback(monster);
     }
@@ -73,26 +83,26 @@ public final class MonsterDeckProfile {
             return List.of();
         }
         if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
-            return List.of("builtin_monster_claw", "builtin_monster_rotten_guard", "builtin_monster_lunge", "builtin_monster_claw", "builtin_monster_rotten_guard");
+            return ZOMBIE_DEFAULT_DECK;
         }
         if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
-            return List.of("builtin_monster_bone_shot", "builtin_monster_sidestep", "builtin_monster_aimed_volley", "builtin_monster_bone_shot", "builtin_monster_sidestep");
+            return SKELETON_DEFAULT_DECK;
         }
         if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
-            return List.of("builtin_monster_pounce", "builtin_monster_skitter", "builtin_monster_bite", "builtin_monster_pounce", "builtin_monster_skitter");
+            return SPIDER_DEFAULT_DECK;
         }
-        return List.of("builtin_monster_strike", "builtin_monster_guard", "builtin_monster_heavy_strike", "builtin_monster_strike", "builtin_monster_guard");
+        return FALLBACK_DEFAULT_DECK;
     }
 
     private static List<CardInstance> fallback(LivingEntity monster) {
         int attack = Math.max(3, (int) Math.ceil(monster.getAttributeValue(Attributes.ATTACK_DAMAGE)));
         int defense = Math.max(2, monster.getArmorValue());
-        return cards(
+        return copyAll(List.of(
                 card("builtin_monster_strike", attack, 0, attack >= 8 ? 2 : 1),
                 card("builtin_monster_guard", 0, defense, 1),
                 card("builtin_monster_heavy_strike", attack + 3, 0, 2),
                 card("builtin_monster_strike", attack, 0, attack >= 8 ? 2 : 1),
-                card("builtin_monster_guard", 0, defense, 1));
+                card("builtin_monster_guard", 0, defense, 1)));
     }
 
     private static CardInstance card(String id) {
@@ -105,13 +115,11 @@ public final class MonsterDeckProfile {
                 .orElseThrow(() -> new IllegalStateException("Missing Moon Spire card: " + id));
     }
 
-    private static List<CardInstance> cards(CardInstance first, CardInstance second, CardInstance third, CardInstance fourth, CardInstance fifth) {
+    private static List<CardInstance> cards(List<String> ids) {
         List<CardInstance> cards = new ArrayList<>();
-        cards.add(first.copyForBattle());
-        cards.add(second.copyForBattle());
-        cards.add(third.copyForBattle());
-        cards.add(fourth.copyForBattle());
-        cards.add(fifth.copyForBattle());
+        for (String id : ids) {
+            cards.add(card(id).copyForBattle());
+        }
         return cards;
     }
 
