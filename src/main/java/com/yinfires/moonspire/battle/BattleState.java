@@ -75,6 +75,8 @@ public class BattleState {
     private boolean started;
     private boolean endingAfterAnimations;
     private int syncCooldownTicks;
+    private String lastSuppressedSyncReason = "";
+    private int suppressedSyncLogTicks;
     private boolean syncDirty = true;
     private long snapshotSequence;
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
@@ -366,14 +368,14 @@ public class BattleState {
         long handNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - handStart : 0L;
         long monsterStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         List<CardInstance> monsterHand = firstEnemy == null ? List.of() : List.copyOf(firstEnemy.deck().hand());
-        CardInstance monsterIntent = firstEnemy == null ? null : monsterIntent(firstEnemy);
         List<CardInstance> monsterIntentCards = firstEnemy == null ? List.of() : monsterIntentCards(firstEnemy);
+        CardInstance monsterIntent = monsterIntentCards.isEmpty() ? null : monsterIntentCards.getFirst();
         long monsterNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - monsterStart : 0L;
         long enemyIntentsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
-        List<BattleEnemyIntentSnapshot> enemyIntents = enemyIntentSnapshots();
+        List<BattleEnemyIntentSnapshot> enemyIntents = enemyIntentSnapshots(firstEnemy);
         long enemyIntentsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - enemyIntentsStart : 0L;
         long entityHandsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
-        List<BattleEntityCardsSnapshot> entityHands = entityHandSnapshots();
+        List<BattleEntityCardsSnapshot> entityHands = entityHandSnapshots(local, firstEnemy);
         long entityHandsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - entityHandsStart : 0L;
         BattleSnapshot snapshot = new BattleSnapshot(
                 id,
@@ -510,15 +512,24 @@ public class BattleState {
     }
 
     private void logSyncReason(String reason) {
+        lastSuppressedSyncReason = "";
+        suppressedSyncLogTicks = 0;
         if (MoonSpirePerfDiagnostics.enabled()) {
             MoonSpirePerfDiagnostics.log("server.battle.shouldSync", "battleId=" + id + " sequence=" + snapshotSequence + " reason=" + reason);
         }
     }
 
     private void logSyncSuppressed(String reason) {
-        if (MoonSpirePerfDiagnostics.enabled()) {
-            MoonSpirePerfDiagnostics.log("server.battle.shouldSync", "battleId=" + id + " sequence=" + snapshotSequence + " reason=pending-suppressed detail=" + reason);
+        if (!MoonSpirePerfDiagnostics.enabled()) {
+            return;
         }
+        suppressedSyncLogTicks++;
+        if (reason.equals(lastSuppressedSyncReason) && suppressedSyncLogTicks < IDLE_SYNC_HEARTBEAT_TICKS) {
+            return;
+        }
+        lastSuppressedSyncReason = reason;
+        suppressedSyncLogTicks = 0;
+        MoonSpirePerfDiagnostics.log("server.battle.shouldSync", "battleId=" + id + " sequence=" + snapshotSequence + " reason=pending-suppressed detail=" + reason);
     }
 
     private void markDirty() {
@@ -528,6 +539,8 @@ public class BattleState {
     public void clearSyncDirty() {
         syncDirty = false;
         syncCooldownTicks = 0;
+        lastSuppressedSyncReason = "";
+        suppressedSyncLogTicks = 0;
     }
 
     public void clearPendingVisualEvents() {
@@ -1620,20 +1633,29 @@ public class BattleState {
         return enemyStates.stream().map(CombatantState::snapshot).toList();
     }
 
-    private List<BattleEnemyIntentSnapshot> enemyIntentSnapshots() {
+    private List<BattleEnemyIntentSnapshot> enemyIntentSnapshots(CombatantState firstEnemy) {
         List<BattleEnemyIntentSnapshot> snapshots = new ArrayList<>();
         for (CombatantState enemy : enemyStates) {
+            if (enemy == firstEnemy) {
+                continue;
+            }
             snapshots.add(new BattleEnemyIntentSnapshot(enemy.entity().getId(), monsterIntentCards(enemy)));
         }
         return snapshots;
     }
 
-    private List<BattleEntityCardsSnapshot> entityHandSnapshots() {
+    private List<BattleEntityCardsSnapshot> entityHandSnapshots(CombatantState local, CombatantState firstEnemy) {
         List<BattleEntityCardsSnapshot> snapshots = new ArrayList<>();
         for (CombatantState player : playerStates) {
+            if (player == local) {
+                continue;
+            }
             snapshots.add(new BattleEntityCardsSnapshot(player.entity().getId(), List.copyOf(player.deck().hand())));
         }
         for (CombatantState enemy : enemyStates) {
+            if (enemy == firstEnemy) {
+                continue;
+            }
             snapshots.add(new BattleEntityCardsSnapshot(enemy.entity().getId(), List.copyOf(enemy.deck().hand())));
         }
         return snapshots;

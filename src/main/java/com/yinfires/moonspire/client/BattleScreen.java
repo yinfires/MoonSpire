@@ -130,7 +130,26 @@ public class BattleScreen extends NoBlurScreen {
     private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
     private PileRequestKey requestedPileKey;
     private PileRequestKey displayedPileKey;
+    private PileRequestKey stablePileUpdateKey;
+    private int stablePileDisplayCount = -1;
     private int pileOverlayPerfFrameIndex;
+    private final Map<CardValueCacheKey, CardRenderHelper.CardValues> frameCardValues = new HashMap<>();
+    private long frameCardValuesIndex = -1L;
+    private long battleRenderPerfStart;
+    private long battleRenderSnapshotNanos;
+    private long battleRenderEntriesNanos;
+    private long battleRenderIntentNanos;
+    private long battleRenderBottomNanos;
+    private long battleRenderBottomEnergyNanos;
+    private long battleRenderBottomMasksNanos;
+    private long battleRenderBottomPilesNanos;
+    private long battleRenderBottomEndTurnNanos;
+    private long battleRenderBottomFlushNanos;
+    private long battleRenderBottomHandNanos;
+    private long battleRenderFlyingNanos;
+    private long battleRenderDraggedNanos;
+    private long battleRenderMonsterPlayedNanos;
+    private long battleRenderOtherNanos;
 
     public BattleScreen() {
         super(Component.translatable("screen.moonspire.battle"));
@@ -147,6 +166,7 @@ public class BattleScreen extends NoBlurScreen {
         }
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
             currentFrameTicks = animationFrameTicks();
+            beginBattleRenderPerf();
             if (syncedSnapshotVersion != ClientBattleState.snapshotVersion()) {
                 syncSnapshotAnimations(snapshot);
                 syncedSnapshotVersion = ClientBattleState.snapshotVersion();
@@ -157,7 +177,7 @@ public class BattleScreen extends NoBlurScreen {
             boolean handSelectionWaiting = handSelectionConfirmation.active();
             boolean handSelectionModalActive = handSelectionActive && !handSelectionWaiting;
             boolean modalInputBlocked = pileModalActive || handSelectionModalActive || handSelectionWaiting;
-            frameCache = createFrameCache(snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY, partialTick);
+            frameCache = modalInputBlocked ? FrameCache.empty() : createFrameCache(snapshot, mouseX, mouseY, partialTick);
             if (pileModalActive || handSelectionModalActive) {
                 dragState = null;
                 rotatingCamera = false;
@@ -169,7 +189,7 @@ public class BattleScreen extends NoBlurScreen {
                 hoveredMonsterIntentEntityId = -1;
                 monsterIntentPreview.clear();
                 ClientBattleState.setHoveredEntityId(-1);
-                renderModalBackground(graphics, snapshot, partialTick);
+                renderModalBackground(graphics, snapshot, partialTick, pileModalActive);
                 if (pileModalActive) {
                     renderPileOverlay(graphics, mouseX, mouseY);
                 } else {
@@ -193,26 +213,40 @@ public class BattleScreen extends NoBlurScreen {
                 ClientBattleState.setHoveredEntityId(hoveredTarget);
             }
             renderBattleBase(graphics, snapshot, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseX, modalInputBlocked ? MoonSpireModalLayer.BLOCKED_MOUSE : mouseY, partialTick, handSelectionWaiting);
+            finishBattleRenderPerf(snapshot);
         }
     }
 
     private void renderBattleBase(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean modalBackground) {
+        long segmentStart = perfStart();
         boolean hideBaseForLocalHandSelection = modalBackground && handSelectionConfirmation.active();
         if (!hideBaseForLocalHandSelection) {
             renderEntries(graphics, snapshot, mouseX, mouseY);
         }
+        battleRenderEntriesNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         if (!modalBackground && shouldRenderMonsterIntent(snapshot, mouseX, mouseY)) {
             renderMonsterIntent(graphics, snapshot, mouseX, mouseY);
         } else {
             hoveredMonsterIntentIndex = -1;
             monsterIntentPreview.clear();
         }
+        battleRenderIntentNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         renderBottomBar(graphics, snapshot, mouseX, mouseY, partialTick, !snapshot.pendingHandSelection().active() || handSelectionConfirmation.active());
+        battleRenderBottomNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         renderFlyingCards(graphics, snapshot, partialTick, modalBackground);
+        battleRenderFlyingNanos += elapsedPerf(segmentStart);
         if (!hideBaseForLocalHandSelection) {
+            segmentStart = perfStart();
             renderDraggedCard(graphics, snapshot, mouseX, mouseY, partialTick);
+            battleRenderDraggedNanos += elapsedPerf(segmentStart);
+            segmentStart = perfStart();
             renderMonsterPlayedCard(graphics, snapshot, modalBackground);
+            battleRenderMonsterPlayedNanos += elapsedPerf(segmentStart);
         }
+        segmentStart = perfStart();
         renderTurnBanner(graphics, partialTick);
         MoonSpireBattleLayoutEditor.render(graphics, font, width, height, mouseX, mouseY);
         renderWidgets(graphics, mouseX, mouseY, partialTick);
@@ -220,14 +254,19 @@ public class BattleScreen extends NoBlurScreen {
             renderExhaustTooltip(graphics, snapshot, mouseX, mouseY);
             renderHudTooltip(graphics, snapshot, mouseX, mouseY);
         }
+        battleRenderOtherNanos += elapsedPerf(segmentStart);
     }
 
-    private void renderModalBackground(GuiGraphics graphics, BattleSnapshot snapshot, float partialTick) {
+    private void renderModalBackground(GuiGraphics graphics, BattleSnapshot snapshot, float partialTick, boolean lightweight) {
         renderEntries(graphics, snapshot, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE);
         renderBottomBar(graphics, snapshot, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick, false);
-        renderMonsterPlayedCard(graphics, snapshot, true);
+        if (!lightweight) {
+            renderMonsterPlayedCard(graphics, snapshot, true);
+        }
         renderTurnBanner(graphics, partialTick);
-        renderWidgets(graphics, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick);
+        if (!lightweight) {
+            renderWidgets(graphics, MoonSpireModalLayer.BLOCKED_MOUSE, MoonSpireModalLayer.BLOCKED_MOUSE, partialTick);
+        }
     }
 
     @Override
@@ -726,15 +765,27 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderBottomBar(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean renderHand) {
+        long segmentStart = perfStart();
         renderEnergy(graphics, layout().resolve("energy", width, height), snapshot);
+        battleRenderBottomEnergyNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         List<ScreenRect> handMasks = renderHand ? handOcclusionMasks(snapshot, mouseX, mouseY, partialTick) : List.of();
+        battleRenderBottomMasksNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         renderPile(graphics, layout().resolve("draw_pile", width, height), snapshot.drawPile(), true, drawPileAt(mouseX, mouseY), drawPileHover, partialTick, handMasks);
         renderPile(graphics, layout().resolve("discard_pile", width, height), snapshot.discardPile(), false, discardPileAt(mouseX, mouseY), discardPileHover, partialTick, handMasks);
         renderExhaustPile(graphics, layout().resolve("exhaust_pile", width, height), snapshot.exhaustPile(), visibleExhaustPileAt(mouseX, mouseY, snapshot), partialTick);
+        battleRenderBottomPilesNanos += elapsedPerf(segmentStart);
+        segmentStart = perfStart();
         renderEndTurnButton(graphics, snapshot, layout().resolve("end_turn", width, height), mouseX, mouseY, partialTick);
+        battleRenderBottomEndTurnNanos += elapsedPerf(segmentStart);
         if (renderHand) {
+            segmentStart = perfStart();
             graphics.flush();
+            battleRenderBottomFlushNanos += elapsedPerf(segmentStart);
+            segmentStart = perfStart();
             renderHand(graphics, snapshot, mouseX, mouseY, partialTick);
+            battleRenderBottomHandNanos += elapsedPerf(segmentStart);
         }
     }
 
@@ -842,11 +893,19 @@ public class BattleScreen extends NoBlurScreen {
             return;
         }
         List<ScreenRect> visibleRects = List.of(new ScreenRect(x, y, x + w, y + h));
+        boolean clipped = false;
         for (ScreenRect mask : masks) {
+            int before = visibleRects.size();
             visibleRects = subtractMask(visibleRects, mask);
             if (visibleRects.isEmpty()) {
                 return;
             }
+            clipped |= visibleRects.size() != before || !visibleRects.getFirst().equals(new ScreenRect(x, y, x + w, y + h));
+        }
+        if (!clipped) {
+            renderer.run();
+            graphics.flush();
+            return;
         }
         for (ScreenRect rect : visibleRects) {
             graphics.enableScissor(rect.left(), rect.top(), rect.right(), rect.bottom());
@@ -1128,14 +1187,15 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void renderHand(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick) {
-        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        boolean useFrameCache = frameCache.snapshot() == snapshot;
+        List<CardInstance> visibleCards = useFrameCache ? frameCache.visibleCards(snapshot) : visibleHandCards(snapshot);
         int count = visibleCards.size();
         if (count <= 0) {
             hoveredHandIndex = -1;
             return;
         }
         long start = perfStart();
-        HandLayout layout = handLayout(visibleCards);
+        HandLayout layout = useFrameCache ? frameCache.layout(snapshot) : handLayout(visibleCards);
         int selectedIndex = ClientBattleState.selectedHandIndex();
         int hoveredIndex = draggingHandCard() ? -1 : hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
         if (hoveredIndex >= count) {
@@ -1153,10 +1213,9 @@ public class BattleScreen extends NoBlurScreen {
             }
             HandCardAnimation animation = handAnimations.get(card.id());
             if (animation != null) {
-                renderHandCard(graphics, snapshot, card, animation, partialTick, card.id().equals(selectedHandCardId(snapshot, selectedIndex)), false);
+                renderHandCard(graphics, snapshot, card, animation, partialTick, card.id().equals(selectedHandCardId(snapshot, selectedIndex)), true);
             }
         }
-        renderHandDescriptions(graphics, snapshot, visibleCards, hoveredIndex, partialTick);
         if (hoveredIndex >= 0) {
             CardInstance card = visibleCards.get(hoveredIndex);
             HandCardAnimation animation = handAnimations.get(card.id());
@@ -1168,11 +1227,12 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private List<ScreenRect> handOcclusionMasks(BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick) {
-        List<CardInstance> visibleCards = visibleHandCards(snapshot);
+        boolean useFrameCache = frameCache.snapshot() == snapshot;
+        List<CardInstance> visibleCards = useFrameCache ? frameCache.visibleCards(snapshot) : visibleHandCards(snapshot);
         if (visibleCards.isEmpty()) {
             return List.of();
         }
-        HandLayout layout = handLayout(visibleCards);
+        HandLayout layout = useFrameCache ? frameCache.layout(snapshot) : handLayout(visibleCards);
         int hoveredIndex = draggingHandCard() ? -1 : hoveredHandIndex(mouseX, mouseY, snapshot, visibleCards, layout, partialTick);
         int selectedIndex = ClientBattleState.selectedHandIndex();
         UUID selectedCardId = selectedHandCardId(snapshot, selectedIndex);
@@ -1750,11 +1810,70 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private long perfStart() {
-        return 0L;
+        return MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
     }
 
     private void recordPerf(PerfBucket bucket, long startNanos) {
-        // no-op: keep the hot render path free of per-frame diagnostics
+        if (!MoonSpirePerfDiagnostics.enabled() || startNanos == 0L) {
+            return;
+        }
+        long elapsed = MoonSpirePerfDiagnostics.now() - startNanos;
+        if (bucket == PerfBucket.SNAPSHOT_SYNC) {
+            battleRenderSnapshotNanos += elapsed;
+        }
+    }
+
+    private long elapsedPerf(long startNanos) {
+        return MoonSpirePerfDiagnostics.enabled() && startNanos != 0L ? MoonSpirePerfDiagnostics.now() - startNanos : 0L;
+    }
+
+    private void beginBattleRenderPerf() {
+        if (!MoonSpirePerfDiagnostics.enabled()) {
+            return;
+        }
+        battleRenderPerfStart = MoonSpirePerfDiagnostics.now();
+        battleRenderSnapshotNanos = 0L;
+        battleRenderEntriesNanos = 0L;
+        battleRenderIntentNanos = 0L;
+        battleRenderBottomNanos = 0L;
+        battleRenderBottomEnergyNanos = 0L;
+        battleRenderBottomMasksNanos = 0L;
+        battleRenderBottomPilesNanos = 0L;
+        battleRenderBottomEndTurnNanos = 0L;
+        battleRenderBottomFlushNanos = 0L;
+        battleRenderBottomHandNanos = 0L;
+        battleRenderFlyingNanos = 0L;
+        battleRenderDraggedNanos = 0L;
+        battleRenderMonsterPlayedNanos = 0L;
+        battleRenderOtherNanos = 0L;
+    }
+
+    private void finishBattleRenderPerf(BattleSnapshot snapshot) {
+        if (!MoonSpirePerfDiagnostics.enabled() || battleRenderPerfStart == 0L) {
+            return;
+        }
+        long elapsed = MoonSpirePerfDiagnostics.now() - battleRenderPerfStart;
+        MoonSpirePerfDiagnostics.markOperation("client.battle.render", elapsed,
+                "frameIndex=" + frameIndex
+                        + " battleId=" + snapshot.battleId()
+                        + " sequence=" + snapshot.sequence()
+                        + " hand=" + snapshot.hand().size()
+                        + " snapshotMs=" + MoonSpirePerfDiagnostics.millis(battleRenderSnapshotNanos)
+                        + " entriesMs=" + MoonSpirePerfDiagnostics.millis(battleRenderEntriesNanos)
+                        + " intentMs=" + MoonSpirePerfDiagnostics.millis(battleRenderIntentNanos)
+                        + " bottomMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomNanos)
+                        + " bottomEnergyMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomEnergyNanos)
+                        + " bottomMasksMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomMasksNanos)
+                        + " bottomPilesMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomPilesNanos)
+                        + " bottomEndTurnMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomEndTurnNanos)
+                        + " bottomFlushMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomFlushNanos)
+                        + " bottomHandMs=" + MoonSpirePerfDiagnostics.millis(battleRenderBottomHandNanos)
+                        + " flyingMs=" + MoonSpirePerfDiagnostics.millis(battleRenderFlyingNanos)
+                        + " draggedMs=" + MoonSpirePerfDiagnostics.millis(battleRenderDraggedNanos)
+                        + " monsterPlayedMs=" + MoonSpirePerfDiagnostics.millis(battleRenderMonsterPlayedNanos)
+                        + " otherMs=" + MoonSpirePerfDiagnostics.millis(battleRenderOtherNanos)
+                        + " " + CardRenderHelper.frameStats().summary());
+        battleRenderPerfStart = 0L;
     }
 
     private void syncSnapshotAnimations(BattleSnapshot snapshot) {
@@ -1799,7 +1918,7 @@ public class BattleScreen extends NoBlurScreen {
             showTurnBanner(snapshot.phase());
         }
         for (CardInstance oldCard : previousSnapshot.hand()) {
-            if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id()) && oldCard.hasEffect(CardEffectKind.EXHAUST) && !expectedPlayedRemoval) {
+            if (!currentIds.contains(oldCard.id()) && !representedFlyingIds.contains(oldCard.id()) && oldCard.hasEffect(CardEffectKind.ETHEREAL) && !expectedPlayedRemoval) {
                 HandCardAnimation from = handAnimations.get(oldCard.id());
                 float startX = from != null ? from.currentX() : drawPileCenterX();
                 float startY = from != null ? from.currentY() : drawPileCenterY();
@@ -2026,6 +2145,15 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
+        if (frameCardValuesIndex != frameIndex) {
+            frameCardValues.clear();
+            frameCardValuesIndex = frameIndex;
+        }
+        CardValueCacheKey key = new CardValueCacheKey(card.id(), attacker.entityId(), monsterCard, ClientBattleState.hoveredEntityId());
+        CardRenderHelper.CardValues cached = frameCardValues.get(key);
+        if (cached != null) {
+            return cached;
+        }
         int attack = card.enemyDirectDamageAmount();
         int defense = card.selfEffectAmount(CardEffectKind.BLOCK);
         List<Integer> damageAmounts = new ArrayList<>(card.effects().size());
@@ -2055,7 +2183,9 @@ public class BattleScreen extends NoBlurScreen {
         if (hasPreviewAttack) {
             attack = previewAttackTotal;
         }
-        return new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
+        CardRenderHelper.CardValues values = new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
+        frameCardValues.put(key, values);
+        return values;
     }
 
     private static boolean positiveEffect(CardEffectKind kind) {
@@ -2403,6 +2533,8 @@ public class BattleScreen extends NoBlurScreen {
         pileOverlaySource = source;
         requestedPileKey = null;
         displayedPileKey = null;
+        stablePileUpdateKey = null;
+        stablePileDisplayCount = -1;
         pileOverlayPerfFrameIndex = 0;
     }
 
@@ -2410,6 +2542,8 @@ public class BattleScreen extends NoBlurScreen {
         pileOverlay = new CardGridPanel(List.of(), title, new StaticPileKey(source, snapshot.sequence()));
         pileOverlaySource = source;
         displayedPileKey = null;
+        stablePileUpdateKey = null;
+        stablePileDisplayCount = -1;
         pileOverlayPerfFrameIndex = 0;
         pileOverlay.setDisplayCountOverride(expectedPileCount(snapshot, source));
         requestPileContentsIfNeeded(snapshot);
@@ -2420,6 +2554,8 @@ public class BattleScreen extends NoBlurScreen {
         pileOverlaySource = PileOverlaySource.NONE;
         requestedPileKey = null;
         displayedPileKey = null;
+        stablePileUpdateKey = null;
+        stablePileDisplayCount = -1;
         pileOverlayPerfFrameIndex = 0;
     }
 
@@ -2430,19 +2566,30 @@ public class BattleScreen extends NoBlurScreen {
         if (!pileOverlaySource.remote()) {
             return;
         }
-        pileOverlay.setDisplayCountOverride(expectedPileCount(snapshot, pileOverlaySource));
-        requestPileContentsIfNeeded(snapshot);
         BattlePileSource source = pileOverlaySource.remoteSource();
-        PileRequestKey key = new PileRequestKey(snapshot.battleId(), source, snapshot.localDeckVersion());
-        if (ClientBattleState.hasPileContents(snapshot.battleId(), source, snapshot.localDeckVersion())) {
+        long deckVersion = snapshot.localDeckVersion();
+        PileRequestKey key = new PileRequestKey(snapshot.battleId(), source, deckVersion);
+        int expectedCount = expectedPileCount(snapshot, pileOverlaySource);
+        if (key.equals(stablePileUpdateKey) && expectedCount == stablePileDisplayCount) {
+            return;
+        }
+        pileOverlay.setDisplayCountOverride(expectedCount);
+        requestPileContentsIfNeeded(snapshot);
+        if (ClientBattleState.hasPileContents(snapshot.battleId(), source, deckVersion)) {
             if (key.equals(displayedPileKey)) {
+                stablePileUpdateKey = key;
+                stablePileDisplayCount = expectedCount;
                 return;
             }
-            pileOverlay.setCards(ClientBattleState.pileContents(snapshot.battleId(), source, snapshot.localDeckVersion()), key);
+            pileOverlay.setCards(ClientBattleState.pileContents(snapshot.battleId(), source, deckVersion), key);
             displayedPileKey = key;
+            stablePileUpdateKey = key;
+            stablePileDisplayCount = expectedCount;
         } else if (displayedPileKey != null) {
             pileOverlay.setCards(List.of(), new StaticPileKey(pileOverlaySource, snapshot.sequence()));
             displayedPileKey = null;
+            stablePileUpdateKey = null;
+            stablePileDisplayCount = expectedCount;
         }
     }
 
@@ -3276,7 +3423,7 @@ public class BattleScreen extends NoBlurScreen {
         } else {
             targetEntity = !blocked ? directTargetEntityUnderMouse(mouseX, mouseY, snapshot) : -1;
         }
-        return new FrameCache(frameIndex, snapshot, mouseX, mouseY, layout, directHandIndex, previewIndex, nextHovered, targetEntity, blocked);
+        return new FrameCache(frameIndex, snapshot, mouseX, mouseY, List.copyOf(visibleCards), layout, directHandIndex, previewIndex, nextHovered, targetEntity, blocked);
     }
 
     private MoonSpireUiLayout layout() {
@@ -3324,9 +3471,9 @@ public class BattleScreen extends NoBlurScreen {
     private record DragGlow(float pulse) {
     }
 
-    private record FrameCache(long frame, BattleSnapshot snapshot, double mouseX, double mouseY, HandLayout layout, int handIndex, int previewIndex, int hoveredIndex, int targetEntity, boolean targetingBlocked) {
+    private record FrameCache(long frame, BattleSnapshot snapshot, double mouseX, double mouseY, List<CardInstance> visibleCards, HandLayout layout, int handIndex, int previewIndex, int hoveredIndex, int targetEntity, boolean targetingBlocked) {
         private static FrameCache empty() {
-            return new FrameCache(-1L, BattleSnapshot.inactive(), Double.NaN, Double.NaN, new HandLayout(List.of()), -1, -1, -1, -1, false);
+            return new FrameCache(-1L, BattleSnapshot.inactive(), Double.NaN, Double.NaN, List.of(), new HandLayout(List.of()), -1, -1, -1, -1, false);
         }
 
         private boolean matches(BattleSnapshot snapshot, double mouseX, double mouseY) {
@@ -3335,9 +3482,13 @@ public class BattleScreen extends NoBlurScreen {
 
         private HandLayout layout(BattleSnapshot snapshot) {
             if (this.snapshot != snapshot) {
-                throw new IllegalStateException("Frame cache used with a stale battle snapshot");
+                return new HandLayout(List.of());
             }
             return layout;
+        }
+
+        private List<CardInstance> visibleCards(BattleSnapshot snapshot) {
+            return this.snapshot == snapshot ? visibleCards : List.of();
         }
 
         private int targetEntity(double mouseX, double mouseY, BattleSnapshot snapshot) {
@@ -3924,6 +4075,9 @@ public class BattleScreen extends NoBlurScreen {
         HOVER_PREVIEW,
         TARGET_CARD,
         AIM_LINE
+    }
+
+    private record CardValueCacheKey(UUID cardId, int attackerEntityId, boolean monsterCard, int hoveredEntityId) {
     }
 
     private record HudTooltip(Component title, List<Component> paragraphs, MoonSpireUiRect avoidRect) {
