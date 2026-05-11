@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -132,6 +133,44 @@ public record CardInstance(
 
     public String faceId() {
         return currentDefinition().map(RegisteredCardDefinition::faceId).orElse(faceId);
+    }
+
+    public long renderStateHash() {
+        long hash = 0xcbf29ce484222325L;
+        hash = appendHash(hash, cardId);
+        hash = appendHash(hash, nameKey);
+        hash = appendHash(hash, descriptionKey);
+        hash = appendHash(hash, attack);
+        hash = appendHash(hash, defense);
+        hash = appendHash(hash, cost);
+        hash = appendHash(hash, battleCostReduction);
+        hash = appendHash(hash, sourceType.name());
+        hash = appendHash(hash, developerCardId);
+        hash = appendHash(hash, artPath);
+        hash = appendHash(hash, artItemId);
+        hash = appendHash(hash, artX);
+        hash = appendHash(hash, artY);
+        hash = appendHash(hash, Float.floatToIntBits(artScale));
+        hash = appendHash(hash, faceId);
+        if (!sourceStack.isEmpty()) {
+            hash = appendHash(hash, BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString());
+        }
+        for (CardEffect effect : effects) {
+            hash = appendHash(hash, effect.kind().name());
+            hash = appendHash(hash, effect.amount());
+            hash = appendHash(hash, effect.target().name());
+            hash = appendHash(hash, effect.count());
+        }
+        return hash;
+    }
+
+    private static long appendHash(long hash, String value) {
+        return appendHash(hash, value == null ? 0 : value.hashCode());
+    }
+
+    private static long appendHash(long hash, int value) {
+        hash ^= value;
+        return hash * 0x100000001b3L;
     }
 
     private Optional<RegisteredCardDefinition> currentDefinition() {

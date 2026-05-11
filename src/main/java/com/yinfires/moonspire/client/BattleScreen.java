@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +94,7 @@ public class BattleScreen extends NoBlurScreen {
     private static final float PILE_HOVER_SCALE = 1.18F;
     private static final float PILE_COUNT_TEXT_SCALE = 2.0F;
     private static final int EXHAUST_COUNT_TEXT_COLOR = 0xFFE07CFF;
+    private static final int CARD_RENDER_DATA_CACHE_LIMIT = 512;
     private final Map<UUID, HandCardAnimation> handAnimations = new HashMap<>();
     private final List<FlyingCardAnimation> flyingCards = new ArrayList<>();
     private final PreviewCardAnimation monsterIntentPreview = new PreviewCardAnimation();
@@ -133,9 +135,15 @@ public class BattleScreen extends NoBlurScreen {
     private PileRequestKey stablePileUpdateKey;
     private int stablePileDisplayCount = -1;
     private int pileOverlayPerfFrameIndex;
-    private final Map<CardRenderDataCacheKey, CardRenderData> cardRenderDataCache = new HashMap<>();
-    private long cardRenderDataSnapshotVersion = -1L;
+    private final Map<CardRenderDataCacheKey, CardRenderData> cardRenderDataCache = new LinkedHashMap<>(128, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<CardRenderDataCacheKey, CardRenderData> eldest) {
+            return size() > CARD_RENDER_DATA_CACHE_LIMIT;
+        }
+    };
     private long cardRenderDataDeveloperRevision = -1L;
+    private BattleSnapshot cardRenderDataPreviewHashSnapshot;
+    private int cardRenderDataPreviewHash;
     private long battleRenderPerfStart;
     private long battleRenderSnapshotNanos;
     private long battleRenderEntriesNanos;
@@ -1564,6 +1572,20 @@ public class BattleScreen extends NoBlurScreen {
                             + " " + pileOverlay.lastFrameStats().summary()
                             + " " + CardRenderHelper.frameStats().summary());
         }
+        if (pileOverlay.shouldLogScrollDiagnostics()) {
+            long elapsed = MoonSpirePerfDiagnostics.now() - start;
+            MoonSpirePerfDiagnostics.log("client.battle.pileScrollRender",
+                    "durationMs=" + MoonSpirePerfDiagnostics.millis(elapsed)
+                            + " frameIndex=" + pileOverlayPerfFrameIndex
+                            + " battleId=" + snapshot.battleId()
+                            + " sequence=" + snapshot.sequence()
+                            + " source=" + pileOverlaySource
+                            + " deckVersion=" + snapshot.localDeckVersion()
+                            + " updateMs=" + MoonSpirePerfDiagnostics.millis(updateNanos)
+                            + " " + pileOverlay.lastFrameStats().summary()
+                            + " " + CardRenderHelper.frameStats().summary());
+            pileOverlay.markScrollDiagnosticsLogged();
+        }
     }
 
     private float animationFrameTicks() {
@@ -2243,11 +2265,11 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private void prepareCardRenderDataCache() {
-        long snapshotVersion = ClientBattleState.snapshotVersion();
         long developerRevision = DeveloperDataManager.cacheRevision();
-        if (cardRenderDataSnapshotVersion != snapshotVersion || cardRenderDataDeveloperRevision != developerRevision) {
+        if (cardRenderDataDeveloperRevision != developerRevision) {
             cardRenderDataCache.clear();
-            cardRenderDataSnapshotVersion = snapshotVersion;
+            cardRenderDataPreviewHashSnapshot = null;
+            cardRenderDataPreviewHash = 0;
             cardRenderDataDeveloperRevision = developerRevision;
         }
     }
@@ -2267,7 +2289,17 @@ public class BattleScreen extends NoBlurScreen {
 
     private CardRenderData cardRenderData(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard, boolean recordHandPerf) {
         prepareCardRenderDataCache();
-        CardRenderDataCacheKey key = new CardRenderDataCacheKey(card.id(), attacker.entityId(), monsterCard, ClientBattleState.hoveredEntityId());
+        int hoveredEntityId = ClientBattleState.hoveredEntityId();
+        boolean draggedForPreview = dragState != null && dragState.cardId().equals(card.id());
+        CardRenderDataCacheKey key = new CardRenderDataCacheKey(
+                snapshot.battleId(),
+                card.id(),
+                card.renderStateHash(),
+                attacker.entityId(),
+                monsterCard,
+                hoveredEntityId,
+                draggedForPreview,
+                cardValuesPreviewStateHash(snapshot));
         CardRenderData cached = cardRenderDataCache.get(key);
         if (cached != null) {
             return cached;
@@ -2285,6 +2317,38 @@ public class BattleScreen extends NoBlurScreen {
         CardRenderData built = new CardRenderData(contentKey, values);
         cardRenderDataCache.put(key, built);
         return built;
+    }
+
+    private int cardValuesPreviewStateHash(BattleSnapshot snapshot) {
+        if (cardRenderDataPreviewHashSnapshot == snapshot) {
+            return cardRenderDataPreviewHash;
+        }
+        int hash = 17;
+        hash = 31 * hash + snapshot.localPlayerEntityId();
+        hash = 31 * hash + snapshot.players().size();
+        for (BattleCombatantSnapshot combatant : snapshot.players()) {
+            hash = appendCombatantPreviewStateHash(hash, combatant);
+        }
+        hash = 31 * hash + snapshot.enemies().size();
+        for (BattleCombatantSnapshot combatant : snapshot.enemies()) {
+            hash = appendCombatantPreviewStateHash(hash, combatant);
+        }
+        cardRenderDataPreviewHashSnapshot = snapshot;
+        cardRenderDataPreviewHash = hash;
+        return hash;
+    }
+
+    private int appendCombatantPreviewStateHash(int hash, BattleCombatantSnapshot combatant) {
+        hash = 31 * hash + combatant.entityId();
+        hash = 31 * hash + combatant.defense();
+        hash = 31 * hash + combatant.roundSpeed();
+        hash = 31 * hash + (combatant.fakeDead() ? 1 : 0);
+        hash = 31 * hash + combatant.effects().size();
+        for (BattleEffectSnapshot effect : combatant.effects()) {
+            hash = 31 * hash + effect.type().hashCode();
+            hash = 31 * hash + effect.amount();
+        }
+        return hash;
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card) {
@@ -4261,7 +4325,7 @@ public class BattleScreen extends NoBlurScreen {
     private record CardRenderData(String contentKey, CardRenderHelper.CardValues values) {
     }
 
-    private record CardRenderDataCacheKey(UUID cardId, int attackerEntityId, boolean monsterCard, int hoveredEntityId) {
+    private record CardRenderDataCacheKey(UUID battleId, UUID cardId, long cardStateHash, int attackerEntityId, boolean monsterCard, int hoveredEntityId, boolean draggedForPreview, int previewStateHash) {
     }
 
     private record HandRenderEntry(CardInstance card, HandCardAnimation animation, boolean selected, CardRenderData renderData) {

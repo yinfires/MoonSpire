@@ -10,6 +10,7 @@ public class DeckScreen extends NoBlurScreen {
     private static final int BOTTOM_RESERVE = 0;
     private final CardGridPanel cardPanel;
     private long syncedCardVersion;
+    private long renderFrameIndex;
     private int perfFrameIndex;
 
     public DeckScreen() {
@@ -20,6 +21,7 @@ public class DeckScreen extends NoBlurScreen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        renderFrameIndex++;
         long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
             long setCardsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
@@ -38,10 +40,22 @@ public class DeckScreen extends NoBlurScreen {
                 perfFrameIndex++;
                 long elapsed = MoonSpirePerfDiagnostics.now() - start;
                 MoonSpirePerfDiagnostics.markOperation("client.deck.render", elapsed,
-                        "frameIndex=" + perfFrameIndex
+                        "frameIndex=" + renderFrameIndex
+                                + " diagFrameIndex=" + perfFrameIndex
                                 + " setCardsMs=" + MoonSpirePerfDiagnostics.millis(setCardsNanos)
                                 + " " + cardPanel.lastFrameStats().summary()
                                 + " " + CardRenderHelper.frameStats().summary());
+            }
+            if (cardPanel.shouldLogScrollDiagnostics()) {
+                long elapsed = MoonSpirePerfDiagnostics.now() - start;
+                MoonSpirePerfDiagnostics.log("client.deck.scrollRender",
+                        "durationMs=" + MoonSpirePerfDiagnostics.millis(elapsed)
+                                + " frameIndex=" + renderFrameIndex
+                                + " diagFrameIndex=" + perfFrameIndex
+                                + " setCardsMs=" + MoonSpirePerfDiagnostics.millis(setCardsNanos)
+                                + " " + cardPanel.lastFrameStats().summary()
+                                + " " + CardRenderHelper.frameStats().summary());
+                cardPanel.markScrollDiagnosticsLogged();
             }
         }
     }
