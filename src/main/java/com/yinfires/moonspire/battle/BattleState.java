@@ -8,6 +8,7 @@ import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.CardTarget;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
+import com.yinfires.moonspire.developer.DeveloperMonsterInitialEffect;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -115,6 +116,7 @@ public class BattleState {
                     monsterOverride != null && monsterOverride.hasEnergyOverride() ? monsterOverride.energy() : CardBalance.fixedEnergy(),
                     monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : Math.max(1.0F, enemy.getMaxHealth()),
                     monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : nonPlayerBaseSpeed(enemy));
+            applyInitialEffects(state, monsterOverride);
             enemyStates.add(state);
             byEntityId.put(enemy.getId(), state);
             locks.put(enemy.getId(), EntityLock.capture(enemy));
@@ -122,6 +124,18 @@ public class BattleState {
             totalCount++;
         }
         cameraCenter = totalCount <= 0 ? leader.position() : total.scale(1.0D / totalCount);
+    }
+
+    private static void applyInitialEffects(CombatantState state, DeveloperMonsterDefinition monsterOverride) {
+        if (state == null || monsterOverride == null) {
+            return;
+        }
+        for (DeveloperMonsterInitialEffect effect : monsterOverride.initialEffects()) {
+            if (effect == null || !effect.isEffective()) {
+                continue;
+            }
+            effect.effectType().ifPresent(type -> state.addEffect(type, effect.amount()));
+        }
     }
 
     public UUID id() {

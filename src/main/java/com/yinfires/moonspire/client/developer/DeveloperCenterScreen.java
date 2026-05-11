@@ -6,6 +6,7 @@ import com.yinfires.moonspire.card.CardSourceType;
 import com.yinfires.moonspire.card.CardTarget;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.card.RegisteredCardDefinition;
+import com.yinfires.moonspire.battle.BattleEffectType;
 import com.yinfires.moonspire.battle.MonsterDeckProfile;
 import com.yinfires.moonspire.client.CardRenderHelper;
 import com.yinfires.moonspire.client.NoBlurScreen;
@@ -19,6 +20,7 @@ import com.yinfires.moonspire.developer.DeveloperData;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.developer.DeveloperPaths;
 import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
+import com.yinfires.moonspire.developer.DeveloperMonsterInitialEffect;
 import com.yinfires.moonspire.network.GiveDeveloperCardPayload;
 import com.yinfires.moonspire.network.SaveDeveloperDataPayload;
 import java.awt.EventQueue;
@@ -84,10 +86,18 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static final int SCROLLBAR_HIT_WIDTH = 20;
     private static final int GRID_SCROLL_STEP = 34;
     private static final int CARD_GRID_MAX_COLUMNS = 5;
+    private static final int CARD_GRID_EXPANDED_MIN_COLUMNS = 3;
+    private static final int CARD_GRID_MIN_CELL_W = 38;
+    private static final int CARD_GRID_EXPANDED_MIN_CELL_W = 16;
     private static final int CARD_GRID_GAP_X = 18;
+    private static final int CARD_GRID_COMPACT_GAP_X = 2;
     private static final int CARD_GRID_GAP_Y = 20;
     private static final int CARD_ID_LABEL_H = 18;
+    private static final int CARD_ID_COPY_BUTTON_W = 50;
+    private static final int CARD_ID_COPY_BUTTON_H = 18;
+    private static final int CARD_ID_COPY_BUTTON_GAP = 6;
     private static final int CARD_GRID_SCROLL_RESERVE = 48;
+    private static final int CARD_GRID_COMPACT_SCROLL_RESERVE = SCROLLBAR_HIT_WIDTH;
     private static final int CARD_GRID_PAD_TOP = 6;
     private static final int CARD_GRID_PAD_BOTTOM = 10;
     private static final int CARD_LIST_TOGGLE_W = 24;
@@ -98,6 +108,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static final int EFFECT_COUNT_W = 26;
     private static final int EFFECT_AMOUNT_LABEL_W = 18;
     private static final int EFFECT_COUNT_LABEL_W = 18;
+    private static final int MONSTER_EFFECT_AMOUNT_W = 32;
+    private static final int MONSTER_EFFECT_CONTROL_W = 18;
+    private static final int MONSTER_EFFECT_CONTROL_GAP = 3;
     private static final int EFFECT_CONTROL_GAP = 2;
     private static final int EFFECT_LABEL_INPUT_GAP = 0;
     private static final int EFFECT_NAME_TARGET_GAP = 8;
@@ -123,8 +136,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private EditBox itemSearchBox;
     private EditBox effectSearchBox;
     private EditBox targetSearchBox;
+    private MoonSpireTextureButton cardIdCopyButton;
     private final List<EditBox> effectAmountBoxes = new ArrayList<>();
     private final List<EditBox> effectCountBoxes = new ArrayList<>();
+    private final List<EditBox> monsterEffectAmountBoxes = new ArrayList<>();
     private final List<FaceAreaKind> faceAreaKinds = List.of(FaceAreaKind.COST, FaceAreaKind.NAME, FaceAreaKind.ART, FaceAreaKind.TYPE, FaceAreaKind.DESCRIPTION);
     private String selectedCardId = "";
     private String selectedMonsterId = "";
@@ -150,7 +165,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private boolean targetPickerOpen;
     private boolean confirmDelete;
     private int targetPickerEffectIndex = -1;
+    private boolean monsterEffectPickerOpen;
     private String effectAmountBoxesCardId = "";
+    private String monsterEffectAmountBoxesMonsterId = "";
     private boolean draggingArt;
     private boolean draggingFaceArea;
     private volatile boolean choosingLocalImage;
@@ -230,10 +247,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         clearWidgets();
         effectAmountBoxes.clear();
         effectCountBoxes.clear();
+        monsterEffectAmountBoxes.clear();
         Layout layout = layout();
         searchBox = addBox(layout.searchX(tab), layout.searchBoxY(), layout.searchW(tab), Component.translatable("debug.moonspire.search"));
         idBox = addBox(layout.formX(), layout.fieldBoxY(0), layout.formW(), Component.translatable("debug.moonspire.field.id"));
         nameKeyBox = addBox(layout.formX(), layout.fieldBoxY(1), layout.formW(), Component.translatable("debug.moonspire.field.card_name"));
+        cardIdCopyButton = new MoonSpireTextureButton(layout.cardIdCopyButtonX(), layout.cardIdCopyButtonY(), CARD_ID_COPY_BUTTON_W, CARD_ID_COPY_BUTTON_H, Component.translatable("debug.moonspire.copy"), button -> copySelectedCardId());
+        addRenderableWidget(cardIdCopyButton);
         costBox = addBox(layout.formX(), layout.fieldBoxY(3), 54, Component.translatable("debug.moonspire.field.cost"));
         artPathBox = addBox(layout.formX(), layout.fieldBoxY(tab == Tab.FACES ? 2 : 4), layout.formW(), Component.translatable("debug.moonspire.field.image_path"));
         entityIdBox = addBox(layout.formX(), layout.fieldBoxY(0), layout.formW(), Component.translatable("debug.moonspire.field.entity_id"));
@@ -245,6 +265,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         effectSearchBox = addBox(layout.formX() + 6, effectPickerY(layout, selectedEffectCount()) + 5, Math.max(1, layout.formW() - 12), Component.translatable("debug.moonspire.effect_search"));
         targetSearchBox = addBox(layout.formX() + 6, targetPickerY(layout, selectedEffectCount()) + 5, Math.max(1, layout.formW() - 12), Component.translatable("debug.moonspire.target_search"));
         createEffectAmountBoxes(layout);
+        createMonsterEffectAmountBoxes(layout);
         hideIrrelevantBoxes();
         int tabX = 4 + (SIDEBAR_W - TAB_BUTTON_W) / 2;
         addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top(), TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.cards"), button -> switchTab(Tab.CARDS)));
@@ -284,7 +305,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             hideEffectAmountBoxes();
             hideEffectCountBoxes();
         }
-        boolean modalOpen = confirmDelete || itemPickerOpen || effectPickerOpen || targetPickerOpen;
+        boolean modalOpen = confirmDelete || itemPickerOpen || effectPickerOpen || targetPickerOpen || monsterEffectPickerOpen;
         if (!modalOpen) {
             renderWidgetsWithClippedEffectBoxes(graphics, layout, mouseX, mouseY, partialTick);
         }
@@ -293,6 +314,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         if (!confirmDelete && effectPickerOpen) {
             renderEffectPickerPopup(graphics, layout, mouseX, mouseY, partialTick);
+        }
+        if (!confirmDelete && monsterEffectPickerOpen) {
+            renderMonsterEffectPickerPopup(graphics, layout, mouseX, mouseY, partialTick);
         }
         if (!confirmDelete && targetPickerOpen) {
             renderTargetPickerPopup(graphics, layout, mouseX, mouseY, partialTick);
@@ -306,6 +330,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         List<EditBox> effectBoxes = new ArrayList<>();
         effectBoxes.addAll(effectAmountBoxes);
         effectBoxes.addAll(effectCountBoxes);
+        effectBoxes.addAll(monsterEffectAmountBoxes);
         List<Boolean> visible = effectBoxes.stream().map(box -> box.visible).toList();
         for (EditBox box : effectBoxes) {
             box.visible = false;
@@ -315,6 +340,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             effectBoxes.get(i).visible = visible.get(i);
         }
         renderEffectBoxesClipped(graphics, layout, mouseX, mouseY, partialTick);
+        renderMonsterEffectBoxesClipped(graphics, layout, mouseX, mouseY, partialTick);
     }
 
     private void renderEffectBoxesClipped(GuiGraphics graphics, Layout layout, int mouseX, int mouseY, float partialTick) {
@@ -340,6 +366,21 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         graphics.disableScissor();
     }
 
+    private void renderMonsterEffectBoxesClipped(GuiGraphics graphics, Layout layout, int mouseX, int mouseY, float partialTick) {
+        if (tab != Tab.MONSTERS) {
+            return;
+        }
+        List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
+        GridLayout grid = monsterEffectEditorGrid(layout, effects.size() + 1);
+        graphics.enableScissor(grid.viewX(), grid.viewY(), grid.viewX() + grid.viewW(), grid.viewY() + grid.viewH());
+        for (EditBox box : monsterEffectAmountBoxes) {
+            if (box.visible) {
+                box.render(graphics, mouseX, mouseY, partialTick);
+            }
+        }
+        graphics.disableScissor();
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
@@ -355,6 +396,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             }
             if (effectPickerOpen) {
                 if (clickEffectPicker(layout, mouseX, mouseY, button)) {
+                    return true;
+                }
+                return true;
+            }
+            if (monsterEffectPickerOpen) {
+                if (clickMonsterEffectPicker(layout, mouseX, mouseY, button)) {
                     return true;
                 }
                 return true;
@@ -443,6 +490,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             } else if (draggingScrollArea == ScrollArea.TARGET_PICKER) {
                 PickerBounds picker = targetPickerBounds(layout, selectedEffectCount());
                 dragScrollbar(targetPickerGrid(picker, filteredTargets().size()), mouseY, ScrollArea.TARGET_PICKER);
+            } else if (draggingScrollArea == ScrollArea.MONSTER_EFFECTS) {
+                dragScrollbar(monsterEffectEditorGrid(layout, selectedMonsterEffectCount() + 1), mouseY, ScrollArea.MONSTER_EFFECTS);
+            } else if (draggingScrollArea == ScrollArea.MONSTER_EFFECT_PICKER) {
+                PickerBounds picker = monsterEffectPickerBounds(layout, selectedMonsterEffectCount());
+                dragScrollbar(monsterEffectPickerGrid(picker, filteredBattleEffectTypes().size()), mouseY, ScrollArea.MONSTER_EFFECT_PICKER);
             }
             return true;
         }
@@ -522,6 +574,20 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             }
         } else if (tab == Tab.MONSTERS && scrollY != 0.0D) {
             Layout layout = layout();
+            GridLayout effectGrid = monsterEffectEditorGrid(layout, selectedMonsterEffectCount() + 1);
+            PickerBounds picker = monsterEffectPickerBounds(layout, selectedMonsterEffectCount());
+            GridLayout pickerGrid = monsterEffectPickerGrid(picker, filteredBattleEffectTypes().size());
+            if (monsterEffectPickerOpen && insideGrid(pickerGrid, mouseX, mouseY) && hasScrollbar(pickerGrid)) {
+                effectPickerScrollOffset = clampScroll(effectPickerScrollOffset - scrollY * 16, pickerGrid);
+                return true;
+            }
+            if (monsterEffectPickerOpen && insideRect(mouseX, mouseY, picker.x(), picker.y(), picker.w(), picker.h())) {
+                return true;
+            }
+            if (insideGrid(effectGrid, mouseX, mouseY) && hasScrollbar(effectGrid)) {
+                effectScrollOffset = clampScroll(effectScrollOffset - scrollY * GRID_SCROLL_STEP, effectGrid);
+                return true;
+            }
             GridLayout listGrid = layout.textListGrid(textListSize());
             if (insideGrid(listGrid, mouseX, mouseY) && hasScrollbar(listGrid)) {
                 listScrollOffset = clampScroll(listScrollOffset - scrollY * GRID_SCROLL_STEP, listGrid);
@@ -545,6 +611,14 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (effectPickerOpen && effectSearchBox != null) {
             if (keyCode == 256) {
                 effectPickerOpen = false;
+                init();
+                return true;
+            }
+            return effectSearchBox.keyPressed(keyCode, scanCode, modifiers);
+        }
+        if (monsterEffectPickerOpen && effectSearchBox != null) {
+            if (keyCode == 256) {
+                monsterEffectPickerOpen = false;
                 init();
                 return true;
             }
@@ -578,6 +652,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return targetSearchBox.charTyped(codePoint, modifiers);
         }
         if (effectPickerOpen && effectSearchBox != null) {
+            return effectSearchBox.charTyped(codePoint, modifiers);
+        }
+        if (monsterEffectPickerOpen && effectSearchBox != null) {
             return effectSearchBox.charTyped(codePoint, modifiers);
         }
         if (itemPickerOpen && itemSearchBox != null) {
@@ -617,6 +694,19 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             EditBox countBox = addBox(layout.formX() + layout.formW() - 58, rowY, EFFECT_COUNT_W, Component.translatable("debug.moonspire.effect_count"));
             countBox.setValue(Integer.toString(effects.get(i).count()));
             effectCountBoxes.add(countBox);
+        }
+    }
+
+    private void createMonsterEffectAmountBoxes(Layout layout) {
+        if (tab != Tab.MONSTERS) {
+            return;
+        }
+        List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
+        for (int i = 0; i < effects.size(); i++) {
+            int rowY = layout.fieldBoxY(3) + 22 + i * 24;
+            EditBox box = addBox(layout.formX() + layout.formW() - MONSTER_EFFECT_AMOUNT_W - EFFECT_INSET, rowY, MONSTER_EFFECT_AMOUNT_W, Component.translatable("screen.moonspire.value_number", effects.get(i).amount()));
+            box.setValue(Integer.toString(effects.get(i).amount()));
+            monsterEffectAmountBoxes.add(box);
         }
     }
 
@@ -681,6 +771,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         init();
     }
 
@@ -692,6 +783,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         List<EditBox> boxes = new ArrayList<>(List.of(searchBox, idBox, nameKeyBox, costBox, artPathBox, entityIdBox, healthBox, speedBox, monsterEnergyBox, itemSearchBox, effectSearchBox, targetSearchBox));
         boxes.addAll(effectAmountBoxes);
         boxes.addAll(effectCountBoxes);
+        boxes.addAll(monsterEffectAmountBoxes);
         for (EditBox box : boxes) {
             if (box != null) {
                 box.visible = false;
@@ -711,13 +803,20 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         setVisible(speedBox, monsters);
         setVisible(monsterEnergyBox, monsters);
         setVisible(itemSearchBox, cardSelected && itemPickerOpen);
-        setVisible(effectSearchBox, cardSelected && effectPickerOpen);
+        setVisible(effectSearchBox, (cardSelected && effectPickerOpen) || (monsters && monsterEffectPickerOpen));
         setVisible(targetSearchBox, cardSelected && targetPickerOpen);
         for (EditBox box : effectAmountBoxes) {
             setVisible(box, false);
         }
         for (EditBox box : effectCountBoxes) {
             setVisible(box, false);
+        }
+        for (EditBox box : monsterEffectAmountBoxes) {
+            setVisible(box, false);
+        }
+        if (cardIdCopyButton != null) {
+            cardIdCopyButton.visible = cardSelected;
+            cardIdCopyButton.active = cardSelected;
         }
     }
 
@@ -737,7 +836,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return;
         }
         String id = card == null ? "" : MoonSpireCardRegistry.registeredDeveloperId(card.id());
-        drawTrimmed(graphics, Component.translatable("debug.moonspire.card_id", id), layout.formX(), layout.fieldBoxY(1) + 24, layout.formW(), 0xFFE3C48C);
+        drawTrimmed(graphics, Component.translatable("debug.moonspire.card_id", id), layout.formX(), layout.cardIdTextY(), layout.cardIdTextW(), 0xFFE3C48C);
         drawTrimmed(graphics, Component.translatable("debug.moonspire.card_type", sourceTypeName()), layout.formX(), layout.fieldBoxY(1) + 38, layout.formW(), 0xFFE3C48C);
         if (!cardListExpanded) {
             renderCardPreview(graphics, layout);
@@ -817,6 +916,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return Component.translatable("debug.moonspire.effect." + kind.name().toLowerCase(Locale.ROOT));
     }
 
+    private Component monsterEffectName(DeveloperMonsterInitialEffect effect) {
+        return effect.effectType()
+                .map(type -> Component.translatable(type.nameKey()))
+                .orElse(Component.translatable("screen.moonspire.effect_unknown_icon"));
+    }
+
     private Component targetName(CardTarget target) {
         return Component.translatable("debug.moonspire.target." + target.name().toLowerCase(Locale.ROOT));
     }
@@ -826,6 +931,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         targetPickerOpen = true;
         effectPickerOpen = false;
         itemPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerScrollOffset = 0.0D;
         effectPickerScrollOffset = 0.0D;
         init();
@@ -898,7 +1004,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void renderMonsters(GuiGraphics graphics, Layout layout) {
         drawHeader(graphics, Component.translatable("debug.moonspire.monsters"), layout.listX(), layout.top());
-        drawWrappedLimited(graphics, Component.translatable("debug.moonspire.monster_actions"), layout.formX(), layout.formInfoY(3, 0), layout.formW(), layout.bottom(), 0xFFC9C2DD);
+        renderMonsterEffectEditor(graphics, layout);
+        drawWrappedLimited(graphics, Component.translatable("debug.moonspire.monster_actions"), layout.formX(), monsterActionsY(layout), layout.formW(), layout.bottom(), 0xFFC9C2DD);
         drawButtonLike(graphics, layout.formX(), layout.fieldBoxY(2), 112, 18, Component.translatable("debug.moonspire.open_deck"));
         drawTrimmed(graphics, Component.translatable("debug.moonspire.monster_deck_count", selectedMonsterEffective().deckCardIds().size()), layout.formX() + 120, layout.fieldBoxY(2) + 5, Math.max(1, layout.formW() - 120), 0xFFE3C48C);
         List<MonsterRow> monsters = filteredMonsters();
@@ -910,6 +1017,33 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             MonsterRow row = monsters.get(i);
             boolean selected = row.id().equals(selectedMonsterId);
             drawListRow(graphics, layout.listX(), cell.y(), layout.listW() - SCROLLBAR_HIT_WIDTH, Component.translatable("debug.moonspire.monster_row", row.name(), row.id()), selected);
+        }
+        graphics.disableScissor();
+        renderGridScrollbar(graphics, grid);
+    }
+
+    private int monsterActionsY(Layout layout) {
+        GridLayout grid = monsterEffectEditorGrid(layout, selectedMonsterEffectCount() + 1);
+        return Math.min(layout.buttonY() - 16, grid.viewY() + grid.viewH() + 8);
+    }
+
+    private void renderMonsterEffectEditor(GuiGraphics graphics, Layout layout) {
+        List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
+        GridLayout grid = monsterEffectEditorGrid(layout, effects.size() + 1);
+        effectScrollOffset = clampScroll(effectScrollOffset, grid);
+        syncMonsterEffectAmountBoxes(layout, effects, grid);
+        graphics.enableScissor(grid.viewX(), grid.viewY(), grid.viewX() + grid.viewW(), grid.viewY() + grid.viewH());
+        for (int i = firstVisibleIndex(grid); i < Math.min(effects.size() + 1, lastVisibleIndex(grid)); i++) {
+            GridCell cell = cell(grid, i);
+            int rowY = cell.y();
+            if (i < effects.size()) {
+                DeveloperMonsterInitialEffect effect = effects.get(i);
+                drawButtonLike(graphics, monsterEffectRemoveX(grid), rowY, MONSTER_EFFECT_CONTROL_W, 18, Component.translatable("debug.moonspire.remove_effect"));
+                drawTrimmed(graphics, monsterEffectName(effect), monsterEffectNameX(grid), rowY + 5, Math.max(1, monsterEffectNameWidth(grid)), 0xFFEDE8FF);
+                drawTrimmed(graphics, Component.translatable("debug.moonspire.effect_amount"), monsterEffectAmountLabelX(grid), rowY + 5, EFFECT_AMOUNT_LABEL_W, 0xFFD8CEB5);
+            } else {
+                drawButtonLike(graphics, monsterEffectRemoveX(grid), rowY, MONSTER_EFFECT_CONTROL_W, 18, Component.translatable("debug.moonspire.add_effect"));
+            }
         }
         graphics.disableScissor();
         renderGridScrollbar(graphics, grid);
@@ -954,6 +1088,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.speed"), layout.formX() + statW + GAP, layout.fieldLabelY(1), statW);
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.energy"), layout.formX() + (statW + GAP) * 2, layout.fieldLabelY(1), statW);
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.monster_deck"), layout.formX(), layout.fieldLabelY(2), layout.formW());
+            drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.initial_effects"), layout.formX(), layout.fieldLabelY(3), layout.formW());
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.search"), layout.listX(), layout.searchLabelY(), layout.listW());
         }
     }
@@ -1032,6 +1167,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             itemPickerOpen = true;
             effectPickerOpen = false;
             targetPickerOpen = false;
+            monsterEffectPickerOpen = false;
             targetPickerEffectIndex = -1;
             init();
             return true;
@@ -1071,6 +1207,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             if (index == effects.size() && insideRect(mouseX, mouseY, effectGrid.viewX(), cell(effectGrid, index).y(), 20, 18)) {
                 effectPickerOpen = !effectPickerOpen;
                 targetPickerOpen = false;
+                monsterEffectPickerOpen = false;
                 targetPickerEffectIndex = -1;
                 effectPickerScrollOffset = 0.0D;
                 init();
@@ -1148,6 +1285,32 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             openMonsterDeckScreen();
             return true;
         }
+        List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
+        GridLayout effectGrid = monsterEffectEditorGrid(layout, effects.size() + 1);
+        if (clickScrollbar(effectGrid, ScrollArea.MONSTER_EFFECTS, mouseY, mouseX)) {
+            return true;
+        }
+        if (insideGrid(effectGrid, mouseX, mouseY)) {
+            int index = indexAt(effectGrid, mouseX, mouseY);
+            if (index >= 0 && index < effects.size()) {
+                GridCell cell = cell(effectGrid, index);
+                if (insideRect(mouseX, mouseY, monsterEffectRemoveX(effectGrid), cell.y(), MONSTER_EFFECT_CONTROL_W, 18)) {
+                    List<DeveloperMonsterInitialEffect> next = new ArrayList<>(monsterEffectsFromBoxes(effects));
+                    next.remove(index);
+                    updateMonsterInitialEffects(next);
+                    return true;
+                }
+            }
+            if (index == effects.size() && insideRect(mouseX, mouseY, monsterEffectRemoveX(effectGrid), cell(effectGrid, index).y(), MONSTER_EFFECT_CONTROL_W, 18)) {
+                monsterEffectPickerOpen = !monsterEffectPickerOpen;
+                effectPickerOpen = false;
+                targetPickerOpen = false;
+                targetPickerEffectIndex = -1;
+                effectPickerScrollOffset = 0.0D;
+                init();
+                return true;
+            }
+        }
         return false;
     }
 
@@ -1178,6 +1341,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 itemPickerOpen = false;
                 effectPickerOpen = false;
                 targetPickerOpen = false;
+                monsterEffectPickerOpen = false;
                 targetPickerEffectIndex = -1;
                 hideIrrelevantBoxes();
                 return;
@@ -1269,11 +1433,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             float health = floatValue(healthBox, defaults.health());
             int energy = intValue(monsterEnergyBox, defaults.energy());
             int speed = intValue(speedBox, defaults.speed());
+            List<DeveloperMonsterInitialEffect> initialEffects = monsterEffectsFromBoxes(previous.initialEffects());
             DeveloperMonsterDefinition next = new DeveloperMonsterDefinition(
                     id,
                     Math.abs(health - defaults.health()) < 0.0001F ? 0.0F : health,
                     energy == defaults.energy() ? 0 : energy,
                     speed == defaults.speed() ? 0 : speed,
+                    initialEffects,
                     new ArrayList<>(previous.deckCardIds()),
                     previous.hasDeckOverride());
             replaceMonster(previousId, next);
@@ -1363,6 +1529,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         status = Component.translatable("debug.moonspire.reset_saved");
         statusTicks = 120;
@@ -1377,6 +1544,16 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         PacketDistributor.sendToServer(new GiveDeveloperCardPayload(MoonSpireCardRegistry.registeredDeveloperId(card.id())));
         status = Component.translatable("debug.moonspire.card_given");
+        statusTicks = 120;
+    }
+
+    private void copySelectedCardId() {
+        DeveloperCardDefinition card = selectedCard();
+        if (card == null) {
+            return;
+        }
+        Minecraft.getInstance().keyboardHandler.setClipboard(MoonSpireCardRegistry.registeredDeveloperId(card.id()));
+        status = Component.translatable("debug.moonspire.card_id_copied");
         statusTicks = 120;
     }
 
@@ -1408,6 +1585,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         status = Component.translatable("debug.moonspire.reset_saved");
         statusTicks = 120;
@@ -1433,6 +1611,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         status = Component.translatable("debug.moonspire.reset_saved");
         statusTicks = 120;
@@ -1608,6 +1787,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 current.hasHealthOverride() ? current.maxHealth() : defaults.health(),
                 current.hasEnergyOverride() ? current.energy() : defaults.energy(),
                 current.hasSpeedOverride() ? current.speed() : defaults.speed(),
+                current.initialEffects(),
                 hasDeckOverride || !MonsterDeckProfile.hasDefaultDeck(monsterEntityType(id)) ? current.deckCardIds() : defaultDeck,
                 hasDeckOverride);
     }
@@ -1649,7 +1829,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private boolean hasMonsterOverride(DeveloperMonsterDefinition monster) {
-        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || monster.hasDeckOverride();
+        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || monster.hasInitialEffectOverride() || monster.hasDeckOverride();
     }
 
     private MonsterDefaults monsterDefaults(String entityTypeId) {
@@ -1757,7 +1937,39 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private void closeTargetPicker() {
         targetPickerOpen = false;
         targetPickerEffectIndex = -1;
+        monsterEffectPickerOpen = false;
         draggingScrollArea = ScrollArea.NONE;
+    }
+
+    private boolean clickMonsterEffectPicker(Layout layout, double mouseX, double mouseY, int button) {
+        PickerBounds picker = monsterEffectPickerBounds(layout, selectedMonsterEffectCount());
+        if (insideRect(mouseX, mouseY, picker.x() + 6, picker.y() + 5, Math.max(1, picker.w() - 12), 18)) {
+            focusPopupSearchBox(effectSearchBox, mouseX, mouseY, button);
+            return true;
+        }
+        List<BattleEffectType> types = filteredBattleEffectTypes();
+        GridLayout grid = monsterEffectPickerGrid(picker, types.size());
+        if (clickScrollbar(grid, ScrollArea.MONSTER_EFFECT_PICKER, mouseY, mouseX)) {
+            return true;
+        }
+        if (insideGrid(grid, mouseX, mouseY)) {
+            int index = indexAt(grid, mouseX, mouseY);
+            if (index >= 0 && index < types.size()) {
+                List<DeveloperMonsterInitialEffect> next = new ArrayList<>(monsterEffectsFromBoxes(selectedMonsterEffective().initialEffects()));
+                BattleEffectType type = types.get(index);
+                next.add(DeveloperMonsterInitialEffect.of(type, 1));
+                monsterEffectPickerOpen = false;
+                updateMonsterInitialEffects(next);
+                return true;
+            }
+            return true;
+        }
+        if (!insideRect(mouseX, mouseY, picker.x(), picker.y(), picker.w(), picker.h())) {
+            monsterEffectPickerOpen = false;
+            init();
+            return true;
+        }
+        return true;
     }
 
     private void deleteSelectedFace() {
@@ -1809,6 +2021,22 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         init();
     }
 
+    private void updateMonsterInitialEffects(List<DeveloperMonsterInitialEffect> effects) {
+        DeveloperMonsterDefinition current = selectedMonsterOrDefault();
+        replaceMonster(current.entityTypeId(), new DeveloperMonsterDefinition(
+                current.entityTypeId(),
+                current.maxHealth(),
+                current.energy(),
+                current.speed(),
+                effects,
+                new ArrayList<>(current.deckCardIds()),
+                current.hasDeckOverride()));
+        status = Component.translatable("debug.moonspire.monster_effects_updated");
+        statusTicks = 120;
+        effectScrollOffset = clampScroll(effectScrollOffset, monsterEffectEditorGrid(layout(), effects.size() + 1));
+        init();
+    }
+
     private List<DeveloperCardEffect.Kind> filteredEffectKinds() {
         String query = effectSearchBox == null ? "" : effectSearchBox.getValue().toLowerCase(Locale.ROOT);
         return List.of(
@@ -1843,6 +2071,16 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 .toList();
     }
 
+    private List<BattleEffectType> filteredBattleEffectTypes() {
+        String query = effectSearchBox == null ? "" : effectSearchBox.getValue().toLowerCase(Locale.ROOT);
+        return List.of(BattleEffectType.values()).stream()
+                .filter(type -> query.isBlank()
+                        || Component.translatable(type.nameKey()).getString().toLowerCase(Locale.ROOT).contains(query)
+                        || type.id().toLowerCase(Locale.ROOT).contains(query)
+                        || type.name().toLowerCase(Locale.ROOT).contains(query))
+                .toList();
+    }
+
     private List<CardTarget> filteredTargets() {
         String query = targetSearchBox == null ? "" : targetSearchBox.getValue().toLowerCase(Locale.ROOT);
         return List.of(CardTarget.values()).stream()
@@ -1864,9 +2102,36 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return effects;
     }
 
+    private List<DeveloperMonsterInitialEffect> monsterEffectsFromBoxes(List<DeveloperMonsterInitialEffect> fallback) {
+        if (fallback.isEmpty()) {
+            return List.of();
+        }
+        List<DeveloperMonsterInitialEffect> effects = new ArrayList<>();
+        for (int i = 0; i < fallback.size(); i++) {
+            DeveloperMonsterInitialEffect effect = fallback.get(i);
+            BattleEffectType type = effect.effectType().orElse(null);
+            if (type == null) {
+                continue;
+            }
+            int amount = i < monsterEffectAmountBoxes.size() ? intValue(monsterEffectAmountBoxes.get(i), effect.amount()) : effect.amount();
+            if (!type.allowsNegativeStacks()) {
+                amount = Math.max(0, amount);
+            }
+            DeveloperMonsterInitialEffect next = DeveloperMonsterInitialEffect.of(type, amount);
+            if (next.isEffective()) {
+                effects.add(next);
+            }
+        }
+        return effects;
+    }
+
     private int selectedEffectCount() {
         DeveloperCardDefinition card = selectedCard();
         return card == null ? 0 : card.normalizedEffects().size();
+    }
+
+    private int selectedMonsterEffectCount() {
+        return selectedMonsterEffective().initialEffects().size();
     }
 
     private int effectPickerY(Layout layout, int effectCount) {
@@ -1876,6 +2141,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private PickerBounds effectPickerBounds(Layout layout, int effectCount) {
         int y = effectPickerY(layout, effectCount);
+        int bottom = Math.max(y + 44, layout.buttonY() - 4);
+        return new PickerBounds(layout.formX(), y, layout.formW(), Math.min(92, bottom - y));
+    }
+
+    private PickerBounds monsterEffectPickerBounds(Layout layout, int effectCount) {
+        int y = Math.min(layout.fieldBoxY(3) + effectCount * 24 + 22, Math.max(layout.top(), layout.buttonY() - 104));
         int bottom = Math.max(y + 44, layout.buttonY() - 4);
         return new PickerBounds(layout.formX(), y, layout.formW(), Math.min(92, bottom - y));
     }
@@ -2477,6 +2748,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 current.maxHealth(),
                 current.energy(),
                 current.speed(),
+                current.initialEffects(),
                 new ArrayList<>(deckCardIds),
                 true));
         status = Component.translatable("debug.moonspire.monster_deck_updated");
@@ -2617,6 +2889,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         confirmDelete = false;
         Minecraft.getInstance().setScreen(new DeveloperFaceApplicationScreen(this));
@@ -2627,6 +2900,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         confirmDelete = false;
         Minecraft.getInstance().setScreen(new DeveloperMonsterDeckScreen(this));
@@ -2755,6 +3029,30 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         renderGridScrollbar(graphics, grid);
     }
 
+    private void renderMonsterEffectPickerPopup(GuiGraphics graphics, Layout layout, int mouseX, int mouseY, float partialTick) {
+        PickerBounds picker = monsterEffectPickerBounds(layout, selectedMonsterEffectCount());
+        graphics.fill(picker.x(), picker.y(), picker.x() + picker.w(), picker.y() + picker.h(), 0xFF100D0A);
+        MoonSpireUiTextures.drawDarkPanel(graphics, picker.x(), picker.y(), picker.w(), picker.h());
+        if (effectSearchBox != null) {
+            effectSearchBox.visible = true;
+            effectSearchBox.active = true;
+            effectSearchBox.setX(picker.x() + 6);
+            effectSearchBox.setY(picker.y() + 5);
+            effectSearchBox.setWidth(Math.max(1, picker.w() - 12));
+            effectSearchBox.render(graphics, mouseX, mouseY, partialTick);
+        }
+        List<BattleEffectType> types = filteredBattleEffectTypes();
+        GridLayout grid = monsterEffectPickerGrid(picker, types.size());
+        effectPickerScrollOffset = clampScroll(effectPickerScrollOffset, grid);
+        graphics.enableScissor(grid.viewX(), grid.viewY(), grid.viewX() + grid.viewW(), grid.viewY() + grid.viewH());
+        for (int i = firstVisibleIndex(grid); i < Math.min(types.size(), lastVisibleIndex(grid)); i++) {
+            GridCell cell = cell(grid, i);
+            drawTrimmed(graphics, Component.translatable(types.get(i).nameKey()), cell.x(), cell.y(), grid.cellW(), 0xFFEDE8FF);
+        }
+        graphics.disableScissor();
+        renderGridScrollbar(graphics, grid);
+    }
+
     private void renderTargetPickerPopup(GuiGraphics graphics, Layout layout, int mouseX, int mouseY, float partialTick) {
         PickerBounds picker = targetPickerBounds(layout, selectedEffectCount());
         graphics.fill(picker.x(), picker.y(), picker.x() + picker.w(), picker.y() + picker.h(), 0xFF100D0A);
@@ -2822,7 +3120,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             DeveloperCardDefinition card = cards.get(i);
             boolean selected = card.id().equals(selectedCardId);
             renderScaledSmallCard(graphics, card, cell, selected);
-            drawCenteredFitted(graphics, MoonSpireCardRegistry.registeredDeveloperId(card.id()), cell.x(), cell.y() + grid.cellH() + 2, grid.cellW(), CARD_ID_LABEL_H, selected ? 0xFFFFF3BF : 0xFFEDE8FF);
+            drawCardGridIdLabel(graphics, MoonSpireCardRegistry.registeredDeveloperId(card.id()), grid, cell, selected);
         }
         graphics.disableScissor();
         renderGridScrollbar(graphics, grid);
@@ -2851,17 +3149,26 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void drawCenteredFitted(GuiGraphics graphics, String text, int x, int y, int width, int height, int color) {
+        drawCenteredFitted(graphics, text, x, y, width, height, color, 0.45F);
+    }
+
+    private void drawCenteredFitted(GuiGraphics graphics, String text, int x, int y, int width, int height, int color, float minScale) {
         int lineY = y + Math.max(0, (height - font.lineHeight) / 2);
         if (font.width(text) <= width) {
             graphics.drawString(font, text, x + (width - font.width(text)) / 2, lineY, color, false);
             return;
         }
-        float scale = Math.max(0.45F, width / (float) Math.max(1, font.width(text)));
+        float scale = Math.max(minScale, width / (float) Math.max(1, font.width(text)));
         graphics.pose().pushPose();
         graphics.pose().translate(x + width / 2.0F, y + Math.max(0, (height - Math.round(font.lineHeight * scale)) / 2.0F), 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.drawString(font, text, -font.width(text) / 2, 0, color, false);
         graphics.pose().popPose();
+    }
+
+    private void drawCardGridIdLabel(GuiGraphics graphics, String id, GridLayout grid, GridCell cell, boolean selected) {
+        float minScale = grid.cellW() < CARD_GRID_MIN_CELL_W ? 0.12F : 0.45F;
+        drawCenteredFitted(graphics, id, cell.x(), cell.y() + grid.cellH() + 2, grid.cellW(), CARD_ID_LABEL_H, selected ? 0xFFFFF3BF : 0xFFEDE8FF, minScale);
     }
 
     private void renderScaledSmallCard(GuiGraphics graphics, DeveloperCardDefinition card, GridCell cell, boolean selected) {
@@ -2923,6 +3230,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             effectPickerScrollOffset = clampScroll(offset, grid);
         } else if (area == ScrollArea.TARGET_PICKER) {
             targetPickerScrollOffset = clampScroll(offset, grid);
+        } else if (area == ScrollArea.MONSTER_EFFECTS) {
+            effectScrollOffset = clampScroll(offset, grid);
+        } else if (area == ScrollArea.MONSTER_EFFECT_PICKER) {
+            effectPickerScrollOffset = clampScroll(offset, grid);
         }
     }
 
@@ -3005,6 +3316,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             case EFFECTS -> effectScrollOffset;
             case EFFECT_PICKER -> effectPickerScrollOffset;
             case TARGET_PICKER -> targetPickerScrollOffset;
+            case MONSTER_EFFECTS -> effectScrollOffset;
+            case MONSTER_EFFECT_PICKER -> effectPickerScrollOffset;
             default -> 0.0D;
         };
     }
@@ -3040,6 +3353,28 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         int contentH = itemCount <= 0 ? 0 : itemCount * rowH - 2;
         int scrollbarX = picker.x() + picker.w() - SCROLLBAR_HIT_WIDTH / 2;
         return new GridLayout(ScrollArea.TARGET_PICKER, viewX, viewY, viewW, viewH, viewX, scrollbarX, 1, viewW, 14, 0, rowH, contentH, 0);
+    }
+
+    private GridLayout monsterEffectEditorGrid(Layout layout, int itemCount) {
+        int viewX = layout.formX() + EFFECT_INSET;
+        int viewY = layout.fieldBoxY(3);
+        int viewW = Math.max(1, layout.formW() - EFFECT_INSET * 2 - SCROLLBAR_HIT_WIDTH);
+        int viewH = Math.max(18, Math.min(88, layout.buttonY() - viewY - EFFECT_BOTTOM_PAD));
+        int rowH = 24;
+        int contentH = itemCount <= 0 ? 0 : itemCount * rowH + EFFECT_BOTTOM_PAD - 6;
+        int scrollbarX = layout.formX() + layout.formW() - EFFECT_INSET - SCROLLBAR_HIT_WIDTH / 2;
+        return new GridLayout(ScrollArea.MONSTER_EFFECTS, viewX, viewY, viewW, viewH, viewX, scrollbarX, 1, viewW, 18, 0, rowH, contentH, 0);
+    }
+
+    private GridLayout monsterEffectPickerGrid(PickerBounds picker, int itemCount) {
+        int viewX = picker.x() + 6;
+        int viewY = picker.y() + 28;
+        int viewW = Math.max(1, picker.w() - 12 - SCROLLBAR_HIT_WIDTH);
+        int viewH = Math.max(14, picker.h() - 32);
+        int rowH = 16;
+        int contentH = itemCount <= 0 ? 0 : itemCount * rowH - 2;
+        int scrollbarX = picker.x() + picker.w() - SCROLLBAR_HIT_WIDTH / 2;
+        return new GridLayout(ScrollArea.MONSTER_EFFECT_PICKER, viewX, viewY, viewW, viewH, viewX, scrollbarX, 1, viewW, 14, 0, rowH, contentH, 0);
     }
 
     private void syncEffectAmountBoxes(Layout layout, List<DeveloperCardEffect> effects, GridLayout grid) {
@@ -3088,6 +3423,34 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
     }
 
+    private void syncMonsterEffectAmountBoxes(Layout layout, List<DeveloperMonsterInitialEffect> effects, GridLayout grid) {
+        String selectedId = selectedMonsterId();
+        if (!selectedId.equals(monsterEffectAmountBoxesMonsterId) || monsterEffectAmountBoxes.size() != effects.size()) {
+            hideMonsterEffectAmountBoxes();
+            monsterEffectAmountBoxes.clear();
+            monsterEffectAmountBoxesMonsterId = selectedId;
+            for (int i = 0; i < effects.size(); i++) {
+                int rowY = layout.fieldBoxY(3) + i * 24;
+                EditBox box = addBox(layout.formX() + layout.formW() - MONSTER_EFFECT_AMOUNT_W - EFFECT_INSET, rowY, MONSTER_EFFECT_AMOUNT_W, Component.translatable("screen.moonspire.value_number", effects.get(i).amount()));
+                box.setValue(Integer.toString(effects.get(i).amount()));
+                monsterEffectAmountBoxes.add(box);
+            }
+        }
+        for (int i = 0; i < monsterEffectAmountBoxes.size(); i++) {
+            EditBox box = monsterEffectAmountBoxes.get(i);
+            boolean visible = tab == Tab.MONSTERS && i < effects.size();
+            if (visible) {
+                GridCell cell = cell(grid, i);
+                int rowY = cell.y();
+                visible = rowY + 18 > grid.viewY() && rowY < grid.viewY() + grid.viewH();
+                box.setX(monsterEffectAmountX(grid));
+                box.setY(rowY);
+                box.setWidth(MONSTER_EFFECT_AMOUNT_W);
+            }
+            setVisible(box, visible);
+        }
+    }
+
     private void hideEffectAmountBoxes() {
         for (EditBox box : effectAmountBoxes) {
             setVisible(box, false);
@@ -3096,6 +3459,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void hideEffectCountBoxes() {
         for (EditBox box : effectCountBoxes) {
+            setVisible(box, false);
+        }
+    }
+
+    private void hideMonsterEffectAmountBoxes() {
+        for (EditBox box : monsterEffectAmountBoxes) {
             setVisible(box, false);
         }
     }
@@ -3126,6 +3495,26 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private int effectNameWidth(GridLayout grid) {
         return Math.max(1, effectTargetX(grid) - effectNameX(grid) - EFFECT_NAME_TARGET_GAP);
+    }
+
+    private int monsterEffectRemoveX(GridLayout grid) {
+        return grid.viewX();
+    }
+
+    private int monsterEffectNameX(GridLayout grid) {
+        return grid.viewX() + MONSTER_EFFECT_CONTROL_W + MONSTER_EFFECT_CONTROL_GAP;
+    }
+
+    private int monsterEffectAmountX(GridLayout grid) {
+        return grid.viewX() + grid.viewW() - MONSTER_EFFECT_AMOUNT_W;
+    }
+
+    private int monsterEffectAmountLabelX(GridLayout grid) {
+        return monsterEffectAmountX(grid) - EFFECT_AMOUNT_LABEL_W - EFFECT_LABEL_INPUT_GAP;
+    }
+
+    private int monsterEffectNameWidth(GridLayout grid) {
+        return Math.max(1, monsterEffectAmountLabelX(grid) - monsterEffectNameX(grid) - EFFECT_NAME_TARGET_GAP);
     }
 
     private int textListSize() {
@@ -3179,6 +3568,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 next.add(new DeveloperCardEffect(kind, kind.usesAmount() ? 1 : 0));
                 effectPickerOpen = false;
                 targetPickerOpen = false;
+                monsterEffectPickerOpen = false;
                 targetPickerEffectIndex = -1;
                 updateEffects(next);
                 return true;
@@ -3246,6 +3636,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         itemPickerOpen = false;
         effectPickerOpen = false;
         targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         init();
         return true;
@@ -3300,7 +3691,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         int bottom = Math.max(TOP + 80, height - CONTENT_BOTTOM_RESERVE);
         int buttonY = Math.max(bottom + 10, height - BUTTON_Y_OFFSET);
-        return new Layout(formX, formW, itemX, itemW, listX, listW, contentRight, bottom, buttonY);
+        return new Layout(formX, formW, itemX, itemW, listX, listW, contentRight, bottom, buttonY, cardListExpanded);
     }
 
     private static String cleanId(String value, String fallback) {
@@ -3404,7 +3795,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private record PickerBounds(int x, int y, int w, int h) {
     }
 
-    private record Layout(int formX, int formW, int itemX, int itemW, int listX, int listW, int contentRight, int bottom, int buttonY) {
+    private record Layout(int formX, int formW, int itemX, int itemW, int listX, int listW, int contentRight, int bottom, int buttonY, boolean cardListExpanded) {
         int top() {
             return TOP;
         }
@@ -3439,6 +3830,22 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
         int formInfoY(int fieldRows, int row) {
             return fieldBoxY(Math.max(0, fieldRows - 1)) + 25 + row * 14;
+        }
+
+        int cardIdTextY() {
+            return fieldBoxY(1) + 24;
+        }
+
+        int cardIdCopyButtonX() {
+            return formX + formW - CARD_ID_COPY_BUTTON_W;
+        }
+
+        int cardIdCopyButtonY() {
+            return cardIdTextY() - Math.max(0, (CARD_ID_COPY_BUTTON_H - 9) / 2);
+        }
+
+        int cardIdTextW() {
+            return Math.max(20, formW - CARD_ID_COPY_BUTTON_W - CARD_ID_COPY_BUTTON_GAP);
         }
 
         int previewX() {
@@ -3490,11 +3897,17 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
 
         GridLayout cardGrid(int itemCount) {
-            int availableW = Math.max(40, listW - CARD_GRID_SCROLL_RESERVE);
-            int columns = Math.max(1, Math.min(CARD_GRID_MAX_COLUMNS, (availableW + CARD_GRID_GAP_X) / (CardRenderHelper.SMALL_CARD_WIDTH + CARD_GRID_GAP_X)));
-            int cellW = Math.min(CardRenderHelper.SMALL_CARD_WIDTH, Math.max(38, (availableW - (columns - 1) * CARD_GRID_GAP_X) / columns));
+            int scrollReserve = cardListExpanded ? CARD_GRID_COMPACT_SCROLL_RESERVE : CARD_GRID_SCROLL_RESERVE;
+            int gapX = cardListExpanded ? CARD_GRID_COMPACT_GAP_X : CARD_GRID_GAP_X;
+            int availableW = Math.max(40, listW - scrollReserve);
+            int columns = Math.max(1, Math.min(CARD_GRID_MAX_COLUMNS, (availableW + gapX) / (CardRenderHelper.SMALL_CARD_WIDTH + gapX)));
+            if (cardListExpanded && columns < CARD_GRID_EXPANDED_MIN_COLUMNS) {
+                columns = CARD_GRID_EXPANDED_MIN_COLUMNS;
+            }
+            int minCellW = cardListExpanded ? CARD_GRID_EXPANDED_MIN_CELL_W : CARD_GRID_MIN_CELL_W;
+            int cellW = Math.min(CardRenderHelper.SMALL_CARD_WIDTH, Math.max(minCellW, (availableW - (columns - 1) * gapX) / columns));
             int cardH = Math.max(1, Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * (cellW / (float) CardRenderHelper.SMALL_CARD_WIDTH)));
-            return grid(ScrollArea.CARDS, listX, listW, cellW, cardH + CARD_ID_LABEL_H + 4, CARD_GRID_GAP_X, CARD_GRID_GAP_Y, columns, itemCount, CARD_GRID_PAD_TOP, CARD_ID_LABEL_H + CARD_GRID_PAD_BOTTOM);
+            return grid(ScrollArea.CARDS, listX, listW, cellW, cardH + CARD_ID_LABEL_H + 4, gapX, CARD_GRID_GAP_Y, columns, itemCount, CARD_GRID_PAD_TOP, CARD_ID_LABEL_H + CARD_GRID_PAD_BOTTOM);
         }
 
         GridLayout itemGrid(int itemCount) {
@@ -3530,7 +3943,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         LIST,
         EFFECTS,
         EFFECT_PICKER,
-        TARGET_PICKER
+        TARGET_PICKER,
+        MONSTER_EFFECTS,
+        MONSTER_EFFECT_PICKER
     }
 
     private record GridLayout(ScrollArea area, int viewX, int viewY, int viewW, int viewH, int cellsX, int scrollbarX, int columns, int cellW, int cellH, int gapX, int rowH, int contentH, int topPad) {
