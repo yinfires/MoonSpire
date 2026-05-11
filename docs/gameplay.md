@@ -59,6 +59,9 @@
 - 玩法描述：所有可获得的 Moon Spire 卡牌都有稳定的字符串卡牌 id。模组内置怪物牌使用 `builtin_monster_*` 格式，物品转换牌使用 `item_<命名空间>_<物品路径>` 格式（路径中的分隔符会转为下划线），开发者自定义牌在统一查询中使用 `custom_<自定义id>` 格式，同时保留直接输入旧自定义 id 的兼容能力。管理员可以通过 `/moonspire give_card <card_id> [target]` 将内置牌、物品转换牌模板或自定义牌加入玩家收藏；通过指令给予物品转换牌不会消耗物品，制卡台转换仍会消耗对应物品。
   - 代码实现：`RegisteredCardDefinition` 集中描述卡牌 id、费用、名称键、描述键、类型、卡图和效果等字段；`MoonSpireCardRegistry` 统一查询内置牌、物品转换牌模板和 `DeveloperDataManager` 读取的开发者自定义牌。`CardInstance` 保存稳定 `cardId` 并兼容旧 NBT；`MoonSpireCommands`、`MonsterDeckProfile` 和 `CardFactory` 都改为通过统一注册入口生成卡牌实例。
   - 变更记录：新增卡牌集中注册与稳定 id 规则，扩展 `/moonspire give_card` 支持内置牌和物品转换牌，并让怪物默认牌组与制卡台转换共享同一套卡牌定义生成流程。
+- 玩法描述：安装 JEI 时，玩家可以在 JEI 中查看可转换物品的用途，看到该物品通过制卡台会生成的转换卡牌；制卡台会作为该转换分类的关键方块显示。JEI 页面只展示结果和放大预览，不会生成实体卡牌物品，也不改变实际制卡台点击物品后消耗原物品并加入玩家卡牌收藏的规则。
+  - 代码实现：`MoonSpireJeiPlugin` 以可选 JEI 插件注册 `CardForgeRecipeCategory`；分类遍历物品注册表并复用 `CardFactory.canConvert()` / `CardFactory.fromItem()` 生成 `CardForgeJeiRecipe`，输入槽绑定原物品，催化剂绑定 `ModItems.CARD_FORGE`。`CardForgeRecipeCategory` 复用 `CardRenderHelper` 绘制转换卡牌和悬停放大预览。
+  - 变更记录：新增 JEI 制卡台转换用途联动，允许从物品用途页查看对应转换卡牌，并在分类界面内放大卡牌查看关键词说明。
 - 玩法描述：卡牌不再拥有速度字段。卡牌类型由效果决定，能造成血量伤害的牌显示为攻击，其余显示为技能。
   - 代码实现：`CardInstance` 移除 `speed`，保留旧 NBT 兼容读取但忽略旧速度；客户端 `CardRenderHelper` 根据 `hasAttack()` 显示攻击或技能。
   - 变更记录：移除卡牌速度，并更新卡面显示。
