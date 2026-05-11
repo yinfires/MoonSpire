@@ -42,7 +42,7 @@ final class CardGridPanel {
     private final PreviewAnimation previewAnimation = new PreviewAnimation();
     private double scrollOffset;
     private boolean draggingScrollbar;
-    private int scrollbarGrabOffset;
+    private double scrollbarGrabOffset;
     private int hoveredIndex = -1;
     private long lastAnimationNanos;
     private double previousScrollOffset = Double.NaN;
@@ -118,7 +118,7 @@ final class CardGridPanel {
         double previousFrameScrollOffset = previousScrollOffset;
         double scrollDelta = Double.isFinite(previousFrameScrollOffset) ? frameScrollOffset - previousFrameScrollOffset : 0.0D;
         boolean scrolledSinceLastFrame = Math.abs(scrollDelta) > 0.01D;
-        boolean scrollMotionActive = draggingScrollbar || scrolledSinceLastFrame || scrollMotionFrames > 0;
+        boolean scrollMotionActive = scrolledSinceLastFrame || scrollMotionFrames > 0;
         boolean clipGridItemArt = !scrollMotionActive;
         previousScrollOffset = frameScrollOffset;
         long layoutNanos = elapsedSince(segmentStart);
@@ -279,7 +279,7 @@ final class CardGridPanel {
         }
         int visible = visibleCardCount(layout);
         long elapsed = diag ? MoonSpirePerfDiagnostics.now() - start : 0L;
-        boolean scrollDiagnosticActive = scrollDiagFrames > 0 || draggingScrollbar || scrolledSinceLastFrame;
+        boolean scrollDiagnosticActive = scrollDiagFrames > 0 || scrolledSinceLastFrame;
         lastFrameStats = new FrameStats(cards.size(), visible, warmed, renderedCards, hoveredIndex, previewRendered, scrollDiagnosticActive, draggingScrollbar, scrollMotionActive, clipGridItemArt, scrollEventId, scrollSource, scrollInput, frameScrollOffset, scrollDelta, maxScroll(layout), firstVisible, endVisible, fullVisibleCards, partialVisibleCards, skippedCostText, skippedNameText, skippedTypeText, skippedDescriptionText, elapsed, layoutNanos, warmupNanos, overlayNanos, hoverNanos, scissorNanos, baseNanos, artNanos, baseArtOtherNanos, clearDepthNanos, textNanos, scrollbarNanos, previewNanos, titleNanos);
         if (scrollMotionFrames > 0) {
             scrollMotionFrames--;
@@ -297,9 +297,12 @@ final class CardGridPanel {
         }
         ScrollbarThumb thumb = scrollbarThumb(layout);
         draggingScrollbar = true;
-        scrollbarGrabOffset = (int) Math.max(0.0D, Math.min(thumb.height(), mouseY - thumb.y()));
-        dragScrollbar(width, height, bottomReserve, mouseY);
+        scrollbarGrabOffset = Math.max(0.0D, Math.min(thumb.height(), mouseY - thumb.y()));
+        boolean changed = dragScrollbar(width, height, bottomReserve, mouseY);
         markScrollDiagnostics("thumbGrab", mouseY);
+        if (changed) {
+            scrollMotionFrames = SCROLL_MOTION_FRAMES;
+        }
         return true;
     }
 
@@ -307,8 +310,9 @@ final class CardGridPanel {
         if (!draggingScrollbar) {
             return false;
         }
-        dragScrollbar(width, height, bottomReserve, mouseY);
-        markScrollDiagnostics("thumbDrag", mouseY);
+        if (dragScrollbar(width, height, bottomReserve, mouseY)) {
+            markScrollDiagnostics("thumbDrag", mouseY);
+        }
         return true;
     }
 
@@ -491,22 +495,24 @@ final class CardGridPanel {
                 && mouseY <= layout.viewY() + layout.viewH();
     }
 
-    private void dragScrollbar(int width, int height, int bottomReserve, double mouseY) {
+    private boolean dragScrollbar(int width, int height, int bottomReserve, double mouseY) {
         Layout layout = layout(width, height, bottomReserve);
         if (!hasScrollbar(layout)) {
-            return;
+            return false;
         }
         ScrollbarThumb thumb = scrollbarThumb(layout);
         int trackRange = Math.max(1, layout.viewH() - thumb.height());
         double before = clampedScrollOffset(layout);
-        int thumbY = (int) Math.max(layout.viewY(), Math.min(layout.viewY() + trackRange, mouseY - scrollbarGrabOffset));
+        double thumbY = Math.max(layout.viewY(), Math.min(layout.viewY() + trackRange, mouseY - scrollbarGrabOffset));
         scrollOffset = (thumbY - layout.viewY()) * maxScroll(layout) / (double) trackRange;
         cachedFirstVisibleIndex = -1;
         cachedLastVisibleIndex = -1;
         constrainScroll(layout);
-        if (Math.abs(clampedScrollOffset(layout) - before) > 0.01D) {
+        boolean changed = Math.abs(clampedScrollOffset(layout) - before) > 0.01D;
+        if (changed) {
             scrollMotionFrames = SCROLL_MOTION_FRAMES;
         }
+        return changed;
     }
 
     private ScrollbarThumb scrollbarThumb(Layout layout) {
