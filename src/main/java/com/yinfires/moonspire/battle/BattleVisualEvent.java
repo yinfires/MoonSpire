@@ -4,6 +4,7 @@ import com.yinfires.moonspire.card.CardInstance;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
 public record BattleVisualEvent(
         int attackerId,
@@ -20,10 +21,50 @@ public record BattleVisualEvent(
         int animationTicks,
         boolean shieldSound,
         boolean hurtSound,
-        boolean armorEquipSound) {
+        boolean armorEquipSound,
+        Vec3 animationStart,
+        Vec3 animationStrike,
+        Vec3 knockbackDelta) {
     public static final StreamCodec<RegistryFriendlyByteBuf, BattleVisualEvent> STREAM_CODEC = StreamCodec.of(
             BattleVisualEvent::write,
             BattleVisualEvent::read);
+
+    public BattleVisualEvent(
+            int attackerId,
+            int targetId,
+            ItemStack itemStack,
+            ItemStack projectileStack,
+            CardInstance playedCard,
+            int blockedDamage,
+            int healthDamage,
+            int gainedBlock,
+            int healedHealth,
+            int delayTicks,
+            AnimationType animationType,
+            int animationTicks,
+            boolean shieldSound,
+            boolean hurtSound,
+            boolean armorEquipSound) {
+        this(
+                attackerId,
+                targetId,
+                itemStack,
+                projectileStack,
+                playedCard,
+                blockedDamage,
+                healthDamage,
+                gainedBlock,
+                healedHealth,
+                delayTicks,
+                animationType,
+                animationTicks,
+                shieldSound,
+                hurtSound,
+                armorEquipSound,
+                null,
+                null,
+                null);
+    }
 
     private static void write(RegistryFriendlyByteBuf buf, BattleVisualEvent event) {
         buf.writeVarInt(event.attackerId);
@@ -44,6 +85,9 @@ public record BattleVisualEvent(
         buf.writeBoolean(event.shieldSound);
         buf.writeBoolean(event.hurtSound);
         buf.writeBoolean(event.armorEquipSound);
+        writeOptionalVec3(buf, event.animationStart);
+        writeOptionalVec3(buf, event.animationStrike);
+        writeOptionalVec3(buf, event.knockbackDelta);
     }
 
     private static BattleVisualEvent read(RegistryFriendlyByteBuf buf) {
@@ -62,11 +106,30 @@ public record BattleVisualEvent(
                 buf.readVarInt(),
                 buf.readBoolean(),
                 buf.readBoolean(),
-                buf.readBoolean());
+                buf.readBoolean(),
+                readOptionalVec3(buf),
+                readOptionalVec3(buf),
+                readOptionalVec3(buf));
     }
 
     private static CardInstance readOptionalCard(RegistryFriendlyByteBuf buf) {
         return buf.readBoolean() ? CardInstance.STREAM_CODEC.decode(buf) : null;
+    }
+
+    private static void writeOptionalVec3(RegistryFriendlyByteBuf buf, Vec3 value) {
+        buf.writeBoolean(value != null);
+        if (value != null) {
+            buf.writeDouble(value.x);
+            buf.writeDouble(value.y);
+            buf.writeDouble(value.z);
+        }
+    }
+
+    private static Vec3 readOptionalVec3(RegistryFriendlyByteBuf buf) {
+        if (!buf.readBoolean()) {
+            return null;
+        }
+        return new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble());
     }
 
     private static AnimationType animationTypeByOrdinal(int ordinal) {

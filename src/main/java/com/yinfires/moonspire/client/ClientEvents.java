@@ -29,13 +29,17 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -69,6 +73,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryHandState> TEMP_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
+    private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
     private static long lastUiDebugKeyMillis;
     private static boolean battleRenderActive;
@@ -135,6 +140,7 @@ public final class ClientEvents {
                     minecraft.setScreen(new BattleScreen());
                 }
                 playVisualEvents(minecraft);
+                syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
                 tickScheduledBattleSounds(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
@@ -267,6 +273,28 @@ public final class ClientEvents {
             }
         }
 
+        @SubscribeEvent(priority = EventPriority.LOWEST)
+        public static void applyVisualLungeOffset(RenderLivingEvent.Pre<?, ?> event) {
+            LivingEntity entity = event.getEntity();
+            Vec3 renderedPosition = new Vec3(
+                    Mth.lerp(event.getPartialTick(), entity.xOld, entity.getX()),
+                    Mth.lerp(event.getPartialTick(), entity.yOld, entity.getY()),
+                    Mth.lerp(event.getPartialTick(), entity.zOld, entity.getZ()));
+            Vec3 offset = ClientBattleState.visualRenderOffset(entity.getId(), renderedPosition, event.getPartialTick());
+            if (offset.lengthSqr() > 0.000001D) {
+                event.getPoseStack().pushPose();
+                event.getPoseStack().translate(offset.x, offset.y, offset.z);
+                VISUAL_LUNGE_POSE_PUSHES.add(entity.getId());
+            }
+        }
+
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public static void restoreVisualLungeOffset(RenderLivingEvent.Post<?, ?> event) {
+            if (VISUAL_LUNGE_POSE_PUSHES.remove(event.getEntity().getId())) {
+                event.getPoseStack().popPose();
+            }
+        }
+
         @SubscribeEvent
         public static void hideDefaultPlayerHand(RenderPlayerEvent.Pre event) {
             if (!ClientBattleState.active() || event.getEntity().getId() != ClientBattleState.snapshot().player().entityId()) {
@@ -363,7 +391,7 @@ public final class ClientEvents {
         private static void applyTemporaryMainHand(LivingEntity entity, ItemStack stack, boolean useItem) {
             TemporaryHandState state = TEMP_MAIN_HANDS.computeIfAbsent(
                     entity.getId(),
-                    id -> new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy()));
+                    id -> TemporaryHandState.capture(entity));
             entity.setItemSlot(EquipmentSlot.MAINHAND, stack.copy());
             if (useItem && !entity.isUsingItem()) {
                 entity.startUsingItem(InteractionHand.MAIN_HAND);
@@ -405,15 +433,58 @@ public final class ClientEvents {
         private static void syncVisualHandOverride(LivingEntity entity, ItemStack stack) {
             TemporaryHandState state = VISUAL_MAIN_HANDS.computeIfAbsent(
                     entity.getId(),
-                    id -> new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy()));
-            if (!ItemStack.matches(entity.getItemBySlot(EquipmentSlot.MAINHAND), stack)) {
-                entity.setItemSlot(EquipmentSlot.MAINHAND, stack.copy());
+                    id -> TemporaryHandState.capture(entity));
+            ItemStack currentMainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
+            if (currentMainHand != stack && !ItemStack.matches(currentMainHand, stack)) {
+                entity.setItemSlot(EquipmentSlot.MAINHAND, stack);
             }
-            if (ClientBattleState.visualUsingItem(entity.getId()) && !entity.isUsingItem()) {
-                entity.startUsingItem(InteractionHand.MAIN_HAND);
+            if (entity instanceof AbstractSkeleton skeleton && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.BOW_DRAW) {
+                skeleton.setAggressive(true);
+            }
+            ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
+            if (ClientBattleState.visualUsingItem(entity.getId())) {
+                if (!entity.isUsingItem()) {
+                    entity.startUsingItem(InteractionHand.MAIN_HAND);
+                }
+                syncVisualUseItemState(entity, mainHand);
                 state.startedUsing = true;
             } else if (!ClientBattleState.visualUsingItem(entity.getId()) && state.startedUsing && entity.isUsingItem()) {
-                entity.stopUsingItem();
+                clearVisualUseItemState(entity);
+            }
+        }
+
+        private static void syncVisualUseItemState(LivingEntity entity, ItemStack mainHand) {
+            int duration = Math.max(1, mainHand.getUseDuration(entity));
+            int usedTicks = Math.max(0, ClientBattleState.visualTicksUsingItem(entity.getId()));
+            entity.useItem = mainHand;
+            entity.useItemRemaining = Math.max(1, duration - usedTicks);
+            entity.setLivingEntityFlag(1, true);
+            entity.setLivingEntityFlag(2, false);
+        }
+
+        private static void clearVisualUseItemState(LivingEntity entity) {
+            entity.stopUsingItem();
+            entity.useItem = ItemStack.EMPTY;
+            entity.useItemRemaining = 0;
+            entity.setLivingEntityFlag(1, false);
+            entity.setLivingEntityFlag(2, false);
+        }
+
+        private static void syncVisualWalkAnimations(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                return;
+            }
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualWalkAnimation(minecraft.level.getEntity(combatant.entityId()));
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualWalkAnimation(minecraft.level.getEntity(combatant.entityId()));
+            }
+        }
+
+        private static void syncVisualWalkAnimation(Entity entity) {
+            if (entity instanceof LivingEntity living && ClientBattleState.visualMeleeLunge(living.getId())) {
+                living.walkAnimation.update(ClientBattleState.visualWalkSpeed(living.getId()), 0.65F);
             }
         }
 
@@ -421,8 +492,9 @@ public final class ClientEvents {
             TemporaryHandState state = VISUAL_MAIN_HANDS.remove(entity.getId());
             if (state != null) {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
+                state.restoreAggressive(entity);
                 if (state.startedUsing && entity.isUsingItem()) {
-                    entity.stopUsingItem();
+                    clearVisualUseItemState(entity);
                 }
             }
         }
@@ -431,14 +503,26 @@ public final class ClientEvents {
             TemporaryHandState state = TEMP_MAIN_HANDS.remove(entity.getId());
             if (state != null) {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
+                state.restoreAggressive(entity);
                 if (state.startedUsing && entity.isUsingItem() && !ClientBattleState.visualUsingItem(entity.getId())) {
-                    entity.stopUsingItem();
+                    clearVisualUseItemState(entity);
                 }
             }
         }
 
         private static void suppressDefaultBattleArmPose(LivingEntity entity, HumanoidModel<?> model) {
             if (!ClientBattleState.active() || ClientBattleState.snapshot().combatant(entity.getId()) == null) {
+                return;
+            }
+            if (entity instanceof AbstractSkeleton && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.BOW_DRAW) {
+                TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
+                if (entity.getMainArm() == HumanoidArm.RIGHT) {
+                    model.rightArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    model.leftArmPose = HumanoidModel.ArmPose.EMPTY;
+                } else {
+                    model.leftArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    model.rightArmPose = HumanoidModel.ArmPose.EMPTY;
+                }
                 return;
             }
             if (!ClientBattleState.visualMainHandOverride(entity.getId()).isEmpty()) {
@@ -486,6 +570,7 @@ public final class ClientEvents {
             TEMP_MAIN_HANDS.clear();
             VISUAL_MAIN_HANDS.clear();
             TEMP_ARM_POSES.clear();
+            VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
             ClientBattleState.clearVisualStates();
         }
@@ -504,14 +589,14 @@ public final class ClientEvents {
 
         private static void clearEntityUseState(Entity entity) {
             if (entity instanceof LivingEntity living && !ClientBattleState.visualUsingItem(living.getId()) && living.isUsingItem()) {
-                living.stopUsingItem();
+                clearVisualUseItemState(living);
             }
         }
 
         private static void clearEntityHandAnimation(Entity entity, boolean stopUsingItem) {
             if (entity instanceof LivingEntity living) {
                 if (stopUsingItem && living.isUsingItem()) {
-                    living.stopUsingItem();
+                    clearVisualUseItemState(living);
                 }
                 living.swinging = false;
                 living.swingTime = 0;
@@ -529,8 +614,9 @@ public final class ClientEvents {
                 Entity attacker = minecraft.level.getEntity(event.attackerId());
                 Entity target = minecraft.level.getEntity(event.targetId());
                 boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
+                boolean meleeLungeHit = event.animationType() == BattleVisualEvent.AnimationType.MELEE_LUNGE && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
-                if (playedCardVisual && shouldSwing && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                if ((playedCardVisual && shouldSwing || meleeLungeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (attacker instanceof LivingEntity livingAttacker) {
@@ -592,10 +678,23 @@ public final class ClientEvents {
 
     private static final class TemporaryHandState {
         private final ItemStack originalMainHand;
+        private final Boolean originalAggressive;
         private boolean startedUsing;
 
-        private TemporaryHandState(ItemStack originalMainHand) {
+        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive) {
             this.originalMainHand = originalMainHand;
+            this.originalAggressive = originalAggressive;
+        }
+
+        private static TemporaryHandState capture(LivingEntity entity) {
+            Boolean aggressive = entity instanceof AbstractSkeleton skeleton ? skeleton.isAggressive() : null;
+            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive);
+        }
+
+        private void restoreAggressive(LivingEntity entity) {
+            if (originalAggressive != null && entity instanceof AbstractSkeleton skeleton) {
+                skeleton.setAggressive(originalAggressive);
+            }
         }
     }
 

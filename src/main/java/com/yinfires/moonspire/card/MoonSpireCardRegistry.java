@@ -241,12 +241,21 @@ public final class MoonSpireCardRegistry {
 
     private static List<RegisteredCardDefinition> builtinMonsterCards() {
         return List.of(
-                new RegisteredCardDefinition("builtin_monster_claw", "card.moonspire.monster.claw.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_claw", "card.moonspire.monster.claw.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.BLEED, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_rotten_guard", "card.moonspire.monster.rotten_guard.name", "", 1, 0, 4, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_undead_power", "card.moonspire.monster.undead_power.name", "", 3, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.STRENGTH, 2, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_lunge", "card.moonspire.monster.lunge.name", "", 2, 8, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
-                new RegisteredCardDefinition("builtin_monster_bone_shot", "card.moonspire.monster.bone_shot.name", "", 1, 6, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_bow_strike", "card.moonspire.monster.bow_strike.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_sidestep", "card.moonspire.monster.sidestep.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
-                new RegisteredCardDefinition("builtin_monster_aimed_volley", "card.moonspire.monster.aimed_volley.name", "", 2, 9, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_shoot", "card.moonspire.monster.shoot.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:bow", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

@@ -4,6 +4,7 @@ import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -33,6 +34,10 @@ final class CardGridPanel {
     private static final float MODAL_CONTENT_Z = 1100.0F;
     private static final int SCROLL_DIAG_FRAMES = 12;
     private static final int SCROLL_MOTION_FRAMES = 4;
+    private static final Comparator<CardInstance> CARD_NAME_ORDER = Comparator
+            .comparing((CardInstance card) -> card.nameComponent().getString(), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(card -> card.cardId(), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(card -> card.id().toString());
 
     private final Component title;
     private final List<CardInstance> cards = new ArrayList<>();
@@ -77,7 +82,7 @@ final class CardGridPanel {
         this.frameValues.clear();
         this.framePoses.clear();
         if (cards != null && !cards.isEmpty()) {
-            for (CardInstance card : cards) {
+            for (CardInstance card : cards.stream().filter(Objects::nonNull).sorted(CARD_NAME_ORDER).toList()) {
                 this.cards.add(card);
                 this.warmupContentKeys.add(CardRenderHelper.warmupContentKey(card));
                 this.frameValues.add(null);

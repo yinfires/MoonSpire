@@ -35,6 +35,11 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public final class ClientBattleState {
+    private static final int MELEE_LUNGE_TICKS = 8;
+    private static final int MELEE_HIT_PAUSE_TICKS = 6;
+    private static final double LUNGE_STOP_DISTANCE = 1.55D;
+    private static final double LUNGE_REACH = 10.0D;
+    private static final int KNOCKBACK_VISUAL_TICKS = 10;
     private static BattleSnapshot snapshot = BattleSnapshot.inactive();
     private static long snapshotVersion;
     private static UUID serverBattleId = BattleSnapshot.INACTIVE_BATTLE_ID;
@@ -165,19 +170,50 @@ public final class ClientBattleState {
     }
 
     public static void setPileContents(UUID battleId, BattlePileSource source, long deckVersion, int expectedCount, List<CardInstance> cards) {
+        setPileContents(battleId, source, deckVersion, -1, expectedCount, cards);
+    }
+
+    public static void setPileContents(UUID battleId, BattlePileSource source, long deckVersion, int entityId, int expectedCount, List<CardInstance> cards) {
         if (battleId == null || source == null || cards == null || !battleId.equals(serverBattleId)) {
             return;
         }
-        pileContents.put(new PileContentsKey(battleId, source, deckVersion), new PileContents(expectedCount, cards));
+        pileContents.put(new PileContentsKey(battleId, source, deckVersion, entityId), new PileContents(expectedCount, cards));
     }
 
     public static List<CardInstance> pileContents(UUID battleId, BattlePileSource source, long deckVersion) {
-        PileContents contents = pileContents.get(new PileContentsKey(battleId, source, deckVersion));
+        return pileContents(battleId, source, deckVersion, -1);
+    }
+
+    public static List<CardInstance> pileContents(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        PileContents contents = pileContents.get(new PileContentsKey(battleId, source, deckVersion, entityId));
         return contents == null ? List.of() : contents.cards();
     }
 
+    public static long pileContentsVersionAtOrAfter(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        long bestVersion = Long.MIN_VALUE;
+        for (PileContentsKey key : pileContents.keySet()) {
+            if (key.matches(battleId, source, entityId) && key.deckVersion >= deckVersion && key.deckVersion > bestVersion) {
+                bestVersion = key.deckVersion;
+            }
+        }
+        return bestVersion == Long.MIN_VALUE ? -1L : bestVersion;
+    }
+
     public static boolean hasPileContents(UUID battleId, BattlePileSource source, long deckVersion) {
-        return pileContents.containsKey(new PileContentsKey(battleId, source, deckVersion));
+        return hasPileContents(battleId, source, deckVersion, -1);
+    }
+
+    public static boolean hasPileContents(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        return pileContents.containsKey(new PileContentsKey(battleId, source, deckVersion, entityId));
+    }
+
+    public static boolean hasPileContentsAtOrAfter(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        return pileContentsVersionAtOrAfter(battleId, source, deckVersion, entityId) >= 0L;
+    }
+
+    public static int pileExpectedCount(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        PileContents contents = pileContents.get(new PileContentsKey(battleId, source, deckVersion, entityId));
+        return contents == null ? -1 : contents.expectedCount();
     }
 
     public static boolean active() {
@@ -363,9 +399,10 @@ public final class ClientBattleState {
                 continue;
             }
             BattleVisualEvent event = scheduled.event;
-            visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState()).showItem(event.itemStack(), event.animationType(), event.animationTicks());
+            VisualState attackerVisual = visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState());
+            attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event));
             if (event.healthDamage() > 0) {
-                visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash();
+                visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash(event.knockbackDelta());
             }
             if (event.gainedBlock() > 0) {
                 blockGainAnimations.add(new BlockGainAnimation(event.targetId(), System.nanoTime()));
@@ -430,6 +467,37 @@ public final class ClientBattleState {
     public static boolean visualUsingItem(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state != null && state.usingTicks() > 0;
+    }
+
+    public static int visualTicksUsingItem(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.ticksUsingItem();
+    }
+
+    public static boolean visualMeleeLunge(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.lungeTicks() > 0;
+    }
+
+    public static float visualWalkSpeed(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0.0F : state.walkSpeed();
+    }
+
+    public static Vec3 visualRenderOffset(int entityId, Vec3 renderedPosition, float partialTick) {
+        VisualState state = visualStates.get(entityId);
+        if (state == null || renderedPosition == null) {
+            return Vec3.ZERO;
+        }
+        Vec3 offset = Vec3.ZERO;
+        if (snapshot.isPlayerEntity(entityId) && state.lungeTicks() > 0) {
+            Vec3 visualPosition = state.lungePosition(partialTick);
+            if (visualPosition != null) {
+                offset = offset.add(visualPosition.subtract(renderedPosition));
+            }
+        }
+        Vec3 knockback = state.knockbackOffset(partialTick);
+        return knockback == null ? offset : offset.add(knockback);
     }
 
     public static BattleVisualEvent.AnimationType visualAnimationType(int entityId) {
@@ -593,13 +661,59 @@ public final class ClientBattleState {
         return monsterPlayedCard != null && monsterPlayedCard.effects().stream().anyMatch(effect -> effect.kind() == kind);
     }
 
+    private static Vec3 lungeStart(BattleVisualEvent event) {
+        if (event == null || event.animationType() != BattleVisualEvent.AnimationType.MELEE_LUNGE || event.animationTicks() <= 0) {
+            return null;
+        }
+        if (event.animationStart() != null) {
+            return event.animationStart();
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || !(minecraft.level.getEntity(event.attackerId()) instanceof Entity attacker)) {
+            return null;
+        }
+        return attacker.position();
+    }
+
+    private static Vec3 lungeStrike(BattleVisualEvent event) {
+        if (event == null || event.animationType() != BattleVisualEvent.AnimationType.MELEE_LUNGE || event.animationTicks() <= 0) {
+            return null;
+        }
+        if (event.animationStrike() != null) {
+            return event.animationStrike();
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null
+                || !(minecraft.level.getEntity(event.attackerId()) instanceof Entity attacker)
+                || !(minecraft.level.getEntity(event.targetId()) instanceof Entity target)) {
+            return null;
+        }
+        Vec3 start = attacker.position();
+        Vec3 direction = target.position().subtract(start);
+        Vec3 horizontal = new Vec3(direction.x, 0.0D, direction.z);
+        Vec3 normalized = horizontal.lengthSqr() > 0.0001D ? horizontal.normalize() : attacker.getLookAngle().multiply(1.0D, 0.0D, 1.0D).normalize();
+        double distance = Math.max(0.0D, Math.min(LUNGE_REACH, horizontal.length() - LUNGE_STOP_DISTANCE));
+        return start.add(normalized.scale(distance));
+    }
+
     public static final class VisualState {
         private ItemStack itemStack = ItemStack.EMPTY;
         private BattleVisualEvent.AnimationType animationType = BattleVisualEvent.AnimationType.NONE;
         private int itemTicks;
         private int usingTicks;
+        private int usingAge;
+        private int lungeTicks;
+        private int lungeAge;
+        private Vec3 lungeStart = Vec3.ZERO;
+        private Vec3 lungeStrike = Vec3.ZERO;
+        private Vec3 previousLungePosition = Vec3.ZERO;
+        private Vec3 currentLungePosition = Vec3.ZERO;
+        private float walkSpeed;
         private int hurtTicks;
         private int knockbackTicks;
+        private int knockbackVisualTicks;
+        private int knockbackVisualAge;
+        private Vec3 knockbackDelta = Vec3.ZERO;
 
         public int hurtTicks() {
             return hurtTicks;
@@ -613,35 +727,89 @@ public final class ClientBattleState {
             return usingTicks;
         }
 
+        public int ticksUsingItem() {
+            return usingTicks <= 0 ? 0 : usingAge;
+        }
+
+        public int lungeTicks() {
+            return lungeTicks;
+        }
+
         public BattleVisualEvent.AnimationType animationType() {
-            if (itemTicks <= 0 && usingTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0) {
                 return BattleVisualEvent.AnimationType.NONE;
             }
             return animationType;
         }
 
-        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks) {
+        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 lungeStart, Vec3 lungeStrike) {
+            BattleVisualEvent.AnimationType nextType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
+            if (nextType == BattleVisualEvent.AnimationType.MELEE_LUNGE && animationTicks > 0 && lungeStart != null && lungeStrike != null) {
+                lungeTicks = Math.max(1, Math.max(MELEE_LUNGE_TICKS, animationTicks) + MELEE_HIT_PAUSE_TICKS);
+                lungeAge = 0;
+                this.lungeStart = lungeStart;
+                this.lungeStrike = lungeStrike;
+                previousLungePosition = lungeStart;
+                currentLungePosition = lungeStart;
+                walkSpeed = 0.0F;
+                this.animationType = nextType;
+            }
             if (stack != null && !stack.isEmpty()) {
                 itemStack = stack.copy();
                 itemTicks = Math.max(18, animationTicks + 8);
-                this.animationType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
-                if (animationType == BattleVisualEvent.AnimationType.BOW_DRAW || animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
+                this.animationType = nextType;
+                if (nextType == BattleVisualEvent.AnimationType.BOW_DRAW || nextType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
                     usingTicks = Math.max(usingTicks, Math.max(1, animationTicks));
+                    usingAge = 0;
                 }
             }
         }
 
         private ItemStack mainHandStack() {
-            ItemStack stack = itemStack.copy();
-            if (animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD && usingTicks <= 0 && stack.is(Items.CROSSBOW)) {
-                stack.set(DataComponents.CHARGED_PROJECTILES, ChargedProjectiles.of(new ItemStack(Items.ARROW)));
+            if (animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD && usingTicks <= 0 && itemStack.is(Items.CROSSBOW)) {
+                itemStack.set(DataComponents.CHARGED_PROJECTILES, ChargedProjectiles.of(new ItemStack(Items.ARROW)));
             }
-            return stack;
+            return itemStack;
         }
 
-        private void hurtFlash() {
+        private Vec3 lungePosition(float partialTick) {
+            double age = Math.max(0.0D, lungeAge + Math.max(0.0F, partialTick));
+            if (age <= MELEE_LUNGE_TICKS) {
+                return lerp(lungeStart, lungeStrike, age / MELEE_LUNGE_TICKS);
+            }
+            age -= MELEE_LUNGE_TICKS;
+            if (age <= MELEE_HIT_PAUSE_TICKS) {
+                return lungeStrike;
+            }
+            return lungeStrike;
+        }
+
+        private Vec3 knockbackOffset(float partialTick) {
+            if (knockbackVisualTicks <= 0 || knockbackDelta.lengthSqr() <= 0.0001D) {
+                return Vec3.ZERO;
+            }
+            double age = Math.max(0.0D, knockbackVisualAge + Math.max(0.0F, partialTick));
+            double progress = Math.max(0.0D, Math.min(1.0D, age / KNOCKBACK_VISUAL_TICKS));
+            double pushEnd = 0.35D;
+            double amount = progress < pushEnd
+                    ? progress / pushEnd
+                    : Math.max(0.0D, 1.0D - (progress - pushEnd) / (1.0D - pushEnd));
+            return knockbackDelta.scale(amount);
+        }
+
+        private float walkSpeed() {
+            return walkSpeed;
+        }
+
+        private void hurtFlash(Vec3 knockbackDelta) {
             hurtTicks = 10;
             knockbackTicks = 24;
+            if (knockbackDelta != null && knockbackDelta.lengthSqr() > 0.0001D) {
+                Vec3 horizontal = new Vec3(knockbackDelta.x, 0.0D, knockbackDelta.z);
+                this.knockbackDelta = horizontal.lengthSqr() > 0.0001D ? horizontal : Vec3.ZERO;
+                knockbackVisualTicks = KNOCKBACK_VISUAL_TICKS;
+                knockbackVisualAge = 0;
+            }
         }
 
         private void tick() {
@@ -649,11 +817,23 @@ public final class ClientBattleState {
                 itemTicks--;
                 if (itemTicks <= 0) {
                     itemStack = ItemStack.EMPTY;
-                    animationType = BattleVisualEvent.AnimationType.NONE;
                 }
             }
             if (usingTicks > 0) {
                 usingTicks--;
+                usingAge++;
+            } else {
+                usingAge = 0;
+            }
+            if (lungeTicks > 0) {
+                previousLungePosition = currentLungePosition;
+                currentLungePosition = lungePosition(0.0F);
+                double walked = currentLungePosition.subtract(previousLungePosition).multiply(1.0D, 0.0D, 1.0D).length();
+                walkSpeed = (float) Math.max(0.0D, Math.min(1.0D, walked * 4.0D));
+                lungeTicks--;
+                lungeAge++;
+            } else {
+                walkSpeed = 0.0F;
             }
             if (hurtTicks > 0) {
                 hurtTicks--;
@@ -661,11 +841,26 @@ public final class ClientBattleState {
             if (knockbackTicks > 0) {
                 knockbackTicks--;
             }
+            if (knockbackVisualTicks > 0) {
+                knockbackVisualTicks--;
+                knockbackVisualAge++;
+                if (knockbackVisualTicks <= 0) {
+                    knockbackDelta = Vec3.ZERO;
+                }
+            }
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0) {
+                animationType = BattleVisualEvent.AnimationType.NONE;
+            }
         }
 
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && hurtTicks <= 0 && knockbackTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && hurtTicks <= 0 && knockbackTicks <= 0 && knockbackVisualTicks <= 0;
         }
+    }
+
+    private static Vec3 lerp(Vec3 from, Vec3 to, double amount) {
+        double t = Math.max(0.0D, Math.min(1.0D, amount));
+        return from.add(to.subtract(from).scale(t));
     }
 
     private static final class ScheduledVisualEvent {
@@ -750,7 +945,10 @@ public final class ClientBattleState {
         }
     }
 
-    private record PileContentsKey(UUID battleId, BattlePileSource source, long deckVersion) {
+    private record PileContentsKey(UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
+        private boolean matches(UUID battleId, BattlePileSource source, int entityId) {
+            return this.entityId == entityId && this.source == source && this.battleId.equals(battleId);
+        }
     }
 
     private record PileContents(int expectedCount, List<CardInstance> cards) {

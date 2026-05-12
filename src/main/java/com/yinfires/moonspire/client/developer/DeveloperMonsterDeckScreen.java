@@ -7,6 +7,7 @@ import com.yinfires.moonspire.client.ui.MoonSpireTextureButton;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.developer.DeveloperCardDefinition;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +33,13 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     private static final int LABEL_H = 18;
     private static final int GRID_PAD_TOP = 4;
     private static final int GRID_PAD_BOTTOM = 6;
+    private static final Comparator<DeveloperCardDefinition> CARD_NAME_ORDER = Comparator
+            .comparing((DeveloperCardDefinition card) -> card.toCardInstance().nameComponent().getString(), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(card -> MoonSpireCardRegistry.registeredDeveloperId(card.id()), String.CASE_INSENSITIVE_ORDER);
+    private static final Comparator<DeckEntry> DECK_ENTRY_ORDER = Comparator
+            .comparing(DeckEntry::displayName, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(DeckEntry::id, String.CASE_INSENSITIVE_ORDER)
+            .thenComparingInt(DeckEntry::index);
 
     private final DeveloperCenterScreen parent;
     private final List<String> deckCardIds;
@@ -109,7 +117,7 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
                     return true;
                 }
             } else if (index >= 0 && index < deckCardIds.size()) {
-                selectedDeckIndex = index;
+                selectedDeckIndex = visibleDeckEntries().get(index).index();
                 return true;
             }
         }
@@ -230,6 +238,7 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
                         || MoonSpireCardRegistry.registeredDeveloperId(card.id()).toLowerCase(Locale.ROOT).contains(query)
                         || card.nameKey().toLowerCase(Locale.ROOT).contains(query)
                         || card.toCardInstance().nameComponent().getString().toLowerCase(Locale.ROOT).contains(query))
+                .sorted(CARD_NAME_ORDER)
                 .toList();
         return cachedFilteredCards;
     }
@@ -248,14 +257,27 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         return cachedCardsById.get(MoonSpireCardRegistry.registeredDeveloperId(id));
     }
 
+    private List<DeckEntry> visibleDeckEntries() {
+        allCards();
+        List<DeckEntry> entries = new ArrayList<>(deckCardIds.size());
+        for (int i = 0; i < deckCardIds.size(); i++) {
+            String id = deckCardIds.get(i);
+            entries.add(new DeckEntry(i, id, cardByDeckId(id)));
+        }
+        entries.sort(DECK_ENTRY_ORDER);
+        return entries;
+    }
+
     private void renderCardGrid(GuiGraphics graphics, GridLayout grid) {
         List<DeveloperCardDefinition> addCards = addMode ? filteredCards() : List.of();
+        List<DeckEntry> deckEntries = addMode ? List.of() : visibleDeckEntries();
         graphics.enableScissor(grid.viewX(), grid.viewY(), grid.viewX() + grid.viewW(), grid.viewY() + grid.viewH());
         for (int i = firstVisibleIndex(grid); i < Math.min(cardCount(), lastVisibleIndex(grid)); i++) {
             GridCell cell = cell(grid, i);
-            DeveloperCardDefinition card = addMode ? addCards.get(i) : cardByDeckId(deckCardIds.get(i));
-            String id = addMode ? MoonSpireCardRegistry.registeredDeveloperId(card.id()) : deckCardIds.get(i);
-            boolean selected = addMode ? pendingAddCardIds.contains(id) : i == selectedDeckIndex;
+            DeckEntry entry = addMode ? null : deckEntries.get(i);
+            DeveloperCardDefinition card = addMode ? addCards.get(i) : entry.card();
+            String id = addMode ? MoonSpireCardRegistry.registeredDeveloperId(card.id()) : entry.id();
+            boolean selected = addMode ? pendingAddCardIds.contains(id) : entry.index() == selectedDeckIndex;
             if (card != null) {
                 CardRenderHelper.renderSmallCard(graphics, font, card.toCardInstance(), cell.x(), cell.y(), false, false, true, parent.data());
             } else {
@@ -265,7 +287,7 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
             if (selected) {
                 DeveloperCenterScreen.renderSelectableCardOutline(graphics, cell.x(), cell.y(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
             }
-            String label = card == null ? id : card.toCardInstance().nameComponent().getString();
+            String label = addMode ? card.toCardInstance().nameComponent().getString() : entry.displayName();
             drawCenteredFitted(graphics, label, cell.x(), cell.y() + CardRenderHelper.SMALL_CARD_HEIGHT + 2, CardRenderHelper.SMALL_CARD_WIDTH, LABEL_H, selected ? 0xFFB8E6FF : 0xFFEDE8FF);
         }
         graphics.disableScissor();
@@ -413,6 +435,12 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     }
 
     private record GridCell(int x, int y) {
+    }
+
+    private record DeckEntry(int index, String id, DeveloperCardDefinition card) {
+        private String displayName() {
+            return card == null ? id : card.toCardInstance().nameComponent().getString();
+        }
     }
 
     private record ScrollbarThumb(int y, int height) {

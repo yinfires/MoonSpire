@@ -6,6 +6,7 @@ import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.CardTarget;
+import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
 import com.yinfires.moonspire.developer.DeveloperMonsterInitialEffect;
@@ -46,7 +47,7 @@ public class BattleState {
     private static final int CARD_EFFECT_START_DELAY_TICKS = 10;
     private static final int REPEATED_EFFECT_VISUAL_INTERVAL_TICKS = 14;
     private static final int MELEE_LUNGE_TICKS = 8;
-    private static final int MELEE_RECOVER_TICKS = 6;
+    private static final int MELEE_HIT_PAUSE_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int MIN_PROJECTILE_TICKS = 5;
@@ -54,7 +55,8 @@ public class BattleState {
     private static final int IDLE_SYNC_HEARTBEAT_TICKS = 100;
     private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
-    private static final double LUNGE_REACH = 1.35D;
+    private static final double MIN_LUNGE_TRAVEL_DISTANCE = 0.35D;
+    private static final double LUNGE_REACH = 10.0D;
     private static final double MONSTER_AI_MIN_SCORE = 0.01D;
     private static final int MONSTER_AI_HIGH_BLOCK_SOFT_CAP = 12;
     private static final int MONSTER_AI_STATUS_SOFT_CAP = 4;
@@ -122,6 +124,7 @@ public class BattleState {
                     monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : Math.max(1.0F, enemy.getMaxHealth()),
                     monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : nonPlayerBaseSpeed(enemy));
             applyInitialEffects(state, monsterOverride);
+            applyDefaultInitialEffects(state);
             enemyStates.add(state);
             byEntityId.put(enemy.getId(), state);
             locks.put(enemy.getId(), EntityLock.capture(enemy));
@@ -140,6 +143,12 @@ public class BattleState {
                 continue;
             }
             effect.effectType().ifPresent(type -> state.addEffect(type, effect.amount()));
+        }
+    }
+
+    private static void applyDefaultInitialEffects(CombatantState state) {
+        if (state != null && MonsterDeckProfile.isSkeletonFamily(state.entity().getType())) {
+            state.addEffect(BattleEffectType.ABUNDANT_ARROWS, 1);
         }
     }
 
@@ -260,7 +269,7 @@ public class BattleState {
         for (CombatantState state : allStates()) {
             EntityLock lock = locks.get(state.entity().getId());
             if (lock != null && !state.fakeDead() && state.entity().isAlive()) {
-                lock.restoreSurvivor(state.entity());
+                restoreSurvivor(state, lock);
             }
         }
     }
@@ -451,42 +460,77 @@ public class BattleState {
     }
 
     public List<CardInstance> pileCardsFor(ServerPlayer viewer, BattlePileSource source) {
-        CombatantState local = byPlayerId.get(viewer.getUUID());
-        if (local == null || source == null) {
+        return pileCardsFor(viewer, source, -1);
+    }
+
+    public List<CardInstance> pileCardsFor(ServerPlayer viewer, BattlePileSource source, int entityId) {
+        CombatantState state = pileOwner(viewer, entityId);
+        if (state == null || source == null) {
             return List.of();
         }
         return switch (source) {
-            case BATTLE_DECK -> battleDeckCards(local);
-            case DRAW -> List.copyOf(local.deck().drawPile());
-            case DISCARD -> List.copyOf(local.deck().discardPile());
-            case EXHAUST -> List.copyOf(local.deck().exhaustPile());
+            case BATTLE_DECK -> battleDeckCards(state);
+            case DRAW -> List.copyOf(state.deck().drawPile());
+            case DISCARD -> List.copyOf(state.deck().discardPile());
+            case EXHAUST -> List.copyOf(state.deck().exhaustPile());
         };
     }
 
     public int pileCountFor(ServerPlayer viewer, BattlePileSource source) {
-        CombatantState local = byPlayerId.get(viewer.getUUID());
-        if (local == null || source == null) {
+        return pileCountFor(viewer, source, -1);
+    }
+
+    public int pileCountFor(ServerPlayer viewer, BattlePileSource source, int entityId) {
+        CombatantState state = pileOwner(viewer, entityId);
+        if (state == null || source == null) {
             return 0;
         }
         return switch (source) {
-            case BATTLE_DECK -> local.deck().hand().size() + local.deck().drawPile().size() + local.deck().discardPile().size();
-            case DRAW -> local.deck().drawPile().size();
-            case DISCARD -> local.deck().discardPile().size();
-            case EXHAUST -> local.deck().exhaustPile().size();
+            case BATTLE_DECK -> battleDeckCount(state);
+            case DRAW -> state.deck().drawPile().size();
+            case DISCARD -> state.deck().discardPile().size();
+            case EXHAUST -> state.deck().exhaustPile().size();
         };
     }
 
     public long deckVersionFor(ServerPlayer viewer) {
-        CombatantState local = byPlayerId.get(viewer.getUUID());
-        return local == null ? 0L : local.deck().version();
+        return deckVersionFor(viewer, -1);
+    }
+
+    public long deckVersionFor(ServerPlayer viewer, int entityId) {
+        CombatantState state = pileOwner(viewer, entityId);
+        return state == null ? 0L : state.deck().version();
+    }
+
+    private CombatantState pileOwner(ServerPlayer viewer, int entityId) {
+        if (viewer == null) {
+            return null;
+        }
+        if (!byPlayerId.containsKey(viewer.getUUID())) {
+            return null;
+        }
+        return entityId >= 0 ? byEntityId.get(entityId) : byPlayerId.get(viewer.getUUID());
     }
 
     private List<CardInstance> battleDeckCards(CombatantState local) {
-        List<CardInstance> cards = new ArrayList<>(local.deck().hand().size() + local.deck().drawPile().size() + local.deck().discardPile().size());
+        List<CardInstance> cards = new ArrayList<>(battleDeckCount(local));
         cards.addAll(local.deck().hand());
         cards.addAll(local.deck().drawPile());
         cards.addAll(local.deck().discardPile());
+        if (pendingUsedCardOwner == local && pendingUsedCard != null) {
+            cards.add(pendingUsedCard);
+        }
         return List.copyOf(cards);
+    }
+
+    private int battleDeckCount(CombatantState state) {
+        if (state == null) {
+            return 0;
+        }
+        return state.deck().hand().size()
+                + state.deck().drawPile().size()
+                + state.deck().discardPile().size()
+                + (pendingUsedCardOwner == state && pendingUsedCard != null ? 1 : 0);
     }
 
     public boolean shouldSyncNow() {
@@ -1379,20 +1423,34 @@ public class BattleState {
     private void finishPendingUsedCard() {
         if (pendingUsedCardOwner != null && pendingUsedCard != null) {
             finishUsedCard(pendingUsedCardOwner, pendingUsedCard);
+            markDirty();
         }
         pendingUsedCardOwner = null;
         pendingUsedCard = null;
     }
 
-    private void applyBattleKnockback(LivingEntity attacker, LivingEntity target, BattleDamageResult result) {
-        if (result.healthDamage() <= 0) {
-            return;
+    private Vec3 applyBattleKnockback(LivingEntity attacker, LivingEntity target, BattleDamageResult result) {
+        if (result.healthDamage() <= 0 || attacker == null || target == null) {
+            return Vec3.ZERO;
         }
+        Vec3 before = target.position();
         double dx = attacker.getX() - target.getX();
         double dz = attacker.getZ() - target.getZ();
         double strength = target instanceof ServerPlayer ? 0.42D : 0.28D;
         target.knockback(strength, dx, dz);
+        target.hasImpulse = true;
         knockbackTicks.put(target.getId(), KNOCKBACK_RELEASE_TICKS);
+        Vec3 motion = target.getDeltaMovement();
+        Vec3 horizontalMotion = new Vec3(motion.x, 0.0D, motion.z);
+        if (horizontalMotion.lengthSqr() > 0.0001D) {
+            return horizontalMotion.normalize().scale(Math.min(0.85D, Math.max(0.28D, horizontalMotion.length() * 2.2D)));
+        }
+        Vec3 away = target.position().subtract(attacker.position()).multiply(1.0D, 0.0D, 1.0D);
+        if (away.lengthSqr() > 0.0001D) {
+            return away.normalize().scale(strength);
+        }
+        Vec3 moved = target.position().subtract(before).multiply(1.0D, 0.0D, 1.0D);
+        return moved.lengthSqr() > 0.0001D ? moved : Vec3.ZERO;
     }
 
     private ItemStack projectileStackForArrow(CardInstance arrow) {
@@ -1443,6 +1501,14 @@ public class BattleState {
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, ItemStack projectileStack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks, BattleVisualEvent.AnimationType animationType, int animationTicks) {
+        emitVisual(attacker, target, stack, projectileStack, playedCard, result, gainedBlock, healedHealth, delayTicks, animationType, animationTicks, null, null);
+    }
+
+    private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, ItemStack projectileStack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 animationStart, Vec3 animationStrike) {
+        emitVisual(attacker, target, stack, projectileStack, playedCard, result, gainedBlock, healedHealth, delayTicks, animationType, animationTicks, animationStart, animationStrike, null);
+    }
+
+    private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, ItemStack projectileStack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 animationStart, Vec3 animationStrike, Vec3 knockbackDelta) {
         pendingVisualEvents.add(new BattleVisualEvent(
                 attacker.getId(),
                 target.getId(),
@@ -1458,7 +1524,10 @@ public class BattleState {
                 Math.max(0, animationTicks),
                 result.blockedDamage() > 0,
                 result.healthDamage() > 0,
-                gainedBlock > 0));
+                gainedBlock > 0,
+                animationStart,
+                animationStrike,
+                knockbackDelta));
         markDirty();
     }
 
@@ -1468,13 +1537,21 @@ public class BattleState {
 
     private void tickPendingCardBatches() {
         if (pendingAnimation != null) {
+            if (pendingAnimation.readyToApplyEffects()) {
+                completeAnimatedBatch(pendingAnimation);
+                pendingAnimation.markEffectsApplied();
+                markDirty();
+            }
             if (!pendingAnimation.tick()) {
                 return;
             }
             BattleAnimation completed = pendingAnimation;
             pendingAnimation = null;
-            completeAnimatedBatch(completed.batch());
-            markDirty();
+            if (!completed.effectsApplied()) {
+                completeAnimatedBatch(completed);
+                completed.markEffectsApplied();
+                markDirty();
+            }
             if (!pendingCardBatches.isEmpty()) {
                 pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
             } else {
@@ -1528,12 +1605,16 @@ public class BattleState {
         }
         if (batch.card() != null && batch.card().hasEffect(CardEffectKind.REMOTE)) {
             ItemStack projectileStack = batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
+            ItemStack visualStack = batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
             int drawTicks = rangedPrepareTicks(batch.card());
-            emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), drawTicks);
+            emitVisual(batch.user().entity(), animated.target().entity(), visualStack, projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), drawTicks);
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
-        return false;
+        LungeAnimation animation = new LungeAnimation(batch, animated.target());
+        emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS, animation.start(), animation.strike());
+        pendingAnimation = animation;
+        return true;
     }
 
     private PendingEffect firstAnimatedEffect(PendingCardBatch batch) {
@@ -1545,8 +1626,11 @@ public class BattleState {
         return null;
     }
 
-    private void completeAnimatedBatch(PendingCardBatch batch) {
-        applyPendingCardBatch(batch, true);
+    private void completeAnimatedBatch(BattleAnimation animation) {
+        BattleVisualEvent.AnimationType hitAnimationType = animation instanceof LungeAnimation
+                ? BattleVisualEvent.AnimationType.MELEE_LUNGE
+                : BattleVisualEvent.AnimationType.NONE;
+        applyPendingCardBatch(animation.batch(), true, hitAnimationType);
     }
 
     private void advancePendingCardSteps() {
@@ -1657,9 +1741,14 @@ public class BattleState {
     }
 
     private void applyPendingCardBatch(PendingCardBatch batch, boolean suppressCardVisual) {
+        applyPendingCardBatch(batch, suppressCardVisual, BattleVisualEvent.AnimationType.NONE);
+    }
+
+    private void applyPendingCardBatch(PendingCardBatch batch, boolean suppressCardVisual, BattleVisualEvent.AnimationType hitAnimationType) {
         Map<CombatantState, BattleDamageResult> damageResults = new LinkedHashMap<>();
         Map<CombatantState, Integer> blockGains = new LinkedHashMap<>();
         Map<CombatantState, Integer> heals = new LinkedHashMap<>();
+        Map<CombatantState, Vec3> knockbackDeltas = new LinkedHashMap<>();
         Set<CombatantState> knockbackTargets = new LinkedHashSet<>();
         Set<CombatantState> effectOnlyTargets = new LinkedHashSet<>();
         UUID killCredit = playerKillCredit(batch.user());
@@ -1727,19 +1816,22 @@ public class BattleState {
             }
         }
         for (CombatantState target : knockbackTargets) {
-            applyBattleKnockback(batch.user().entity(), target.entity(), damageResults.getOrDefault(target, new BattleDamageResult(0, 0, 0)));
+            Vec3 delta = applyBattleKnockback(batch.user().entity(), target.entity(), damageResults.getOrDefault(target, new BattleDamageResult(0, 0, 0)));
+            if (delta.lengthSqr() > 0.0001D) {
+                knockbackDeltas.put(target, delta);
+            }
         }
         boolean emittedCardVisual = false;
         for (Map.Entry<CombatantState, BattleDamageResult> entry : damageResults.entrySet()) {
             CombatantState target = entry.getKey();
-            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), suppressCardVisual || emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), ItemStack.EMPTY, suppressCardVisual || emittedCardVisual ? null : batch.card(), entry.getValue(), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0, hitAnimationType, 0, null, null, knockbackDeltas.get(target));
             emittedCardVisual = true;
         }
         for (CombatantState target : effectOnlyTargets) {
             if (damageResults.containsKey(target)) {
                 continue;
             }
-            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), suppressCardVisual || emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0);
+            emitVisual(batch.user().entity(), target.entity(), visualStack(batch, suppressCardVisual), ItemStack.EMPTY, suppressCardVisual || emittedCardVisual ? null : batch.card(), new BattleDamageResult(0, 0, 0), blockGains.getOrDefault(target, 0), heals.getOrDefault(target, 0), 0, hitAnimationType, 0);
             emittedCardVisual = true;
         }
         if (!suppressCardVisual && !emittedCardVisual && batch.card() != null) {
@@ -1759,6 +1851,11 @@ public class BattleState {
     }
 
     private void applyOwnTurnStartEffects(CombatantState state) {
+        int abundantArrows = state.effectAmount(BattleEffectType.ABUNDANT_ARROWS);
+        for (int i = 0; i < abundantArrows; i++) {
+            MoonSpireCardRegistry.cardInstance("item_minecraft_arrow")
+                    .ifPresent(card -> state.deck().addGeneratedToHandOrDiscard(card.copyForBattle()));
+        }
         int poison = state.effectAmount(BattleEffectType.POISON);
         if (poison > 0) {
             BattleDamageResult result = state.applyEffectDamage(poison, null);
@@ -1875,13 +1972,14 @@ public class BattleState {
             return entity.position();
         }
         if (knockbackTicks > 0) {
+            entity.setDeltaMovement(applyNoAiBattleFall(entity, entity.getDeltaMovement()));
             entity.xxa = 0.0F;
             entity.yya = 0.0F;
             entity.zza = 0.0F;
             entity.setJumping(false);
             return entity.position();
         }
-        Vec3 movement = entity.getDeltaMovement();
+        Vec3 movement = applyNoAiBattleFall(entity, entity.getDeltaMovement());
         entity.setDeltaMovement(0.0D, movement.y, 0.0D);
         entity.xxa = 0.0F;
         entity.yya = 0.0F;
@@ -1901,6 +1999,23 @@ public class BattleState {
             mob.getNavigation().stop();
         }
         return nextLockedPos;
+    }
+
+    private Vec3 applyNoAiBattleFall(LivingEntity entity, Vec3 movement) {
+        if (!(entity instanceof Mob mob) || !mob.isNoAi() || entity.onGround() || entity.isNoGravity()) {
+            return movement;
+        }
+        double fallY = movement.y;
+        if (fallY > -3.92D) {
+            fallY -= 0.08D;
+        }
+        fallY *= 0.98D;
+        entity.move(MoverType.SELF, new Vec3(0.0D, fallY, 0.0D));
+        if (entity.onGround() && fallY < 0.0D) {
+            fallY = 0.0D;
+        }
+        entity.hasImpulse = true;
+        return new Vec3(movement.x, fallY, movement.z);
     }
 
     private int nextKnockbackTicks(LivingEntity entity, int knockbackTicks) {
@@ -1959,12 +2074,25 @@ public class BattleState {
             }
             EntityLock lock = locks.get(state.entity().getId());
             if (lock != null) {
-                lock.resetToStart(state.entity());
-                locks.put(state.entity().getId(), lock.withLockedPos(lock.startPos()));
+                Vec3 safeStart = safeReturnPosition(state.entity(), lock.startPos());
+                lock.resetToPosition(state.entity(), safeStart);
+                locks.put(state.entity().getId(), lock.withLockedPos(safeStart));
             }
         }
         knockbackTicks.clear();
         faceTeams();
+    }
+
+    private Vec3 safeReturnPosition(LivingEntity entity, Vec3 preferred) {
+        AABB boxAtPreferred = entity.getBoundingBox().move(preferred.subtract(entity.position()));
+        for (int i = 0; i <= 12; i++) {
+            double offset = i * 0.25D;
+            AABB candidateBox = boxAtPreferred.move(0.0D, offset, 0.0D);
+            if (entity.level().noCollision(entity, candidateBox)) {
+                return preferred.add(0.0D, offset, 0.0D);
+            }
+        }
+        return preferred.add(0.0D, 3.0D, 0.0D);
     }
 
     private void faceTeams() {
@@ -2034,8 +2162,15 @@ public class BattleState {
         state.clearFakeDeath();
         EntityLock lock = locks.get(state.entity().getId());
         if (lock != null) {
-            lock.restoreSurvivor(state.entity());
+            restoreSurvivor(state, lock);
         }
+    }
+
+    private void restoreSurvivor(CombatantState state, EntityLock lock) {
+        LivingEntity entity = state.entity();
+        Vec3 safeStart = safeReturnPosition(entity, lock.startPos());
+        lock.restoreSurvivor(entity, safeStart);
+        locks.put(entity.getId(), lock.withLockedPos(safeStart));
     }
 
     private ServerPlayer creditedKiller(CombatantState state) {
@@ -2056,11 +2191,11 @@ public class BattleState {
     }
 
     private List<BattleCombatantSnapshot> playerSnapshots() {
-        return playerStates.stream().map(CombatantState::snapshot).toList();
+        return playerStates.stream().map(state -> state.snapshot(battleDeckCount(state))).toList();
     }
 
     private List<BattleCombatantSnapshot> enemySnapshots() {
-        return enemyStates.stream().map(CombatantState::snapshot).toList();
+        return enemyStates.stream().map(state -> state.snapshot(battleDeckCount(state))).toList();
     }
 
     private List<BattleEnemyIntentSnapshot> enemyIntentSnapshots(CombatantState firstEnemy) {
@@ -2154,31 +2289,33 @@ public class BattleState {
         return Math.max(1, Math.round((float) (movementSpeed / CardBalance.NON_PLAYER_BASELINE_MOVEMENT_SPEED * CardBalance.PLAYER_BASE_SPEED)));
     }
 
-    private record EntityLock(Vec3 startPos, Vec3 lockedPos, float yRot, float xRot, float startHealth, int hotbarSlot, boolean noAiBeforeBattle) {
+    private record EntityLock(Vec3 startPos, Vec3 lockedPos, float yRot, float xRot, float startHealth, int hotbarSlot, boolean noAiBeforeBattle, boolean noPhysicsBeforeBattle) {
         private static EntityLock capture(LivingEntity entity) {
             int slot = entity instanceof ServerPlayer player ? player.getInventory().selected : 0;
             boolean noAi = entity instanceof Mob mob && mob.isNoAi();
-            return new EntityLock(entity.position(), entity.position(), entity.getYRot(), entity.getXRot(), entity.getHealth(), slot, noAi);
+            return new EntityLock(entity.position(), entity.position(), entity.getYRot(), entity.getXRot(), entity.getHealth(), slot, noAi, entity.noPhysics);
         }
 
         private EntityLock withLockedPos(Vec3 lockedPos) {
-            return new EntityLock(startPos, lockedPos, yRot, xRot, startHealth, hotbarSlot, noAiBeforeBattle);
+            return new EntityLock(startPos, lockedPos, yRot, xRot, startHealth, hotbarSlot, noAiBeforeBattle, noPhysicsBeforeBattle);
         }
 
-        private void resetToStart(LivingEntity entity) {
-            entity.teleportTo(startPos.x, startPos.y, startPos.z);
+        private void resetToPosition(LivingEntity entity, Vec3 pos) {
+            entity.teleportTo(pos.x, pos.y, pos.z);
             clearMotion(entity);
         }
 
         private void restoreBeforeDeath(LivingEntity entity) {
             clearMotion(entity);
+            entity.noPhysics = noPhysicsBeforeBattle;
             if (entity instanceof Mob mob) {
                 mob.setNoAi(noAiBeforeBattle);
             }
         }
 
-        private void restoreSurvivor(LivingEntity entity) {
-            entity.teleportTo(startPos.x, startPos.y, startPos.z);
+        private void restoreSurvivor(LivingEntity entity, Vec3 pos) {
+            entity.noPhysics = noPhysicsBeforeBattle;
+            entity.teleportTo(pos.x, pos.y, pos.z);
             entity.setYRot(yRot);
             entity.setXRot(xRot);
             if (entity.isAlive()) {
@@ -2191,6 +2328,7 @@ public class BattleState {
                 mob.setNoAi(noAiBeforeBattle);
             }
             clearMotion(entity);
+            entity.noPhysics = noPhysicsBeforeBattle;
         }
 
         private static void clearMotion(LivingEntity entity) {
@@ -2345,6 +2483,14 @@ public class BattleState {
         boolean tick();
 
         boolean movesEntity(LivingEntity entity);
+
+        default boolean readyToApplyEffects() {
+            return false;
+        }
+
+        boolean effectsApplied();
+
+        void markEffectsApplied();
     }
 
     private final class LungeAnimation implements BattleAnimation {
@@ -2355,7 +2501,8 @@ public class BattleState {
         private final Vec3 strike;
         private final boolean noPhysicsBeforeAnimation;
         private int ticks;
-        private boolean returning;
+        private Phase phase = Phase.LUNGE;
+        private boolean effectsApplied;
 
         private LungeAnimation(PendingCardBatch batch, CombatantState target) {
             this.batch = batch;
@@ -2368,6 +2515,9 @@ public class BattleState {
             Vec3 horizontal = new Vec3(direction.x, 0.0D, direction.z);
             Vec3 normalized = horizontal.lengthSqr() > 0.0001D ? horizontal.normalize() : actor.getLookAngle().multiply(1.0D, 0.0D, 1.0D).normalize();
             double distance = Math.max(0.0D, Math.min(LUNGE_REACH, horizontal.length() - LUNGE_STOP_DISTANCE));
+            if (distance < MIN_LUNGE_TRAVEL_DISTANCE) {
+                distance = 0.0D;
+            }
             this.strike = start.add(normalized.scale(distance));
         }
 
@@ -2378,33 +2528,37 @@ public class BattleState {
 
         @Override
         public boolean tick() {
-            if (!actor.isAlive() || target.fakeDead()) {
+            if (!actor.isAlive()) {
                 actor.noPhysics = noPhysicsBeforeAnimation;
                 return true;
             }
+            if (target.fakeDead() && !effectsApplied) {
+                finishAtCurrentPosition();
+                return true;
+            }
             faceTarget(actor, target.entity());
-            if (!returning) {
+            if (phase == Phase.LUNGE) {
                 ticks++;
                 moveActor(lerp(start, strike, ticks / (double) MELEE_LUNGE_TICKS));
                 if (ticks >= MELEE_LUNGE_TICKS) {
                     ticks = 0;
-                    returning = true;
+                    phase = Phase.HIT_PAUSE;
+                    moveActor(strike);
                     return false;
                 }
                 return false;
             }
-            ticks++;
-            moveActor(lerp(strike, start, ticks / (double) MELEE_RECOVER_TICKS));
-            if (ticks >= MELEE_RECOVER_TICKS) {
-                moveActor(start);
-                actor.noPhysics = noPhysicsBeforeAnimation;
-                EntityLock lock = locks.get(actor.getId());
-                if (lock != null) {
-                    locks.put(actor.getId(), lock.withLockedPos(actor.position()));
+            if (phase == Phase.HIT_PAUSE) {
+                ticks++;
+                moveActor(strike);
+                if (ticks >= MELEE_HIT_PAUSE_TICKS) {
+                    finishAtStrike();
+                    return true;
                 }
-                return true;
+                return false;
             }
-            return false;
+            finishAtStrike();
+            return true;
         }
 
         @Override
@@ -2412,12 +2566,73 @@ public class BattleState {
             return entity == actor;
         }
 
+        @Override
+        public boolean readyToApplyEffects() {
+            return phase == Phase.HIT_PAUSE && !effectsApplied;
+        }
+
+        @Override
+        public boolean effectsApplied() {
+            return effectsApplied;
+        }
+
+        @Override
+        public void markEffectsApplied() {
+            effectsApplied = true;
+        }
+
+        private Vec3 start() {
+            return start;
+        }
+
+        private Vec3 strike() {
+            return strike;
+        }
+
         private void moveActor(Vec3 pos) {
-            Vec3 delta = pos.subtract(actor.position());
             actor.noPhysics = true;
+            if (actor instanceof ServerPlayer) {
+                actor.setDeltaMovement(Vec3.ZERO);
+                actor.absMoveTo(pos.x, pos.y, pos.z, actor.getYRot(), actor.getXRot());
+                actor.setOldPosAndRot();
+                return;
+            }
+            Vec3 delta = pos.subtract(actor.position());
             actor.move(MoverType.SELF, delta);
             actor.setDeltaMovement(Vec3.ZERO);
+            actor.setOldPosAndRot();
             actor.hasImpulse = true;
+        }
+
+        private void finishAtStrike() {
+            Vec3 safeStrike = safeReturnPosition(actor, strike);
+            moveActor(safeStrike);
+            if (actor instanceof ServerPlayer player) {
+                player.connection.teleport(safeStrike.x, safeStrike.y, safeStrike.z, actor.getYRot(), actor.getXRot());
+            }
+            actor.noPhysics = noPhysicsBeforeAnimation;
+            EntityLock lock = locks.get(actor.getId());
+            if (lock != null) {
+                locks.put(actor.getId(), lock.withLockedPos(safeStrike));
+            }
+        }
+
+        private void finishAtCurrentPosition() {
+            Vec3 safePosition = safeReturnPosition(actor, actor.position());
+            moveActor(safePosition);
+            if (actor instanceof ServerPlayer player) {
+                player.connection.teleport(safePosition.x, safePosition.y, safePosition.z, actor.getYRot(), actor.getXRot());
+            }
+            actor.noPhysics = noPhysicsBeforeAnimation;
+            EntityLock lock = locks.get(actor.getId());
+            if (lock != null) {
+                locks.put(actor.getId(), lock.withLockedPos(safePosition));
+            }
+        }
+
+        private enum Phase {
+            LUNGE,
+            HIT_PAUSE
         }
     }
 
@@ -2429,6 +2644,7 @@ public class BattleState {
         private final int flightTicks;
         private AbstractArrow arrow;
         private int ticks;
+        private boolean effectsApplied;
 
         private ProjectileAnimation(PendingCardBatch batch, CombatantState target, ItemStack projectileStack, int prepareTicks) {
             this.batch = batch;
@@ -2471,6 +2687,16 @@ public class BattleState {
         @Override
         public boolean movesEntity(LivingEntity entity) {
             return false;
+        }
+
+        @Override
+        public boolean effectsApplied() {
+            return effectsApplied;
+        }
+
+        @Override
+        public void markEffectsApplied() {
+            effectsApplied = true;
         }
 
         private void spawnArrow(LivingEntity actor, LivingEntity targetEntity) {

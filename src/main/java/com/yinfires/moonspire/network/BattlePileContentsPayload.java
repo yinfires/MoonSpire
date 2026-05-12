@@ -13,7 +13,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record BattlePileContentsPayload(UUID battleId, BattlePileSource source, long deckVersion, int expectedCount, List<CardInstance> cards) implements CustomPacketPayload {
+public record BattlePileContentsPayload(UUID battleId, BattlePileSource source, long deckVersion, int entityId, int expectedCount, List<CardInstance> cards) implements CustomPacketPayload {
     public static final Type<BattlePileContentsPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "battle_pile_contents"));
     public static final StreamCodec<RegistryFriendlyByteBuf, BattlePileContentsPayload> STREAM_CODEC = StreamCodec.of(
             BattlePileContentsPayload::write,
@@ -26,19 +26,24 @@ public record BattlePileContentsPayload(UUID battleId, BattlePileSource source, 
         cards = List.copyOf(cards == null ? List.of() : cards);
     }
 
+    public BattlePileContentsPayload(UUID battleId, BattlePileSource source, long deckVersion, int expectedCount, List<CardInstance> cards) {
+        this(battleId, source, deckVersion, -1, expectedCount, cards);
+    }
+
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
     public static void handle(BattlePileContentsPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientBattleState.setPileContents(payload.battleId, payload.source, payload.deckVersion, payload.expectedCount, payload.cards));
+        context.enqueueWork(() -> ClientBattleState.setPileContents(payload.battleId, payload.source, payload.deckVersion, payload.entityId, payload.expectedCount, payload.cards));
     }
 
     private static void write(RegistryFriendlyByteBuf buf, BattlePileContentsPayload payload) {
         buf.writeUUID(payload.battleId);
         buf.writeEnum(payload.source);
         buf.writeVarLong(payload.deckVersion);
+        buf.writeVarInt(payload.entityId);
         buf.writeVarInt(payload.expectedCount);
         buf.writeVarInt(payload.cards.size());
         for (CardInstance card : payload.cards) {
@@ -50,12 +55,13 @@ public record BattlePileContentsPayload(UUID battleId, BattlePileSource source, 
         UUID battleId = buf.readUUID();
         BattlePileSource source = buf.readEnum(BattlePileSource.class);
         long deckVersion = buf.readVarLong();
+        int entityId = buf.readVarInt();
         int expectedCount = buf.readVarInt();
         int size = Math.max(0, buf.readVarInt());
         List<CardInstance> cards = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             cards.add(CardInstance.STREAM_CODEC.decode(buf));
         }
-        return new BattlePileContentsPayload(battleId, source, deckVersion, expectedCount, cards);
+        return new BattlePileContentsPayload(battleId, source, deckVersion, entityId, expectedCount, cards);
     }
 }

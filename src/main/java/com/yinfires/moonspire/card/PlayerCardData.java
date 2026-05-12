@@ -37,6 +37,12 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
         return collection.removeIf(card -> card.id().equals(id));
     }
 
+    public boolean removeUnresolvableCustomCards() {
+        boolean changed = collection.removeIf(PlayerCardData::isUnresolvableReferencedCard);
+        changed |= deck.removeIf(id -> findCard(id).isEmpty());
+        return changed;
+    }
+
     public void setDeck(List<UUID> cardIds) {
         deck.clear();
         List<UUID> available = collection.stream().map(CardInstance::id).toList();
@@ -124,5 +130,22 @@ public class PlayerCardData implements INBTSerializable<CompoundTag> {
         }
         data.deck.removeIf(id -> data.findCard(id).isEmpty());
         return data;
+    }
+
+    private static boolean isUnresolvableReferencedCard(CardInstance card) {
+        if (card == null) {
+            return true;
+        }
+        String lookupId = !card.cardId().isBlank() ? card.cardId() : card.developerCardId();
+        if (lookupId == null || lookupId.isBlank()) {
+            return false;
+        }
+        String registeredId = MoonSpireCardRegistry.registeredDeveloperId(lookupId);
+        boolean registryBacked = card.sourceType() == CardSourceType.CUSTOM
+                || !card.developerCardId().isBlank()
+                || registeredId.startsWith("custom_")
+                || registeredId.startsWith("builtin_")
+                || registeredId.startsWith("item_");
+        return registryBacked && MoonSpireCardRegistry.card(registeredId).isEmpty();
     }
 }

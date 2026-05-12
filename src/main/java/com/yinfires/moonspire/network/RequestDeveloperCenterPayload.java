@@ -22,10 +22,10 @@ public record RequestDeveloperCenterPayload() implements CustomPacketPayload {
     public static void handle(RequestDeveloperCenterPayload payload, IPayloadContext context) {
         if (context.player() instanceof ServerPlayer player) {
             if (!player.hasPermissions(2)) {
-                PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(false, DeveloperDataManager.load().toJson()));
+                PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(false, DeveloperDataManager.reload().toJson()));
                 return;
             }
-            PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(true, DeveloperDataManager.load().toJson()));
+            PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(true, DeveloperDataManager.reload().toJson()));
         }
     }
 }

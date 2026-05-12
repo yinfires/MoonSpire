@@ -232,6 +232,10 @@ public class CombatantState {
     }
 
     public BattleCombatantSnapshot snapshot() {
+        return snapshot(deck.hand().size() + deck.drawPile().size() + deck.discardPile().size());
+    }
+
+    public BattleCombatantSnapshot snapshot(int battleDeckCount) {
         return new BattleCombatantSnapshot(
                 entity.getId(),
                 battleHealth,
@@ -244,6 +248,8 @@ public class CombatantState {
                 endedTurn,
                 fakeDead,
                 fakeDeathTicks,
+                deck.version(),
+                Math.max(0, battleDeckCount),
                 effectSnapshots());
     }
 

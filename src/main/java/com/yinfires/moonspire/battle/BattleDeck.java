@@ -134,6 +134,18 @@ public class BattleDeck {
         }
     }
 
+    public void addGeneratedToHandOrDiscard(CardInstance card) {
+        if (card == null) {
+            return;
+        }
+        if (hand.size() >= CardBalance.MAX_HAND_SIZE) {
+            discardPile.add(card);
+        } else {
+            hand.add(card);
+        }
+        markChanged();
+    }
+
     public List<CardInstance> removeHandByIds(List<UUID> ids) {
         Set<UUID> selectedIds = Set.copyOf(ids == null ? List.of() : ids);
         List<CardInstance> removed = new ArrayList<>();

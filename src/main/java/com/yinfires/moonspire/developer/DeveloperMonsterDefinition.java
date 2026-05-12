@@ -21,8 +21,9 @@ public record DeveloperMonsterDefinition(
         }
         if (deckCardIds == null) {
             deckCardIds = new ArrayList<>();
+        } else {
+            deckCardIds = new ArrayList<>(deckCardIds);
         }
-        deckOverride = deckOverride || !deckCardIds.isEmpty();
     }
 
     public DeveloperMonsterDefinition(String entityTypeId, float maxHealth, int energy, int speed, List<String> deckCardIds) {

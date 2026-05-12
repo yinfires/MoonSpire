@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.network;
 
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.battle.BattleManager;
 import com.yinfires.moonspire.developer.DeveloperData;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import java.io.IOException;
@@ -29,10 +30,17 @@ public record SaveDeveloperDataPayload(String json) implements CustomPacketPaylo
             try {
                 DeveloperData data = DeveloperData.fromJson(payload.json);
                 DeveloperDataManager.save(data);
+                cleanupOnlinePlayerCards(player.server);
                 syncDeveloperData(player.server, player, data);
             } catch (IOException ignored) {
                 PacketDistributor.sendToPlayer(player, new DeveloperCenterPayload(true, DeveloperDataManager.load().toJson()));
             }
+        }
+    }
+
+    private static void cleanupOnlinePlayerCards(MinecraftServer server) {
+        for (ServerPlayer player : DeveloperDataManager.cleanupOnlinePlayerCards(server)) {
+            BattleManager.syncCardData(player);
         }
     }
 

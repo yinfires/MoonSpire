@@ -3,6 +3,7 @@ package com.yinfires.moonspire.battle;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
+import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -15,15 +16,30 @@ public final class MonsterDeckProfile {
     private static final List<String> ZOMBIE_DEFAULT_DECK = List.of(
             "builtin_monster_claw",
             "builtin_monster_rotten_guard",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_lunge",
             "builtin_monster_lunge",
             "builtin_monster_claw",
-            "builtin_monster_rotten_guard");
+            "builtin_monster_claw",
+            "builtin_monster_claw",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_undead_power");
     private static final List<String> SKELETON_DEFAULT_DECK = List.of(
-            "builtin_monster_bone_shot",
+            "builtin_monster_bow_strike",
             "builtin_monster_sidestep",
-            "builtin_monster_aimed_volley",
-            "builtin_monster_bone_shot",
-            "builtin_monster_sidestep");
+            "builtin_monster_shoot",
+            "builtin_monster_shoot",
+            "builtin_monster_shoot",
+            "builtin_monster_shoot",
+            "builtin_monster_bow_strike",
+            "builtin_monster_bow_strike",
+            "builtin_monster_sidestep",
+            "builtin_monster_sidestep",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow");
     private static final List<String> SPIDER_DEFAULT_DECK = List.of(
             "builtin_monster_pounce",
             "builtin_monster_skitter",
@@ -41,11 +57,12 @@ public final class MonsterDeckProfile {
     }
 
     public static List<CardInstance> createDeck(LivingEntity monster) {
-        Optional<List<CardInstance>> overrideCards = DeveloperDataManager.monsterOverride(monster)
-                .filter(definition -> definition.hasDeckOverride())
-                .map(definition -> DeveloperDataManager.cardsByIds(definition.deckCardIds()));
-        if (overrideCards.isPresent()) {
-            return copyAll(overrideCards.get());
+        Optional<DeveloperMonsterDefinition> override = DeveloperDataManager.monsterOverride(monster);
+        if (override.isPresent() && override.get().hasDeckOverride()) {
+            List<CardInstance> overrideCards = DeveloperDataManager.cardsByIds(override.get().deckCardIds());
+            if (!overrideCards.isEmpty() || override.get().deckCardIds().isEmpty() || !hasDefaultDeck(monster.getType())) {
+                return copyAll(overrideCards);
+            }
         }
         if (!hasDefaultDeck(monster.getType())) {
             return List.of();
@@ -54,10 +71,14 @@ public final class MonsterDeckProfile {
     }
 
     public static boolean hasBattleDeck(LivingEntity monster) {
-        return DeveloperDataManager.monsterOverride(monster)
-                .filter(definition -> definition.hasDeckOverride())
-                .map(definition -> !DeveloperDataManager.cardsByIds(definition.deckCardIds()).isEmpty())
-                .orElseGet(() -> hasDefaultDeck(monster.getType()));
+        Optional<DeveloperMonsterDefinition> override = DeveloperDataManager.monsterOverride(monster);
+        if (override.isPresent() && override.get().hasDeckOverride()) {
+            List<CardInstance> overrideCards = DeveloperDataManager.cardsByIds(override.get().deckCardIds());
+            if (!overrideCards.isEmpty() || override.get().deckCardIds().isEmpty() || !hasDefaultDeck(monster.getType())) {
+                return !overrideCards.isEmpty();
+            }
+        }
+        return hasDefaultDeck(monster.getType());
     }
 
     public static boolean hasDefaultDeck(EntityType<?> type) {
@@ -66,10 +87,10 @@ public final class MonsterDeckProfile {
 
     public static List<CardInstance> createDefaultDeck(LivingEntity monster) {
         EntityType<?> type = monster.getType();
-        if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
+        if (isZombieFamily(type)) {
             return cards(ZOMBIE_DEFAULT_DECK);
         }
-        if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
+        if (isSkeletonFamily(type)) {
             return cards(SKELETON_DEFAULT_DECK);
         }
         if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
@@ -82,16 +103,31 @@ public final class MonsterDeckProfile {
         if (!hasDefaultDeck(type)) {
             return List.of();
         }
-        if (type == EntityType.ZOMBIE || type == EntityType.HUSK || type == EntityType.DROWNED) {
+        if (isZombieFamily(type)) {
             return ZOMBIE_DEFAULT_DECK;
         }
-        if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.BOGGED) {
+        if (isSkeletonFamily(type)) {
             return SKELETON_DEFAULT_DECK;
         }
         if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
             return SPIDER_DEFAULT_DECK;
         }
         return FALLBACK_DEFAULT_DECK;
+    }
+
+    public static boolean isSkeletonFamily(EntityType<?> type) {
+        return type == EntityType.SKELETON
+                || type == EntityType.STRAY
+                || type == EntityType.BOGGED
+                || type == EntityType.WITHER_SKELETON;
+    }
+
+    private static boolean isZombieFamily(EntityType<?> type) {
+        return type == EntityType.ZOMBIE
+                || type == EntityType.HUSK
+                || type == EntityType.DROWNED
+                || type == EntityType.ZOMBIE_VILLAGER
+                || type == EntityType.ZOMBIFIED_PIGLIN;
     }
 
     private static List<CardInstance> fallback(LivingEntity monster) {

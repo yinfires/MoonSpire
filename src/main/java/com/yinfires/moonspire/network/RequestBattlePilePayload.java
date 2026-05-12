@@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record RequestBattlePilePayload(UUID battleId, BattlePileSource source, long deckVersion) implements CustomPacketPayload {
+public record RequestBattlePilePayload(UUID battleId, BattlePileSource source, long deckVersion, int entityId) implements CustomPacketPayload {
     public static final Type<RequestBattlePilePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MoonSpire.MOD_ID, "request_battle_pile"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RequestBattlePilePayload> STREAM_CODEC = StreamCodec.of(
             RequestBattlePilePayload::write,
@@ -22,6 +22,10 @@ public record RequestBattlePilePayload(UUID battleId, BattlePileSource source, l
         source = source == null ? BattlePileSource.BATTLE_DECK : source;
     }
 
+    public RequestBattlePilePayload(UUID battleId, BattlePileSource source, long deckVersion) {
+        this(battleId, source, deckVersion, -1);
+    }
+
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
@@ -29,7 +33,7 @@ public record RequestBattlePilePayload(UUID battleId, BattlePileSource source, l
 
     public static void handle(RequestBattlePilePayload payload, IPayloadContext context) {
         if (context.player() instanceof ServerPlayer player) {
-            context.enqueueWork(() -> BattleManager.requestPile(player, payload.battleId, payload.source, payload.deckVersion));
+            context.enqueueWork(() -> BattleManager.requestPile(player, payload.battleId, payload.source, payload.deckVersion, payload.entityId));
         }
     }
 
@@ -37,9 +41,10 @@ public record RequestBattlePilePayload(UUID battleId, BattlePileSource source, l
         buf.writeUUID(payload.battleId);
         buf.writeEnum(payload.source);
         buf.writeVarLong(payload.deckVersion);
+        buf.writeVarInt(payload.entityId);
     }
 
     private static RequestBattlePilePayload read(RegistryFriendlyByteBuf buf) {
-        return new RequestBattlePilePayload(buf.readUUID(), buf.readEnum(BattlePileSource.class), buf.readVarLong());
+        return new RequestBattlePilePayload(buf.readUUID(), buf.readEnum(BattlePileSource.class), buf.readVarLong(), buf.readVarInt());
     }
 }

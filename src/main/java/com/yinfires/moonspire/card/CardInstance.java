@@ -457,10 +457,11 @@ public record CardInstance(
         return switch (nameKey) {
             case "card.moonspire.monster.claw.name" -> "builtin_monster_claw";
             case "card.moonspire.monster.rotten_guard.name" -> "builtin_monster_rotten_guard";
+            case "card.moonspire.monster.undead_power.name" -> "builtin_monster_undead_power";
             case "card.moonspire.monster.lunge.name" -> "builtin_monster_lunge";
-            case "card.moonspire.monster.bone_shot.name" -> "builtin_monster_bone_shot";
+            case "card.moonspire.monster.bow_strike.name" -> "builtin_monster_bow_strike";
             case "card.moonspire.monster.sidestep.name" -> "builtin_monster_sidestep";
-            case "card.moonspire.monster.aimed_volley.name" -> "builtin_monster_aimed_volley";
+            case "card.moonspire.monster.shoot.name" -> "builtin_monster_shoot";
             case "card.moonspire.monster.pounce.name" -> "builtin_monster_pounce";
             case "card.moonspire.monster.skitter.name" -> "builtin_monster_skitter";
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";

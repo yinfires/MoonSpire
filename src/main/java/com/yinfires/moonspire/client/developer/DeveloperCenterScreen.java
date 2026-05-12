@@ -80,6 +80,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     static final int BOTTOM_BUTTON_W = 64;
     static final int BOTTOM_BUTTON_H = 20;
     static final int BOTTOM_BUTTON_GAP = 8;
+    private static final int DELETE_CONFIRM_W = 260;
+    private static final int DELETE_CONFIRM_H = 104;
+    private static final int DELETE_CONFIRM_BUTTON_W = 78;
+    private static final int DELETE_CONFIRM_BUTTON_H = 20;
+    private static final int DELETE_CONFIRM_Z = 1100;
     private static final int BUTTON_Y_OFFSET = 28;
     private static final int CONTENT_BOTTOM_RESERVE = 42;
     private static final int SCROLLBAR_WIDTH = 7;
@@ -384,11 +389,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (confirmDelete) {
+            return button == 0 ? clickDeleteConfirm(mouseX, mouseY) : true;
+        }
         if (button == 0) {
             Layout layout = layout();
-            if (confirmDelete) {
-                return clickDeleteConfirm(mouseX, mouseY);
-            }
             if (targetPickerOpen) {
                 if (clickTargetPicker(layout, mouseX, mouseY, button)) {
                     return true;
@@ -458,6 +463,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (confirmDelete) {
+            return true;
+        }
         if (button == 0 && draggingScrollArea != ScrollArea.NONE) {
             draggingScrollArea = ScrollArea.NONE;
             return true;
@@ -516,6 +524,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (confirmDelete) {
+            return true;
+        }
         if (tab == Tab.CARDS && scrollY != 0.0D) {
             Layout layout = layout();
             GridLayout cardGrid = layout.cardGrid(filteredCards().size());
@@ -601,6 +612,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (confirmDelete) {
+            if (keyCode == 256) {
+                closeDeleteConfirm();
+            }
+            return true;
+        }
         if (targetPickerOpen && targetSearchBox != null) {
             if (keyCode == 256) {
                 closeTargetPicker();
@@ -649,6 +666,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (confirmDelete) {
+            return true;
+        }
         if (targetPickerOpen && targetSearchBox != null) {
             return targetSearchBox.charTyped(codePoint, modifiers);
         }
@@ -1386,7 +1406,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 return;
             }
             String displayName = valueOr(nameKeyBox, "Unnamed Card").trim();
-            String id = previous.id();
+            String previousId = MoonSpireCardRegistry.registeredDeveloperId(previous.id());
+            String id = shouldDeriveCustomIdFromName(previous, displayName)
+                    ? uniqueCardId(displayName, previous.sourceType(), previous.id())
+                    : previous.id();
             List<DeveloperCardEffect> effects = effectsFromBoxes(previous == null ? List.of() : previous.normalizedEffects());
             String nameKey = nameKeyFor(id);
             DeveloperDataManager.rememberDisplayName(nameKey, displayName);
@@ -1410,6 +1433,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                     previous.artScale(),
                     selectedFaceId);
             replaceCard(previous, next);
+            replaceMonsterDeckCardId(previousId, MoonSpireCardRegistry.registeredDeveloperId(id));
         } else if (tab == Tab.FACES && idBox != null) {
             DeveloperCardFace previous = selectedFace();
             String previousId = previous == null ? "" : previous.id();
@@ -1807,6 +1831,52 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
     }
 
+    private boolean shouldDeriveCustomIdFromName(DeveloperCardDefinition card, String displayName) {
+        if (card == null || card.sourceType() != CardSourceType.CUSTOM || displayName == null || displayName.isBlank()) {
+            return false;
+        }
+        String unknownName = Component.translatable("card.moonspire.unknown.name").getString();
+        if (displayName.equals(card.nameKey())
+                || "card.moonspire.unknown.name".equals(displayName)
+                || "Unknown Card".equals(displayName)
+                || displayName.equals(unknownName)) {
+            return false;
+        }
+        String normalized = MoonSpireCardRegistry.registeredDeveloperId(card.id());
+        if (!normalized.matches("custom_card(_\\d+)?")) {
+            return false;
+        }
+        String derived = uniqueCardId(displayName, card.sourceType(), card.id());
+        return !MoonSpireCardRegistry.registeredDeveloperId(derived).equals(normalized);
+    }
+
+    private void replaceMonsterDeckCardId(String previousId, String nextId) {
+        if (previousId == null || nextId == null || previousId.isBlank() || nextId.isBlank() || previousId.equals(nextId)) {
+            return;
+        }
+        for (int i = 0; i < data.monsters.size(); i++) {
+            DeveloperMonsterDefinition monster = data.monsters.get(i);
+            List<String> deck = new ArrayList<>(monster.deckCardIds());
+            boolean changed = false;
+            for (int j = 0; j < deck.size(); j++) {
+                if (previousId.equals(MoonSpireCardRegistry.registeredDeveloperId(deck.get(j)))) {
+                    deck.set(j, nextId);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                data.monsters.set(i, new DeveloperMonsterDefinition(
+                        monster.entityTypeId(),
+                        monster.maxHealth(),
+                        monster.energy(),
+                        monster.speed(),
+                        monster.initialEffects(),
+                        deck,
+                        monster.hasDeckOverride()));
+            }
+        }
+    }
+
     private void replaceMonster(DeveloperMonsterDefinition next) {
         replaceMonster(selectedMonsterId, next);
     }
@@ -1887,25 +1957,31 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void requestDelete() {
         if (tab == Tab.CARDS && selectedCard() != null) {
+            applyFields();
+            closePickersForDelete();
             confirmDelete = true;
         } else if (tab == Tab.FACES && selectedFace() != null) {
+            applyFields();
+            closePickersForDelete();
             confirmDelete = true;
         } else if (tab == Tab.MONSTERS && !selectedMonsterId.isBlank()) {
+            applyFields();
+            closePickersForDelete();
             confirmDelete = true;
         }
     }
 
     private boolean clickDeleteConfirm(double mouseX, double mouseY) {
-        int w = 220;
-        int h = 78;
-        int x = (width - w) / 2;
-        int y = (height - h) / 2;
-        if (insideRect(mouseX, mouseY, x + 30, y + 50, 70, 18)) {
+        DeleteConfirmBounds bounds = deleteConfirmBounds();
+        if (insideRect(mouseX, mouseY, bounds.deleteX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H)) {
             if (tab == Tab.CARDS) {
                 DeveloperCardDefinition card = selectedCard();
                 if (card != null) {
                     String deletedId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
+                    DeveloperDataManager.forgetDisplayName(card.nameKey());
                     data.cards.removeIf(saved -> deletedId.equals(MoonSpireCardRegistry.registeredDeveloperId(saved.id())));
+                    removeCardFromMonsterDecks(deletedId);
+                    invalidateFilteredCaches();
                     selectedCardId = MoonSpireCardRegistry.baseCard(deletedId).isPresent() ? deletedId : filteredCards().stream().findFirst().map(DeveloperCardDefinition::id).orElse("");
                     lastSelectedCardId = selectedCardId;
                     status = Component.translatable("debug.moonspire.deleted");
@@ -1919,11 +1995,22 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             closeDeleteConfirm();
             return true;
         }
-        if (insideRect(mouseX, mouseY, x + 120, y + 50, 70, 18)) {
+        if (insideRect(mouseX, mouseY, bounds.cancelX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H)) {
             closeDeleteConfirm();
             return true;
         }
         return true;
+    }
+
+    private void closePickersForDelete() {
+        itemPickerOpen = false;
+        effectPickerOpen = false;
+        targetPickerOpen = false;
+        monsterEffectPickerOpen = false;
+        targetPickerEffectIndex = -1;
+        draggingScrollArea = ScrollArea.NONE;
+        draggingArt = false;
+        draggingFaceArea = false;
     }
 
     private void closeDeleteConfirm() {
@@ -1987,6 +2074,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         selectedFaceId = "default";
         data.activeFaceId = "default";
+        invalidateFilteredCaches();
         status = Component.translatable("debug.moonspire.face_deleted");
         statusTicks = 120;
     }
@@ -1995,8 +2083,30 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         String deletedId = selectedMonsterId.isBlank() ? "minecraft:zombie" : selectedMonsterId;
         data.monsters.removeIf(monster -> deletedId.equals(monster.entityTypeId()));
         selectedMonsterId = deletedId;
+        invalidateFilteredCaches();
         status = Component.translatable("debug.moonspire.monster_deleted");
         statusTicks = 120;
+    }
+
+    private void removeCardFromMonsterDecks(String deletedId) {
+        if (deletedId == null || deletedId.isBlank()) {
+            return;
+        }
+        List<DeveloperMonsterDefinition> nextMonsters = new ArrayList<>();
+        for (DeveloperMonsterDefinition monster : data.monsters) {
+            List<String> deck = monster.deckCardIds().stream()
+                    .filter(id -> !deletedId.equals(MoonSpireCardRegistry.registeredDeveloperId(id)))
+                    .toList();
+            nextMonsters.add(new DeveloperMonsterDefinition(
+                    monster.entityTypeId(),
+                    monster.maxHealth(),
+                    monster.energy(),
+                    monster.speed(),
+                    monster.initialEffects(),
+                    deck,
+                    monster.hasDeckOverride()));
+        }
+        data.monsters = new ArrayList<>(nextMonsters);
     }
 
     private void resetCardsUsingFace(String faceId) {
@@ -3082,14 +3192,25 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void renderDeleteConfirm(GuiGraphics graphics) {
         MoonSpireModalLayer.drawTopmostOverlay(graphics, width, height);
-        int w = 220;
-        int h = 78;
-        int x = (width - w) / 2;
-        int y = (height - h) / 2;
-        MoonSpireUiTextures.drawDarkPanel(graphics, x, y, w, h);
-        drawWrappedLimited(graphics, Component.translatable(deleteConfirmKey()), x + 10, y + 10, w - 20, y + 40, 0xFFEDE8FF);
-        drawButtonLike(graphics, x + 30, y + 50, 70, 18, Component.translatable("debug.moonspire.delete"));
-        drawButtonLike(graphics, x + 120, y + 50, 70, 18, Component.translatable("gui.cancel"));
+        DeleteConfirmBounds bounds = deleteConfirmBounds();
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, DELETE_CONFIRM_Z);
+        MoonSpireUiTextures.drawDarkPanel(graphics, bounds.x(), bounds.y(), DELETE_CONFIRM_W, DELETE_CONFIRM_H);
+        drawWrappedLimited(graphics, Component.translatable(deleteConfirmKey()), bounds.x() + 12, bounds.y() + 12, DELETE_CONFIRM_W - 24, bounds.buttonY() - 8, 0xFFEDE8FF);
+        drawButtonLike(graphics, bounds.deleteX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H, Component.translatable("debug.moonspire.delete"));
+        drawButtonLike(graphics, bounds.cancelX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H, Component.translatable("gui.cancel"));
+        graphics.pose().popPose();
+    }
+
+    private DeleteConfirmBounds deleteConfirmBounds() {
+        int x = (width - DELETE_CONFIRM_W) / 2;
+        int y = (height - DELETE_CONFIRM_H) / 2;
+        int gap = 16;
+        int totalButtonW = DELETE_CONFIRM_BUTTON_W * 2 + gap;
+        int deleteX = x + (DELETE_CONFIRM_W - totalButtonW) / 2;
+        int cancelX = deleteX + DELETE_CONFIRM_BUTTON_W + gap;
+        int buttonY = y + DELETE_CONFIRM_H - DELETE_CONFIRM_BUTTON_H - 12;
+        return new DeleteConfirmBounds(x, y, deleteX, cancelX, buttonY);
     }
 
     private CardTarget targetPickerSelectedTarget() {
@@ -3963,6 +4084,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private record ToggleBounds(int x, int y, int w, int h) {
+    }
+
+    private record DeleteConfirmBounds(int x, int y, int deleteX, int cancelX, int buttonY) {
     }
 
     private record MonsterDefaults(float health, int energy, int speed) {

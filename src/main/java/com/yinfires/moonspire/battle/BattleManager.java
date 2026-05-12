@@ -199,17 +199,22 @@ public final class BattleManager {
     }
 
     public static void requestPile(ServerPlayer player, UUID battleId, BattlePileSource source, long deckVersion) {
+        requestPile(player, battleId, source, deckVersion, -1);
+    }
+
+    public static void requestPile(ServerPlayer player, UUID battleId, BattlePileSource source, long deckVersion, int entityId) {
         BattleState battle = BY_PLAYER.get(player.getUUID());
         if (battle == null || source == null || !battle.matchesId(battleId)) {
             return;
         }
-        long currentVersion = battle.deckVersionFor(player);
+        long currentVersion = battle.deckVersionFor(player, entityId);
         PacketDistributor.sendToPlayer(player, new BattlePileContentsPayload(
                 battle.id(),
                 source,
                 currentVersion,
-                battle.pileCountFor(player, source),
-                battle.pileCardsFor(player, source)));
+                entityId,
+                battle.pileCountFor(player, source, entityId),
+                battle.pileCardsFor(player, source, entityId)));
     }
 
     public static boolean handleDamage(LivingEntity target, Entity sourceEntity) {
