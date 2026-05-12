@@ -543,7 +543,7 @@ public final class CardRenderHelper {
     }
 
     public static boolean renderGridCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, boolean clipItemArt, String contentKey) {
-        return renderCardBaseAndArt(graphics, card, x, y, CARD_WIDTH, CARD_HEIGHT, clipItemArt, true, null, true, false, contentKey);
+        return renderCardBaseAndArt(graphics, card, x, y, CARD_WIDTH, CARD_HEIGHT, true, true, null, true, false, contentKey);
     }
 
     public static void renderGridCardText(GuiGraphics graphics, Font font, CardInstance card, int x, int y, CardValues values) {
@@ -567,6 +567,7 @@ public final class CardRenderHelper {
     }
 
     public static void clearBatchedItemArtDepth(GuiGraphics graphics) {
+        graphics.flush();
         clearItemDepth();
     }
 
@@ -1078,6 +1079,7 @@ public final class CardRenderHelper {
     private static void renderCard(GuiGraphics graphics, Font font, CardInstance card, int x, int y, int width, int height, boolean selected, boolean detailed, boolean unaffordable, CardValues values, boolean clipArt, DeveloperData dataOverride, boolean showDescription, boolean renderItemArt, String contentKey) {
         renderCardBaseAndArt(graphics, card, x, y, width, height, clipArt, dataOverride, renderItemArt, true, contentKey);
         renderCardText(graphics, font, card, x, y, width, height, detailed, unaffordable, values, dataOverride, showDescription, contentKey);
+        graphics.flush();
     }
 
     private static boolean renderCardBaseAndArt(GuiGraphics graphics, CardInstance card, int x, int y, int width, int height, boolean clipArt, DeveloperData dataOverride, boolean renderItemArt, boolean clearItemDepth) {
@@ -1107,6 +1109,8 @@ public final class CardRenderHelper {
         int artY = y + sy(height, artArea.y());
         int artWidth = sx(width, artArea.width());
         int artHeight = sy(height, artArea.height());
+        boolean clipItemToArtArea = true;
+        boolean clipCustomToArtArea = true;
         TextureRef artTexture = effectivePlan.artTexture();
         ItemStack artItem = effectivePlan.artItem();
         boolean renderedItemArt = false;
@@ -1114,16 +1118,16 @@ public final class CardRenderHelper {
             if (!renderItemArt) {
                 recordSkippedItemArt();
             } else {
-                renderCardArtItem(graphics, artItem, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipItemArt, clearItemDepth);
+                renderCardArtItem(graphics, artItem, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipItemToArtArea, clearItemDepth);
                 renderedItemArt = true;
             }
         } else if (artTexture != null) {
-            renderCustomCardArt(graphics, artTexture, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipCustomArt);
+            renderCustomCardArt(graphics, artTexture, artX, artY, artWidth, artHeight, card.artX(), card.artY(), card.artScale(), clipCustomToArtArea);
         } else if (!card.sourceStack().isEmpty()) {
             if (!renderItemArt) {
                 recordSkippedItemArt();
             } else {
-                renderCardArtItem(graphics, card, artX, artY, artWidth, artHeight, clipItemArt, clearItemDepth);
+                renderCardArtItem(graphics, card, artX, artY, artWidth, artHeight, clipItemToArtArea, clearItemDepth);
                 renderedItemArt = true;
             }
         }
@@ -1731,6 +1735,7 @@ public final class CardRenderHelper {
         int itemX = artX + (artWidth - itemSize) / 2 + offsetX;
         int itemY = artY + (artHeight - itemSize) / 2 + offsetY;
         if (clipArt) {
+            graphics.flush();
             enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         graphics.pose().pushPose();
@@ -1743,9 +1748,13 @@ public final class CardRenderHelper {
         graphics.renderFakeItem(stack, 0, 0);
         graphics.pose().popPose();
         if (clipArt) {
+            graphics.flush();
             graphics.disableScissor();
         }
         if (clearDepthAfterRender) {
+            if (!clipArt) {
+                graphics.flush();
+            }
             clearItemDepth();
         }
         recordItemArt(start);
@@ -1754,6 +1763,7 @@ public final class CardRenderHelper {
     private static void renderCustomCardArt(GuiGraphics graphics, TextureRef texture, int artX, int artY, int artWidth, int artHeight, int offsetX, int offsetY, float scale, boolean clipArt) {
         long start = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         if (clipArt) {
+            graphics.flush();
             enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         int drawW = Math.max(1, Math.round(artWidth * Math.max(0.05F, scale)));
@@ -1762,6 +1772,7 @@ public final class CardRenderHelper {
         int drawY = artY + (artHeight - drawH) / 2 + offsetY;
         graphics.blit(texture.location(), drawX, drawY, drawW, drawH, 0.0F, 0.0F, texture.width(), texture.height(), texture.width(), texture.height());
         if (clipArt) {
+            graphics.flush();
             graphics.disableScissor();
         }
         recordCustomArt(start);
@@ -1793,6 +1804,7 @@ public final class CardRenderHelper {
         int itemX = artX + (artWidth - itemSize) / 2;
         int itemY = artY + (artHeight - itemSize) / 2;
         if (clipArt) {
+            graphics.flush();
             enablePoseScissor(graphics, artX, artY, artWidth, artHeight);
         }
         graphics.pose().pushPose();
@@ -1805,9 +1817,13 @@ public final class CardRenderHelper {
         graphics.renderFakeItem(card.sourceStack(), 0, 0);
         graphics.pose().popPose();
         if (clipArt) {
+            graphics.flush();
             graphics.disableScissor();
         }
         if (clearDepthAfterRender) {
+            if (!clipArt) {
+                graphics.flush();
+            }
             clearItemDepth();
         }
         recordItemArt(start);

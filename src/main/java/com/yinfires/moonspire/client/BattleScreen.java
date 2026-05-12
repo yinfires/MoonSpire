@@ -1371,22 +1371,19 @@ public class BattleScreen extends NoBlurScreen {
         if (visibleEntries.isEmpty()) {
             return;
         }
-        boolean itemArtRendered = false;
         for (int i = 0; i < visibleEntries.size(); i++) {
             HandRenderEntry entry = visibleEntries.get(i);
-            itemArtRendered |= renderHandCardBaseAndArt(graphics, snapshot, entry.card(), entry.animation(), partialTick, entry.selected(), true, entry.renderData().contentKey());
+            boolean itemArtRendered = renderHandCardBaseAndArt(graphics, snapshot, entry.card(), entry.animation(), partialTick, entry.selected(), true, entry.renderData().contentKey());
+            if (itemArtRendered) {
+                long depthStart = perfStart();
+                CardRenderHelper.clearBatchedItemArtDepth(graphics);
+                battleRenderHandDepthNanos += elapsedPerf(depthStart);
+            }
+            renderHandCardTextEntry(graphics, snapshot, entry, partialTick);
+            long flushStart = perfStart();
+            graphics.flush();
+            battleRenderHandBaseFlushNanos += elapsedPerf(flushStart);
         }
-        long flushStart = perfStart();
-        graphics.flush();
-        battleRenderHandBaseFlushNanos += elapsedPerf(flushStart);
-        if (itemArtRendered) {
-            long depthStart = perfStart();
-            CardRenderHelper.clearBatchedItemArtDepth(graphics);
-            battleRenderHandDepthNanos += elapsedPerf(depthStart);
-        }
-        long textStart = perfStart();
-        renderHandCardTextEntries(graphics, snapshot, visibleEntries, partialTick);
-        battleRenderHandTextNanos += elapsedPerf(textStart);
     }
 
     private List<HandRenderEntry> visibleHandEntries(List<HandRenderEntry> entries, float partialTick) {
@@ -1405,18 +1402,23 @@ public class BattleScreen extends NoBlurScreen {
 
     private void renderHandCardTextEntries(GuiGraphics graphics, BattleSnapshot snapshot, List<HandRenderEntry> visibleEntries, float partialTick) {
         for (int i = 0; i < visibleEntries.size(); i++) {
-            HandRenderEntry entry = visibleEntries.get(i);
-            CardRenderHelper.CardValues values = entry.renderData().values();
-            boolean unaffordable = entry.card().cost() > snapshot.player().energyLeft();
-            String contentKey = entry.renderData().contentKey();
-            long visibilityStart = perfStart();
-            boolean showDescription = handDescriptionVisible(entry, values, contentKey, partialTick);
-            battleRenderHandTextVisibilityNanos += elapsedPerf(visibilityStart);
-            CardRenderHelper.SmallCardTextVisibility visibility = CardRenderHelper.SmallCardTextVisibility.all(showDescription);
-            long submitStart = perfStart();
-            renderHandCardTextUnclipped(graphics, entry.card(), entry.animation(), partialTick, entry.selected(), unaffordable, values, visibility, contentKey);
-            battleRenderHandTextSubmitNanos += elapsedPerf(submitStart);
+            renderHandCardTextEntry(graphics, snapshot, visibleEntries.get(i), partialTick);
         }
+    }
+
+    private void renderHandCardTextEntry(GuiGraphics graphics, BattleSnapshot snapshot, HandRenderEntry entry, float partialTick) {
+        long textStart = perfStart();
+        CardRenderHelper.CardValues values = entry.renderData().values();
+        boolean unaffordable = entry.card().cost() > snapshot.player().energyLeft();
+        String contentKey = entry.renderData().contentKey();
+        long visibilityStart = perfStart();
+        boolean showDescription = handDescriptionVisible(entry, values, contentKey, partialTick);
+        battleRenderHandTextVisibilityNanos += elapsedPerf(visibilityStart);
+        CardRenderHelper.SmallCardTextVisibility visibility = CardRenderHelper.SmallCardTextVisibility.all(showDescription);
+        long submitStart = perfStart();
+        renderHandCardTextUnclipped(graphics, entry.card(), entry.animation(), partialTick, entry.selected(), unaffordable, values, visibility, contentKey);
+        battleRenderHandTextSubmitNanos += elapsedPerf(submitStart);
+        battleRenderHandTextNanos += elapsedPerf(textStart);
     }
 
     private boolean handDescriptionVisible(HandRenderEntry entry, CardRenderHelper.CardValues values, float partialTick) {
@@ -1467,8 +1469,11 @@ public class BattleScreen extends NoBlurScreen {
             battleRenderHandDepthNanos += elapsedPerf(depthStart);
         }
         long textStart = perfStart();
-        renderHandCardTextUnclipped(graphics, card, animation, partialTick, selected, card.cost() > snapshot.player().energyLeft(), renderData.values(), true);
+        renderHandCardTextUnclipped(graphics, card, animation, partialTick, selected, card.cost() > snapshot.player().energyLeft(), renderData.values(), CardRenderHelper.SmallCardTextVisibility.all(true), renderData.contentKey());
         battleRenderHandTextNanos += elapsedPerf(textStart);
+        long flushStart = perfStart();
+        graphics.flush();
+        battleRenderHandBaseFlushNanos += elapsedPerf(flushStart);
     }
 
     private void renderHoveredHandCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, HandCardAnimation animation, HandCardBounds baseBounds, float partialTick) {

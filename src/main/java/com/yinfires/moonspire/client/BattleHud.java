@@ -11,7 +11,7 @@ public final class BattleHud {
 
     public static void render(GuiGraphics graphics, net.minecraft.client.DeltaTracker deltaTracker) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || ClientBattleState.active()) {
+        if (minecraft.player == null || minecraft.options.hideGui || ClientBattleState.active()) {
             return;
         }
         LivingEntity living = ClientEvents.challengeTarget(minecraft);

@@ -124,7 +124,7 @@ final class CardGridPanel {
         double scrollDelta = Double.isFinite(previousFrameScrollOffset) ? frameScrollOffset - previousFrameScrollOffset : 0.0D;
         boolean scrolledSinceLastFrame = Math.abs(scrollDelta) > 0.01D;
         boolean scrollMotionActive = scrolledSinceLastFrame || scrollMotionFrames > 0;
-        boolean clipGridItemArt = !scrollMotionActive;
+        boolean clipGridItemArt = true;
         previousScrollOffset = frameScrollOffset;
         long layoutNanos = elapsedSince(segmentStart);
         segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
@@ -162,45 +162,6 @@ final class CardGridPanel {
             graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
             scissorNanos += elapsedSince(segmentStart);
             try {
-                boolean itemArtRendered = false;
-                for (int i = firstVisible; i < endVisible; i++) {
-                    if (i == hoveredIndex) {
-                        continue;
-                    }
-                    CardBounds bounds = cardBounds(layout, i);
-                    if (!cardIntersectsView(layout, bounds)) {
-                        continue;
-                    }
-                    CardInstance card = cards.get(i);
-                    boolean selectedCard = selected.test(card);
-                    GridPose pose = poseFor(layout, i, selectedCard);
-                    graphics.pose().pushPose();
-                    graphics.pose().translate(pose.x(), pose.y(), 0.0F);
-                    graphics.pose().scale(pose.scale(), pose.scale(), 1.0F);
-                    try {
-                        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-                        long beforeBaseNanos = diag ? CardRenderHelper.frameFaceBaseNanos() : 0L;
-                        long beforeCustomArtNanos = diag ? CardRenderHelper.frameCustomArtNanos() : 0L;
-                        long beforeItemArtNanos = diag ? CardRenderHelper.frameItemArtNanos() : 0L;
-                        itemArtRendered |= CardRenderHelper.renderGridCardBaseAndArt(graphics, card, 0, 0, clipGridItemArt, warmupContentKeys.get(i));
-                        long visualElapsed = elapsedSince(segmentStart);
-                        if (diag) {
-                            long cardBaseNanos = Math.max(0L, CardRenderHelper.frameFaceBaseNanos() - beforeBaseNanos);
-                            long cardArtNanos = Math.max(0L, CardRenderHelper.frameCustomArtNanos() - beforeCustomArtNanos)
-                                    + Math.max(0L, CardRenderHelper.frameItemArtNanos() - beforeItemArtNanos);
-                            baseNanos += cardBaseNanos;
-                            artNanos += cardArtNanos;
-                            baseArtOtherNanos += Math.max(0L, visualElapsed - cardBaseNanos - cardArtNanos);
-                        }
-                    } finally {
-                        graphics.pose().popPose();
-                    }
-                }
-                if (itemArtRendered) {
-                    segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-                    CardRenderHelper.clearBatchedItemArtDepth(graphics);
-                    clearDepthNanos += elapsedSince(segmentStart);
-                }
                 for (int i = firstVisible; i < endVisible; i++) {
                     if (i == hoveredIndex) {
                         continue;
@@ -230,9 +191,37 @@ final class CardGridPanel {
                     if (!visibility.description()) {
                         skippedDescriptionText++;
                     }
-                    segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
-                    renderGridCardText(graphics, font, card, warmupContentKeys.get(i), poseFor(layout, i, selectedCard), frameValue(i), visibility);
-                    textNanos += elapsedSince(segmentStart);
+                    GridPose pose = poseFor(layout, i, selectedCard);
+                    graphics.pose().pushPose();
+                    graphics.pose().translate(pose.x(), pose.y(), 0.0F);
+                    graphics.pose().scale(pose.scale(), pose.scale(), 1.0F);
+                    try {
+                        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                        long beforeBaseNanos = diag ? CardRenderHelper.frameFaceBaseNanos() : 0L;
+                        long beforeCustomArtNanos = diag ? CardRenderHelper.frameCustomArtNanos() : 0L;
+                        long beforeItemArtNanos = diag ? CardRenderHelper.frameItemArtNanos() : 0L;
+                        boolean itemArtRendered = CardRenderHelper.renderGridCardBaseAndArt(graphics, card, 0, 0, clipGridItemArt, warmupContentKeys.get(i));
+                        long visualElapsed = elapsedSince(segmentStart);
+                        if (diag) {
+                            long cardBaseNanos = Math.max(0L, CardRenderHelper.frameFaceBaseNanos() - beforeBaseNanos);
+                            long cardArtNanos = Math.max(0L, CardRenderHelper.frameCustomArtNanos() - beforeCustomArtNanos)
+                                    + Math.max(0L, CardRenderHelper.frameItemArtNanos() - beforeItemArtNanos);
+                            baseNanos += cardBaseNanos;
+                            artNanos += cardArtNanos;
+                            baseArtOtherNanos += Math.max(0L, visualElapsed - cardBaseNanos - cardArtNanos);
+                        }
+                        if (itemArtRendered) {
+                            segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                            CardRenderHelper.clearBatchedItemArtDepth(graphics);
+                            clearDepthNanos += elapsedSince(segmentStart);
+                        }
+                        segmentStart = diag ? MoonSpirePerfDiagnostics.now() : 0L;
+                        CardRenderHelper.renderGridCardText(graphics, font, card, 0, 0, frameValue(i), visibility, warmupContentKeys.get(i));
+                        textNanos += elapsedSince(segmentStart);
+                    } finally {
+                        graphics.pose().popPose();
+                    }
+                    graphics.flush();
                     renderedCards++;
                 }
             } finally {

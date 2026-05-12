@@ -28,6 +28,7 @@ import org.joml.Matrix4f;
 
 public final class BattleWorldOverlay {
     private static final double COMBATANT_OVERLAY_Y_OFFSET = 0.9D;
+    private static final float WORLD_TEXT_Z = 0.18F;
 
     private BattleWorldOverlay() {
     }
@@ -135,7 +136,7 @@ public final class BattleWorldOverlay {
         Component text = combatant.defense() > 0
                 ? Component.translatable("screen.moonspire.world_bar_block", Math.round(combatant.health()), combatant.defense(), combatant.roundSpeed())
                 : Component.translatable("screen.moonspire.world_bar", Math.round(combatant.health()), combatant.roundSpeed());
-        font.drawInBatch(text, -font.width(text) / 2.0F, -15, 0xFFFFFFFF, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+        drawWorldText(font, text, -font.width(text) / 2.0F, -15, 0xFFFFFFFF, false, matrix, bufferSource, packedLight);
     }
 
     private static void drawIntent(Font font, Matrix4f matrix, MultiBufferSource bufferSource, List<CardInstance> intentCards, BattleCombatantSnapshot enemy, int packedLight) {
@@ -161,22 +162,22 @@ public final class BattleWorldOverlay {
         int x = -43;
         if (attack > 0) {
             Component text = Component.translatable("screen.moonspire.intent_attack", attack);
-            font.drawInBatch(text, x, -23, 0xFFFF6961, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, x, -23, 0xFFFF6961, false, matrix, bufferSource, packedLight);
             x += 28;
         }
         if (block > 0) {
             Component text = Component.translatable("screen.moonspire.intent_block", block);
-            font.drawInBatch(text, x, -23, 0xFF66BFFF, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, x, -23, 0xFF66BFFF, false, matrix, bufferSource, packedLight);
             x += 28;
         }
         if (positive > 0) {
             Component text = Component.translatable("screen.moonspire.intent_positive", positive);
-            font.drawInBatch(text, x, -23, 0xFF8DE6A6, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, x, -23, 0xFF8DE6A6, false, matrix, bufferSource, packedLight);
             x += 28;
         }
         if (negative > 0) {
             Component text = Component.translatable("screen.moonspire.intent_effect", negative);
-            font.drawInBatch(text, x, -23, 0xFFFF8AA0, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, x, -23, 0xFFFF8AA0, false, matrix, bufferSource, packedLight);
         }
     }
 
@@ -192,11 +193,11 @@ public final class BattleWorldOverlay {
                 MoonSpireUiTextures.drawWorldBillboard(matrix, textured, iconX, iconY, iconSize, iconSize, 0.06F, packedLight, 0.0F, 0.0F, 1.0F, 1.0F);
             } else {
                 Component marker = Component.translatable("screen.moonspire.effect_unknown_icon");
-                font.drawInBatch(marker, iconX + (iconSize - font.width(marker)) / 2.0F, iconY + 4, 0xFFFFB1C0, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+                drawWorldText(font, marker, iconX + (iconSize - font.width(marker)) / 2.0F, iconY + 4, 0xFFFFB1C0, false, matrix, bufferSource, packedLight);
             }
             Component text = Component.translatable("screen.moonspire.effect_short", effect.amount());
             int amountColor = effect.type() == BattleEffectType.STRENGTH && effect.amount() < 0 ? 0xFFFF5454 : 0xFFFFFFFF;
-            font.drawInBatch(text, iconX + iconSize - font.width(text), iconY + iconSize - 9, amountColor, true, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, iconX + iconSize - font.width(text), iconY + iconSize - 9, amountColor, true, matrix, bufferSource, packedLight);
             x += 18;
         }
     }
@@ -236,8 +237,18 @@ public final class BattleWorldOverlay {
             int y = -24 - number.visibleAge();
             int color = number.healing() ? 0xFF70E083 : number.block() ? 0xFF66BFFF : 0xFFFF5454;
             String text = number.healing() ? "+" + number.amount() : Integer.toString(number.amount());
-            font.drawInBatch(text, -font.width(text) / 2.0F, y, color, false, matrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            drawWorldText(font, text, -font.width(text) / 2.0F, y, color, false, matrix, bufferSource, packedLight);
         }
+    }
+
+    private static void drawWorldText(Font font, Component text, float x, float y, int color, boolean shadow, Matrix4f matrix, MultiBufferSource bufferSource, int packedLight) {
+        Matrix4f textMatrix = new Matrix4f(matrix).translate(0.0F, 0.0F, WORLD_TEXT_Z);
+        font.drawInBatch(text, x, y, color, shadow, textMatrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+    }
+
+    private static void drawWorldText(Font font, String text, float x, float y, int color, boolean shadow, Matrix4f matrix, MultiBufferSource bufferSource, int packedLight) {
+        Matrix4f textMatrix = new Matrix4f(matrix).translate(0.0F, 0.0F, WORLD_TEXT_Z);
+        font.drawInBatch(text, x, y, color, shadow, textMatrix, bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
     }
 
     private static void drawBlockGainAnimations(Matrix4f matrix, MultiBufferSource bufferSource, Entity entity, int packedLight) {
