@@ -259,6 +259,12 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_web", "card.moonspire.monster.web.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.SLOWNESS, 2, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_venom_fang", "card.moonspire.monster.venom_fang.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.POISON, 5, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_strike", "card.moonspire.monster.strike.name", "", 1, 3, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_guard", "card.moonspire.monster.guard.name", "", 1, 0, 2, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_heavy_strike", "card.moonspire.monster.heavy_strike.name", "", 2, 6, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""));

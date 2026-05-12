@@ -12,6 +12,7 @@ import com.yinfires.moonspire.client.CardRenderHelper;
 import com.yinfires.moonspire.client.NoBlurScreen;
 import com.yinfires.moonspire.client.ui.MoonSpireModalLayer;
 import com.yinfires.moonspire.client.ui.MoonSpireTextureButton;
+import com.yinfires.moonspire.client.ui.MoonSpireUiLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.developer.DeveloperCardDefinition;
 import com.yinfires.moonspire.developer.DeveloperCardEffect;
@@ -34,6 +35,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -57,7 +60,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -77,6 +79,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static final int FIELD_PITCH = 33;
     static final int TAB_BUTTON_W = 90;
     static final int TAB_BUTTON_H = 20;
+    private static final int SIDEBAR_ACTION_BUTTON_W = 100;
     static final int BOTTOM_BUTTON_W = 64;
     static final int BOTTOM_BUTTON_H = 20;
     static final int BOTTOM_BUTTON_GAP = 8;
@@ -127,6 +130,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static double lastCardScrollOffset;
     private static double lastItemScrollOffset;
     private static double lastListScrollOffset;
+    private static String lastCardSearchQuery = "";
+    private static String lastFaceSearchQuery = "";
+    private static String lastMonsterSearchQuery = "";
     private DeveloperData data;
     private DeveloperData savedData;
     private Tab tab = Tab.CARDS;
@@ -170,6 +176,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private boolean effectPickerOpen;
     private boolean targetPickerOpen;
     private boolean confirmDelete;
+    private boolean confirmDeleteAll;
     private int targetPickerEffectIndex = -1;
     private boolean monsterEffectPickerOpen;
     private String effectAmountBoxesCardId = "";
@@ -256,6 +263,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         monsterEffectAmountBoxes.clear();
         Layout layout = layout();
         searchBox = addBox(layout.searchX(tab), layout.searchBoxY(), layout.searchW(tab), Component.translatable("debug.moonspire.search"));
+        searchBox.setValue(rememberedSearchQuery());
         idBox = addBox(layout.formX(), layout.fieldBoxY(0), layout.formW(), Component.translatable("debug.moonspire.field.id"));
         nameKeyBox = addBox(layout.formX(), layout.fieldBoxY(1), layout.formW(), Component.translatable("debug.moonspire.field.card_name"));
         cardIdCopyButton = new MoonSpireTextureButton(layout.cardIdCopyButtonX(), layout.cardIdCopyButtonY(), CARD_ID_COPY_BUTTON_W, CARD_ID_COPY_BUTTON_H, Component.translatable("debug.moonspire.copy"), button -> copySelectedCardId());
@@ -278,6 +286,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 24, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.faces"), button -> switchTab(Tab.FACES)));
         addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 48, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.monsters"), button -> switchTab(Tab.MONSTERS)));
         addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 72, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.layout"), button -> switchTab(Tab.LAYOUT)));
+        int sidebarActionX = 4 + (SIDEBAR_W - SIDEBAR_ACTION_BUTTON_W) / 2;
+        addRenderableWidget(new MoonSpireTextureButton(sidebarActionX, height - 58, SIDEBAR_ACTION_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.delete_all_changes"), button -> requestDeleteAllChanges()));
         int globalButtonsX = width - 16 - bottomButtonGroupWidth(2);
         addTabActionButtons(layout, globalButtonsX - GAP);
         addBottomButton(globalButtonsX, layout.buttonY(), Component.translatable("debug.moonspire.save"), button -> save());
@@ -651,6 +661,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return itemSearchBox.keyPressed(keyCode, scanCode, modifiers);
         }
         if (super.keyPressed(keyCode, scanCode, modifiers)) {
+            rememberSearchQuery();
             applyFields();
             return true;
         }
@@ -682,6 +693,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return itemSearchBox.charTyped(codePoint, modifiers);
         }
         boolean handled = super.charTyped(codePoint, modifiers);
+        rememberSearchQuery();
         applyFields();
         return handled;
     }
@@ -1479,11 +1491,39 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         lastCardScrollOffset = cardScrollOffset;
         lastItemScrollOffset = itemScrollOffset;
         lastListScrollOffset = listScrollOffset;
+        rememberSearchQuery();
         rememberMonsterListScrollOffset();
+    }
+
+    private String rememberedSearchQuery() {
+        return switch (tab) {
+            case CARDS -> lastCardSearchQuery;
+            case FACES -> lastFaceSearchQuery;
+            case MONSTERS -> lastMonsterSearchQuery;
+            case LAYOUT -> "";
+        };
+    }
+
+    private void rememberSearchQuery() {
+        if (searchBox == null) {
+            return;
+        }
+        String query = searchBox.getValue();
+        switch (tab) {
+            case CARDS -> lastCardSearchQuery = query;
+            case FACES -> lastFaceSearchQuery = query;
+            case MONSTERS -> lastMonsterSearchQuery = query;
+            case LAYOUT -> {
+            }
+        }
     }
 
     private void save() {
         applyFields();
+        saveCurrentData(Component.translatable("debug.moonspire.saved"));
+    }
+
+    private void saveCurrentData(Component successStatus) {
         rememberOpenState();
         boolean faceSaved = saveCardFaceFiles();
         boolean cardArtSaved = saveCardArtFiles();
@@ -1494,7 +1534,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (!faceSaved) {
             status = cardFaceSaveFailureStatus.getString().isBlank() ? Component.translatable("debug.moonspire.card_face_save_failed") : cardFaceSaveFailureStatus;
         } else {
-            status = Component.translatable(cardArtSaved ? "debug.moonspire.saved" : "debug.moonspire.card_art_save_failed");
+            status = cardArtSaved ? successStatus : Component.translatable("debug.moonspire.card_art_save_failed");
         }
         statusTicks = 120;
     }
@@ -1910,7 +1950,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return new MonsterDefaults(
                     Math.max(1.0F, sample.getMaxHealth()),
                     CardBalance.fixedEnergy(),
-                    nonPlayerBaseSpeed(sample));
+                    MonsterDeckProfile.defaultBaseSpeed(sample));
         }
         return new MonsterDefaults(20.0F, CardBalance.fixedEnergy(), CardBalance.PLAYER_BASE_SPEED);
     }
@@ -1922,11 +1962,6 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         Entity entity = type.create(minecraft.level);
         return entity instanceof LivingEntity living ? living : null;
-    }
-
-    private int nonPlayerBaseSpeed(LivingEntity entity) {
-        double movementSpeed = entity.getAttributeValue(Attributes.MOVEMENT_SPEED);
-        return Math.max(1, Math.round((float) (movementSpeed / CardBalance.NON_PLAYER_BASELINE_MOVEMENT_SPEED * CardBalance.PLAYER_BASE_SPEED)));
     }
 
     private List<String> defaultMonsterDeckCardIds(String entityTypeId) {
@@ -1959,22 +1994,34 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (tab == Tab.CARDS && selectedCard() != null) {
             applyFields();
             closePickersForDelete();
+            confirmDeleteAll = false;
             confirmDelete = true;
         } else if (tab == Tab.FACES && selectedFace() != null) {
             applyFields();
             closePickersForDelete();
+            confirmDeleteAll = false;
             confirmDelete = true;
         } else if (tab == Tab.MONSTERS && !selectedMonsterId.isBlank()) {
             applyFields();
             closePickersForDelete();
+            confirmDeleteAll = false;
             confirmDelete = true;
         }
+    }
+
+    private void requestDeleteAllChanges() {
+        applyFields();
+        closePickersForDelete();
+        confirmDeleteAll = true;
+        confirmDelete = true;
     }
 
     private boolean clickDeleteConfirm(double mouseX, double mouseY) {
         DeleteConfirmBounds bounds = deleteConfirmBounds();
         if (insideRect(mouseX, mouseY, bounds.deleteX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H)) {
-            if (tab == Tab.CARDS) {
+            if (confirmDeleteAll) {
+                deleteAllChangesAndSave();
+            } else if (tab == Tab.CARDS) {
                 DeveloperCardDefinition card = selectedCard();
                 if (card != null) {
                     String deletedId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
@@ -2016,10 +2063,81 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private void closeDeleteConfirm() {
         MoonSpireModalLayer.close(() -> {
             confirmDelete = false;
+            confirmDeleteAll = false;
             draggingScrollArea = ScrollArea.NONE;
             draggingArt = false;
             draggingFaceArea = false;
         }, this::init);
+    }
+
+    private void deleteAllChangesAndSave() {
+        boolean imagesDeleted = deleteAllGeneratedImages();
+        boolean layoutReset = resetLayoutOverride();
+        forgetDisplayNames(savedData);
+        forgetDisplayNames(data);
+        data = DeveloperData.empty();
+        pendingFaceImageSources.clear();
+        selectedCardId = "";
+        selectedFaceId = "default";
+        selectedMonsterId = "minecraft:zombie";
+        selectedArtItemId = "";
+        cardScrollOffset = 0.0D;
+        itemScrollOffset = 0.0D;
+        listScrollOffset = 0.0D;
+        effectScrollOffset = 0.0D;
+        effectPickerScrollOffset = 0.0D;
+        targetPickerScrollOffset = 0.0D;
+        lastCardScrollOffset = 0.0D;
+        lastItemScrollOffset = 0.0D;
+        lastListScrollOffset = 0.0D;
+        lastMonsterListScrollOffset = 0.0D;
+        lastSelectedCardId = "";
+        lastSelectedMonsterId = selectedMonsterId;
+        cardListExpanded = false;
+        invalidateFilteredCaches();
+        Component savedStatus = Component.translatable(imagesDeleted && layoutReset ? "debug.moonspire.delete_all_saved" : "debug.moonspire.delete_all_saved_partial");
+        saveCurrentData(savedStatus);
+    }
+
+    private boolean resetLayoutOverride() {
+        try {
+            MoonSpireUiLayout.resetOverride();
+            return true;
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private boolean deleteAllGeneratedImages() {
+        return deleteGeneratedPngFiles(DeveloperPaths.cardArtDirectory()) & deleteGeneratedPngFiles(DeveloperPaths.cardFacesDirectory());
+    }
+
+    private boolean deleteGeneratedPngFiles(Path directory) {
+        try {
+            if (!Files.isDirectory(directory)) {
+                return true;
+            }
+            try (DirectoryStream<Path> files = Files.newDirectoryStream(directory, "*.png")) {
+                for (Path file : files) {
+                    Files.deleteIfExists(file);
+                    CardRenderHelper.invalidateFileTexture(file);
+                }
+            }
+            return true;
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private void forgetDisplayNames(DeveloperData source) {
+        if (source == null || source.cards == null) {
+            return;
+        }
+        for (DeveloperCardDefinition card : source.cards) {
+            if (card != null) {
+                DeveloperDataManager.forgetDisplayName(card.nameKey());
+            }
+        }
     }
 
     private void closeTargetPicker() {
@@ -3197,7 +3315,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         graphics.pose().translate(0.0F, 0.0F, DELETE_CONFIRM_Z);
         MoonSpireUiTextures.drawDarkPanel(graphics, bounds.x(), bounds.y(), DELETE_CONFIRM_W, DELETE_CONFIRM_H);
         drawWrappedLimited(graphics, Component.translatable(deleteConfirmKey()), bounds.x() + 12, bounds.y() + 12, DELETE_CONFIRM_W - 24, bounds.buttonY() - 8, 0xFFEDE8FF);
-        drawButtonLike(graphics, bounds.deleteX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H, Component.translatable("debug.moonspire.delete"));
+        drawButtonLike(graphics, bounds.deleteX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H, Component.translatable(confirmDeleteAll ? "debug.moonspire.delete_all_confirm_button" : "debug.moonspire.delete"));
         drawButtonLike(graphics, bounds.cancelX(), bounds.buttonY(), DELETE_CONFIRM_BUTTON_W, DELETE_CONFIRM_BUTTON_H, Component.translatable("gui.cancel"));
         graphics.pose().popPose();
     }
@@ -3222,6 +3340,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private String deleteConfirmKey() {
+        if (confirmDeleteAll) {
+            return "debug.moonspire.delete_all_confirm";
+        }
         if (tab == Tab.FACES) {
             return "debug.moonspire.face_delete_confirm";
         }

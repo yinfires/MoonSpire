@@ -31,6 +31,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.InteractionHand;
@@ -288,7 +289,7 @@ public final class ClientEvents {
             }
         }
 
-        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void restoreVisualLungeOffset(RenderLivingEvent.Post<?, ?> event) {
             if (VISUAL_LUNGE_POSE_PUSHES.remove(event.getEntity().getId())) {
                 event.getPoseStack().popPose();
@@ -483,7 +484,7 @@ public final class ClientEvents {
         }
 
         private static void syncVisualWalkAnimation(Entity entity) {
-            if (entity instanceof LivingEntity living && ClientBattleState.visualMeleeLunge(living.getId())) {
+            if (entity instanceof LivingEntity living && ClientBattleState.visualMovement(living.getId())) {
                 living.walkAnimation.update(ClientBattleState.visualWalkSpeed(living.getId()), 0.65F);
             }
         }
@@ -613,6 +614,9 @@ public final class ClientEvents {
             for (BattleVisualEvent event : ClientBattleState.consumeVisualEvents()) {
                 Entity attacker = minecraft.level.getEntity(event.attackerId());
                 Entity target = minecraft.level.getEntity(event.targetId());
+                if (attacker instanceof LivingEntity livingAttacker) {
+                    applyVisualFacing(livingAttacker, event.lookTarget());
+                }
                 boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
                 boolean meleeLungeHit = event.animationType() == BattleVisualEvent.AnimationType.MELEE_LUNGE && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
@@ -631,12 +635,37 @@ public final class ClientEvents {
                     }
                     if (event.hurtSound()) {
                         minecraft.level.playLocalSound(target.getX(), target.getY(), target.getZ(), target == minecraft.player ? SoundEvents.PLAYER_HURT : SoundEvents.HOSTILE_HURT, SoundSource.PLAYERS, 0.9F, 1.0F, false);
-                        if (target instanceof LivingEntity livingTarget && attacker != null) {
-                            livingTarget.animateHurt(attacker.getYRot());
+                        if (target instanceof LivingEntity livingTarget) {
+                            playBattleHurtAnimation(livingTarget, attacker);
                         }
                     }
                 }
             }
+        }
+
+        private static void applyVisualFacing(LivingEntity attacker, Vec3 lookTarget) {
+            if (lookTarget == null) {
+                return;
+            }
+            attacker.lookAt(EntityAnchorArgument.Anchor.EYES, lookTarget);
+            attacker.setYBodyRot(attacker.getYRot());
+            attacker.setYHeadRot(attacker.getYRot());
+            attacker.yBodyRotO = attacker.getYRot();
+            attacker.yHeadRotO = attacker.getYRot();
+        }
+
+        private static void playBattleHurtAnimation(LivingEntity target, Entity attacker) {
+            float hurtYaw = attacker == null ? target.getYRot() : yawFromTargetToAttacker(target, attacker);
+            target.animateHurt(hurtYaw);
+        }
+
+        private static float yawFromTargetToAttacker(LivingEntity target, Entity attacker) {
+            double dx = attacker.getX() - target.getX();
+            double dz = attacker.getZ() - target.getZ();
+            if (dx * dx + dz * dz <= 0.0001D) {
+                return target.getYRot();
+            }
+            return (float) (Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
         }
 
         private static void scheduleUseSounds(LivingEntity attacker, BattleVisualEvent event) {

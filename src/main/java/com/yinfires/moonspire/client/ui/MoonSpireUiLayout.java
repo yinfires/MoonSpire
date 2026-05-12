@@ -60,6 +60,7 @@ public final class MoonSpireUiLayout {
 
     public static void resetOverride() throws IOException {
         Files.deleteIfExists(overrideFilePath());
+        Files.deleteIfExists(legacyOverrideFilePath());
         reload();
     }
 

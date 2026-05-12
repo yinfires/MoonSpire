@@ -465,6 +465,8 @@ public record CardInstance(
             case "card.moonspire.monster.pounce.name" -> "builtin_monster_pounce";
             case "card.moonspire.monster.skitter.name" -> "builtin_monster_skitter";
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";
+            case "card.moonspire.monster.web.name" -> "builtin_monster_web";
+            case "card.moonspire.monster.venom_fang.name" -> "builtin_monster_venom_fang";
             case "card.moonspire.monster.strike.name" -> "builtin_monster_strike";
             case "card.moonspire.monster.guard.name" -> "builtin_monster_guard";
             case "card.moonspire.monster.heavy_strike.name" -> "builtin_monster_heavy_strike";

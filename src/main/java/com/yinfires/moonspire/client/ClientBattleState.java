@@ -38,8 +38,15 @@ public final class ClientBattleState {
     private static final int MELEE_LUNGE_TICKS = 8;
     private static final int MELEE_HIT_PAUSE_TICKS = 6;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
+    private static final double POUNCE_JUMP_HEIGHT = 1.0D;
     private static final double LUNGE_REACH = 10.0D;
-    private static final int KNOCKBACK_VISUAL_TICKS = 10;
+    private static final int KNOCKBACK_RELEASE_TICKS = 24;
+    private static final int KNOCKBACK_SETTLE_TICKS = 4;
+    private static final double KNOCKBACK_HORIZONTAL_DRAG = 0.82D;
+    private static final double KNOCKBACK_VERTICAL_DRAG = 0.98D;
+    private static final double KNOCKBACK_GRAVITY = 0.08D;
+    private static final double KNOCKBACK_MAX_FALL_SPEED = -3.92D;
+    private static final double KNOCKBACK_STOP_SPEED_SQR = 0.0025D;
     private static BattleSnapshot snapshot = BattleSnapshot.inactive();
     private static long snapshotVersion;
     private static UUID serverBattleId = BattleSnapshot.INACTIVE_BATTLE_ID;
@@ -400,7 +407,7 @@ public final class ClientBattleState {
             }
             BattleVisualEvent event = scheduled.event;
             VisualState attackerVisual = visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState());
-            attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event));
+            attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event), isPounceEvent(event));
             if (event.healthDamage() > 0) {
                 visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash(event.knockbackDelta());
             }
@@ -479,6 +486,11 @@ public final class ClientBattleState {
         return state != null && state.lungeTicks() > 0;
     }
 
+    public static boolean visualMovement(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.movingVisually();
+    }
+
     public static float visualWalkSpeed(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? 0.0F : state.walkSpeed();
@@ -490,13 +502,8 @@ public final class ClientBattleState {
             return Vec3.ZERO;
         }
         Vec3 offset = Vec3.ZERO;
-        if (snapshot.isPlayerEntity(entityId) && state.lungeTicks() > 0) {
-            Vec3 visualPosition = state.lungePosition(partialTick);
-            if (visualPosition != null) {
-                offset = offset.add(visualPosition.subtract(renderedPosition));
-            }
-        }
-        Vec3 knockback = state.knockbackOffset(partialTick);
+        offset = offset.add(state.lungeOffset(renderedPosition, partialTick));
+        Vec3 knockback = state.knockbackOffset(renderedPosition, partialTick);
         return knockback == null ? offset : offset.add(knockback);
     }
 
@@ -661,6 +668,13 @@ public final class ClientBattleState {
         return monsterPlayedCard != null && monsterPlayedCard.effects().stream().anyMatch(effect -> effect.kind() == kind);
     }
 
+    private static boolean isPounceEvent(BattleVisualEvent event) {
+        return event != null
+                && event.animationType() == BattleVisualEvent.AnimationType.MELEE_LUNGE
+                && event.playedCard() != null
+                && "builtin_monster_pounce".equals(event.playedCard().cardId());
+    }
+
     private static Vec3 lungeStart(BattleVisualEvent event) {
         if (event == null || event.animationType() != BattleVisualEvent.AnimationType.MELEE_LUNGE || event.animationTicks() <= 0) {
             return null;
@@ -704,23 +718,29 @@ public final class ClientBattleState {
         private int usingAge;
         private int lungeTicks;
         private int lungeAge;
+        private int lungeSettleTicks;
         private Vec3 lungeStart = Vec3.ZERO;
         private Vec3 lungeStrike = Vec3.ZERO;
         private Vec3 previousLungePosition = Vec3.ZERO;
         private Vec3 currentLungePosition = Vec3.ZERO;
+        private boolean pounceLunge;
         private float walkSpeed;
         private int hurtTicks;
+        private int knockbackReleaseTicks;
         private int knockbackTicks;
-        private int knockbackVisualTicks;
-        private int knockbackVisualAge;
-        private Vec3 knockbackDelta = Vec3.ZERO;
+        private int knockbackAge;
+        private int knockbackSettleTicks;
+        private Vec3 previousKnockbackPosition = Vec3.ZERO;
+        private Vec3 currentKnockbackPosition = Vec3.ZERO;
+        private Vec3 knockbackVelocity = Vec3.ZERO;
+        private Vec3 knockbackAnchor;
 
         public int hurtTicks() {
             return hurtTicks;
         }
 
         public int knockbackTicks() {
-            return knockbackTicks;
+            return knockbackReleaseTicks;
         }
 
         public int usingTicks() {
@@ -742,15 +762,17 @@ public final class ClientBattleState {
             return animationType;
         }
 
-        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 lungeStart, Vec3 lungeStrike) {
+        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 lungeStart, Vec3 lungeStrike, boolean pounceLunge) {
             BattleVisualEvent.AnimationType nextType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
             if (nextType == BattleVisualEvent.AnimationType.MELEE_LUNGE && animationTicks > 0 && lungeStart != null && lungeStrike != null) {
                 lungeTicks = Math.max(1, Math.max(MELEE_LUNGE_TICKS, animationTicks) + MELEE_HIT_PAUSE_TICKS);
                 lungeAge = 0;
                 this.lungeStart = lungeStart;
                 this.lungeStrike = lungeStrike;
+                this.pounceLunge = pounceLunge;
                 previousLungePosition = lungeStart;
                 currentLungePosition = lungeStart;
+                lungeSettleTicks = 0;
                 walkSpeed = 0.0F;
                 this.animationType = nextType;
             }
@@ -775,7 +797,7 @@ public final class ClientBattleState {
         private Vec3 lungePosition(float partialTick) {
             double age = Math.max(0.0D, lungeAge + Math.max(0.0F, partialTick));
             if (age <= MELEE_LUNGE_TICKS) {
-                return lerp(lungeStart, lungeStrike, age / MELEE_LUNGE_TICKS);
+                return lungePosition(age / MELEE_LUNGE_TICKS);
             }
             age -= MELEE_LUNGE_TICKS;
             if (age <= MELEE_HIT_PAUSE_TICKS) {
@@ -784,31 +806,81 @@ public final class ClientBattleState {
             return lungeStrike;
         }
 
-        private Vec3 knockbackOffset(float partialTick) {
-            if (knockbackVisualTicks <= 0 || knockbackDelta.lengthSqr() <= 0.0001D) {
+        private Vec3 lungeOffset(Vec3 renderedPosition, float partialTick) {
+            if (renderedPosition == null) {
                 return Vec3.ZERO;
             }
-            double age = Math.max(0.0D, knockbackVisualAge + Math.max(0.0F, partialTick));
-            double progress = Math.max(0.0D, Math.min(1.0D, age / KNOCKBACK_VISUAL_TICKS));
-            double pushEnd = 0.35D;
-            double amount = progress < pushEnd
-                    ? progress / pushEnd
-                    : Math.max(0.0D, 1.0D - (progress - pushEnd) / (1.0D - pushEnd));
-            return knockbackDelta.scale(amount);
+            if (lungeTicks > 0) {
+                Vec3 visualPosition = lungePosition(partialTick);
+                return visualPosition == null ? Vec3.ZERO : visualPosition.subtract(renderedPosition);
+            }
+            if (lungeSettleTicks > 0) {
+                double age = Math.max(0.0D, KNOCKBACK_SETTLE_TICKS - lungeSettleTicks + Math.max(0.0F, partialTick));
+                double progress = Math.max(0.0D, Math.min(1.0D, age / KNOCKBACK_SETTLE_TICKS));
+                double eased = 1.0D - Math.pow(1.0D - progress, 2.0D);
+                return currentLungePosition.subtract(renderedPosition).scale(1.0D - eased);
+            }
+            return Vec3.ZERO;
+        }
+
+        private Vec3 lungePosition(double progress) {
+            Vec3 position = lerp(lungeStart, lungeStrike, progress);
+            if (!pounceLunge) {
+                return position;
+            }
+            double t = Math.max(0.0D, Math.min(1.0D, progress));
+            return position.add(0.0D, Math.sin(Math.PI * t) * POUNCE_JUMP_HEIGHT, 0.0D);
+        }
+
+        private Vec3 knockbackOffset(Vec3 renderedPosition, float partialTick) {
+            if (renderedPosition == null) {
+                return Vec3.ZERO;
+            }
+            if (knockbackTicks > 0) {
+                if (knockbackAnchor == null) {
+                    knockbackAnchor = renderedPosition;
+                }
+                double t = Math.max(0.0D, Math.min(1.0D, partialTick));
+                Vec3 visualPosition = knockbackAnchor.add(lerp(previousKnockbackPosition, currentKnockbackPosition, t));
+                return visualPosition.subtract(renderedPosition);
+            }
+            if (knockbackSettleTicks > 0) {
+                double age = Math.max(0.0D, KNOCKBACK_SETTLE_TICKS - knockbackSettleTicks + Math.max(0.0F, partialTick));
+                double progress = Math.max(0.0D, Math.min(1.0D, age / KNOCKBACK_SETTLE_TICKS));
+                double eased = 1.0D - Math.pow(1.0D - progress, 2.0D);
+                Vec3 visualPosition = knockbackAnchor == null ? renderedPosition : knockbackAnchor.add(currentKnockbackPosition);
+                return visualPosition.subtract(renderedPosition).scale(1.0D - eased);
+            }
+            return Vec3.ZERO;
         }
 
         private float walkSpeed() {
             return walkSpeed;
         }
 
-        private void hurtFlash(Vec3 knockbackDelta) {
+        private boolean movingVisually() {
+            return lungeTicks > 0 || lungeSettleTicks > 0 || knockbackTicks > 0 || knockbackSettleTicks > 0;
+        }
+
+        private void hurtFlash(Vec3 knockbackVelocity) {
             hurtTicks = 10;
-            knockbackTicks = 24;
-            if (knockbackDelta != null && knockbackDelta.lengthSqr() > 0.0001D) {
-                Vec3 horizontal = new Vec3(knockbackDelta.x, 0.0D, knockbackDelta.z);
-                this.knockbackDelta = horizontal.lengthSqr() > 0.0001D ? horizontal : Vec3.ZERO;
-                knockbackVisualTicks = KNOCKBACK_VISUAL_TICKS;
-                knockbackVisualAge = 0;
+            knockbackReleaseTicks = KNOCKBACK_RELEASE_TICKS;
+            if (knockbackVelocity != null && knockbackVelocity.lengthSqr() > 0.0001D) {
+                previousKnockbackPosition = Vec3.ZERO;
+                currentKnockbackPosition = Vec3.ZERO;
+                this.knockbackVelocity = knockbackVelocity;
+                knockbackTicks = KNOCKBACK_RELEASE_TICKS;
+                knockbackAge = 0;
+                knockbackSettleTicks = 0;
+                knockbackAnchor = null;
+            } else {
+                knockbackTicks = 0;
+                knockbackAge = 0;
+                this.knockbackVelocity = Vec3.ZERO;
+                previousKnockbackPosition = Vec3.ZERO;
+                currentKnockbackPosition = Vec3.ZERO;
+                knockbackSettleTicks = 0;
+                knockbackAnchor = null;
             }
         }
 
@@ -825,36 +897,90 @@ public final class ClientBattleState {
             } else {
                 usingAge = 0;
             }
+            float lungeWalkSpeed = 0.0F;
             if (lungeTicks > 0) {
                 previousLungePosition = currentLungePosition;
                 currentLungePosition = lungePosition(0.0F);
                 double walked = currentLungePosition.subtract(previousLungePosition).multiply(1.0D, 0.0D, 1.0D).length();
-                walkSpeed = (float) Math.max(0.0D, Math.min(1.0D, walked * 4.0D));
+                lungeWalkSpeed = (float) Math.max(0.0D, Math.min(1.0D, walked * 4.0D));
                 lungeTicks--;
                 lungeAge++;
-            } else {
-                walkSpeed = 0.0F;
+                if (lungeTicks <= 0) {
+                    lungeSettleTicks = KNOCKBACK_SETTLE_TICKS;
+                }
+            } else if (lungeSettleTicks > 0) {
+                lungeSettleTicks--;
             }
             if (hurtTicks > 0) {
                 hurtTicks--;
             }
-            if (knockbackTicks > 0) {
-                knockbackTicks--;
+            if (knockbackReleaseTicks > 0) {
+                knockbackReleaseTicks--;
             }
-            if (knockbackVisualTicks > 0) {
-                knockbackVisualTicks--;
-                knockbackVisualAge++;
-                if (knockbackVisualTicks <= 0) {
-                    knockbackDelta = Vec3.ZERO;
-                }
+            float knockbackWalkSpeed = tickKnockbackVisual();
+            walkSpeed = Math.max(lungeWalkSpeed, knockbackWalkSpeed);
+            if (walkSpeed <= 0.001F) {
+                walkSpeed = 0.0F;
             }
             if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0) {
                 animationType = BattleVisualEvent.AnimationType.NONE;
             }
         }
 
+        private float tickKnockbackVisual() {
+            if (knockbackTicks > 0) {
+                previousKnockbackPosition = currentKnockbackPosition;
+                Vec3 velocity = nextKnockbackVelocity(knockbackVelocity, knockbackAge);
+                Vec3 nextPosition = currentKnockbackPosition.add(velocity);
+                if (nextPosition.y < 0.0D && velocity.y < 0.0D) {
+                    nextPosition = new Vec3(nextPosition.x, 0.0D, nextPosition.z);
+                    velocity = new Vec3(velocity.x, 0.0D, velocity.z);
+                }
+                currentKnockbackPosition = nextPosition;
+                knockbackVelocity = new Vec3(
+                        velocity.x * KNOCKBACK_HORIZONTAL_DRAG,
+                        velocity.y * KNOCKBACK_VERTICAL_DRAG,
+                        velocity.z * KNOCKBACK_HORIZONTAL_DRAG);
+                knockbackTicks--;
+                knockbackAge++;
+                double walked = currentKnockbackPosition.subtract(previousKnockbackPosition).multiply(1.0D, 0.0D, 1.0D).length();
+                if (knockbackTicks <= 0 || (knockbackAge >= 4 && knockbackVelocity.lengthSqr() <= KNOCKBACK_STOP_SPEED_SQR)) {
+                    beginKnockbackSettle();
+                }
+                return (float) Math.max(0.0D, Math.min(1.0D, walked * 4.0D));
+            }
+            if (knockbackSettleTicks > 0) {
+                knockbackSettleTicks--;
+                if (knockbackSettleTicks <= 0) {
+                    previousKnockbackPosition = Vec3.ZERO;
+                    currentKnockbackPosition = Vec3.ZERO;
+                    knockbackAnchor = null;
+                }
+            }
+            return 0.0F;
+        }
+
+        private Vec3 nextKnockbackVelocity(Vec3 velocity, int age) {
+            if (velocity == null) {
+                return Vec3.ZERO;
+            }
+            if (age > 0 || velocity.y > 0.0D) {
+                double y = Math.max(KNOCKBACK_MAX_FALL_SPEED, velocity.y - KNOCKBACK_GRAVITY);
+                return new Vec3(velocity.x, y, velocity.z);
+            }
+            return velocity;
+        }
+
+        private void beginKnockbackSettle() {
+            knockbackSettleTicks = KNOCKBACK_SETTLE_TICKS;
+            knockbackTicks = 0;
+            knockbackAge = 0;
+            previousKnockbackPosition = currentKnockbackPosition;
+            knockbackVelocity = Vec3.ZERO;
+        }
+
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && hurtTicks <= 0 && knockbackTicks <= 0 && knockbackVisualTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
         }
     }
 

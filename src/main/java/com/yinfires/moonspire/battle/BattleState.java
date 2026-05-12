@@ -23,12 +23,12 @@ import java.util.UUID;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.NeutralMob;
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Arrow;
@@ -44,6 +44,11 @@ public class BattleState {
     private static final int ROUND_END_DELAY_TICKS = 8;
     private static final int KNOCKBACK_RELEASE_TICKS = 24;
     private static final int MIN_KNOCKBACK_RELEASE_TICKS = 4;
+    private static final double KNOCKBACK_HORIZONTAL_DRAG = 0.82D;
+    private static final double KNOCKBACK_VERTICAL_DRAG = 0.98D;
+    private static final double KNOCKBACK_GRAVITY = 0.08D;
+    private static final double KNOCKBACK_MAX_FALL_SPEED = -3.92D;
+    private static final double KNOCKBACK_STOP_SPEED_SQR = 0.0025D;
     private static final int CARD_EFFECT_START_DELAY_TICKS = 10;
     private static final int REPEATED_EFFECT_VISUAL_INTERVAL_TICKS = 14;
     private static final int MELEE_LUNGE_TICKS = 8;
@@ -55,8 +60,13 @@ public class BattleState {
     private static final int IDLE_SYNC_HEARTBEAT_TICKS = 100;
     private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
+    private static final double POUNCE_CONTACT_MARGIN = 0.08D;
+    private static final double POUNCE_JUMP_HEIGHT = 1.0D;
     private static final double MIN_LUNGE_TRAVEL_DISTANCE = 0.35D;
     private static final double LUNGE_REACH = 10.0D;
+    private static final double CARD_FACING_CENTER_MIN_DISTANCE_SQR = 0.0625D;
+    private static final double CARD_FACING_DIRECTION_STABILITY_MIN = 0.35D;
+    private static final float CARD_FACING_TURN_DEGREES_PER_TICK = 24.0F;
     private static final double MONSTER_AI_MIN_SCORE = 0.01D;
     private static final int MONSTER_AI_HIGH_BLOCK_SOFT_CAP = 12;
     private static final int MONSTER_AI_STATUS_SOFT_CAP = 4;
@@ -69,7 +79,7 @@ public class BattleState {
     private final Map<Integer, CombatantState> byEntityId = new HashMap<>();
     private final Map<UUID, CombatantState> byPlayerId = new HashMap<>();
     private final Map<Integer, EntityLock> locks = new HashMap<>();
-    private final Map<Integer, Integer> knockbackTicks = new HashMap<>();
+    private final Map<Integer, KnockbackState> knockbackStates = new HashMap<>();
     private final Vec3 cameraCenter;
     private BattlePhase phase = BattlePhase.PLAYER_TURN;
     private int round = 1;
@@ -95,6 +105,7 @@ public class BattleState {
     private CombatantState pendingUsedCardOwner;
     private CardInstance pendingUsedCard;
     private PendingHandSelection pendingHandSelection;
+    private PendingFacing pendingFacing;
 
     public BattleState(ServerPlayer leader, List<ServerPlayer> players, List<LivingEntity> enemies, Map<UUID, List<CardInstance>> playerCards, Map<Integer, List<CardInstance>> enemyCards) {
         this.leader = leader;
@@ -122,7 +133,7 @@ public class BattleState {
                     new BattleDeck(enemyCards.getOrDefault(enemy.getId(), List.of()), random),
                     monsterOverride != null && monsterOverride.hasEnergyOverride() ? monsterOverride.energy() : CardBalance.fixedEnergy(),
                     monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : Math.max(1.0F, enemy.getMaxHealth()),
-                    monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : nonPlayerBaseSpeed(enemy));
+                    monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : MonsterDeckProfile.defaultBaseSpeed(enemy));
             applyInitialEffects(state, monsterOverride);
             applyDefaultInitialEffects(state);
             enemyStates.add(state);
@@ -1253,15 +1264,15 @@ public class BattleState {
     }
 
     private void queueCard(CombatantState user, CombatantState selectedTarget, CardInstance card) {
-        CombatantState opponent = selectedTarget == null ? firstOpponent(user) : selectedTarget;
-        if (opponent == null) {
-            return;
+        CombatantState visualTarget = selectedTarget == null || selectedTarget.fakeDead() ? firstOpponent(user) : selectedTarget;
+        if (visualTarget == null) {
+            visualTarget = user;
         }
-        faceTarget(user.entity(), opponent.entity());
         pendingCardBatches.clear();
         pendingCardSteps.clear();
         pendingCardBatchDelay = 0;
         pendingHandSelection = null;
+        pendingFacing = null;
         pendingUsedCardOwner = user;
         pendingUsedCard = card;
         if (triggersAttackUse(card, user)) {
@@ -1302,7 +1313,7 @@ public class BattleState {
         }
         advancePendingCardSteps();
         if (!hasPendingCardBatches()) {
-            emitVisual(user.entity(), opponent.entity(), card.sourceStack(), card, new BattleDamageResult(0, 0, 0), 0);
+            emitVisual(user.entity(), visualTarget.entity(), card.sourceStack(), card, new BattleDamageResult(0, 0, 0), 0);
             finishPendingUsedCard();
         }
     }
@@ -1425,6 +1436,7 @@ public class BattleState {
             finishUsedCard(pendingUsedCardOwner, pendingUsedCard);
             markDirty();
         }
+        pendingFacing = null;
         pendingUsedCardOwner = null;
         pendingUsedCard = null;
     }
@@ -1439,11 +1451,20 @@ public class BattleState {
         double strength = target instanceof ServerPlayer ? 0.42D : 0.28D;
         target.knockback(strength, dx, dz);
         target.hasImpulse = true;
-        knockbackTicks.put(target.getId(), KNOCKBACK_RELEASE_TICKS);
         Vec3 motion = target.getDeltaMovement();
-        Vec3 horizontalMotion = new Vec3(motion.x, 0.0D, motion.z);
-        if (horizontalMotion.lengthSqr() > 0.0001D) {
-            return horizontalMotion.normalize().scale(Math.min(0.85D, Math.max(0.28D, horizontalMotion.length() * 2.2D)));
+        Vec3 knockbackVelocity = sanitizeKnockbackVelocity(motion);
+        target.setDeltaMovement(Vec3.ZERO);
+        if (knockbackVelocity.lengthSqr() > 0.0001D) {
+            knockbackStates.put(target.getId(), new KnockbackState(KNOCKBACK_RELEASE_TICKS, MIN_KNOCKBACK_RELEASE_TICKS, knockbackVelocity));
+        } else {
+            knockbackStates.remove(target.getId());
+        }
+        EntityLock lock = locks.get(target.getId());
+        if (lock != null) {
+            locks.put(target.getId(), lock.withLockedPos(target.position()));
+        }
+        if (knockbackVelocity.lengthSqr() > 0.0001D) {
+            return knockbackVelocity;
         }
         Vec3 away = target.position().subtract(attacker.position()).multiply(1.0D, 0.0D, 1.0D);
         if (away.lengthSqr() > 0.0001D) {
@@ -1451,6 +1472,14 @@ public class BattleState {
         }
         Vec3 moved = target.position().subtract(before).multiply(1.0D, 0.0D, 1.0D);
         return moved.lengthSqr() > 0.0001D ? moved : Vec3.ZERO;
+    }
+
+    private Vec3 sanitizeKnockbackVelocity(Vec3 motion) {
+        if (motion == null || motion.lengthSqr() <= 0.0001D) {
+            return Vec3.ZERO;
+        }
+        double y = Math.max(0.0D, motion.y);
+        return new Vec3(motion.x, y, motion.z);
     }
 
     private ItemStack projectileStackForArrow(CardInstance arrow) {
@@ -1509,6 +1538,7 @@ public class BattleState {
     }
 
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, ItemStack projectileStack, CardInstance playedCard, BattleDamageResult result, int gainedBlock, int healedHealth, int delayTicks, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 animationStart, Vec3 animationStrike, Vec3 knockbackDelta) {
+        Vec3 lookTarget = attacker == target ? null : visualFacingPoint(target);
         pendingVisualEvents.add(new BattleVisualEvent(
                 attacker.getId(),
                 target.getId(),
@@ -1527,7 +1557,8 @@ public class BattleState {
                 gainedBlock > 0,
                 animationStart,
                 animationStrike,
-                knockbackDelta));
+                knockbackDelta,
+                lookTarget));
         markDirty();
     }
 
@@ -1554,6 +1585,7 @@ public class BattleState {
             }
             if (!pendingCardBatches.isEmpty()) {
                 pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
+                prepareFacingForNextBatch();
             } else {
                 pendingCardBatchDelay = 0;
                 advancePendingCardSteps();
@@ -1565,6 +1597,7 @@ public class BattleState {
         }
         if (pendingHandSelection != null) {
             pendingCardBatchDelay = 0;
+            pendingFacing = null;
             return;
         }
         if (pendingCardBatches.isEmpty() && !pendingCardSteps.isEmpty()) {
@@ -1572,16 +1605,20 @@ public class BattleState {
         }
         if (pendingCardBatches.isEmpty()) {
             pendingCardBatchDelay = 0;
+            pendingFacing = null;
             if (pendingCardSteps.isEmpty() && pendingHandSelection == null && pendingUsedCard != null) {
                 finishPendingUsedCard();
             }
             return;
         }
         if (pendingCardBatchDelay > 0) {
+            tickPendingFacing();
             pendingCardBatchDelay--;
             return;
         }
-        PendingCardBatch batch = pendingCardBatches.remove(0);
+        PendingCardBatch batch = pendingCardBatches.getFirst();
+        finishPendingFacing(batch);
+        pendingCardBatches.remove(0);
         markDirty();
         if (beginBattleAnimation(batch)) {
             return;
@@ -1595,6 +1632,7 @@ public class BattleState {
             }
         } else {
             pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
+            prepareFacingForNextBatch();
         }
     }
 
@@ -1639,6 +1677,7 @@ public class BattleState {
             if (step instanceof PendingBatchStep batchStep) {
                 pendingCardBatches.add(batchStep.batch());
                 pendingCardBatchDelay = Math.max(pendingCardBatchDelay, CARD_EFFECT_START_DELAY_TICKS);
+                prepareFacingForBatch(batchStep.batch());
                 markDirty();
                 return;
             }
@@ -1892,21 +1931,162 @@ public class BattleState {
     }
 
     private void faceTarget(LivingEntity actor, LivingEntity target) {
-        double dx = target.getX() - actor.getX();
-        double dz = target.getZ() - actor.getZ();
-        float yaw = (float) (Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
-        actor.setYRot(yaw);
-        actor.setYHeadRot(yaw);
-        actor.setYBodyRot(yaw);
+        facePosition(actor, visualFacingPoint(target));
     }
 
     private void facePosition(LivingEntity actor, Vec3 target) {
+        applyFacing(actor, yawTo(actor, target), pitchTo(actor, target));
+    }
+
+    private float yawTo(LivingEntity actor, Vec3 target) {
         double dx = target.x - actor.getX();
         double dz = target.z - actor.getZ();
-        float yaw = (float) (Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
+        if (dx * dx + dz * dz <= 0.0001D) {
+            return actor.getYRot();
+        }
+        return (float) (Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
+    }
+
+    private float pitchTo(LivingEntity actor, Vec3 target) {
+        double dx = target.x - actor.getX();
+        double dy = target.y - actor.getEyeY();
+        double dz = target.z - actor.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal <= 0.0001D) {
+            return actor.getXRot();
+        }
+        return (float) (-(Math.atan2(dy, horizontal) * 57.2957763671875D));
+    }
+
+    private void turnTowardPosition(LivingEntity actor, Vec3 target, float maxDegrees) {
+        float yaw = yawTo(actor, target);
+        float delta = Mth.wrapDegrees(yaw - actor.getYRot());
+        applyFacingYaw(actor, actor.getYRot() + Mth.clamp(delta, -maxDegrees, maxDegrees));
+    }
+
+    private void applyFacingYaw(LivingEntity actor, float yaw) {
         actor.setYRot(yaw);
         actor.setYHeadRot(yaw);
         actor.setYBodyRot(yaw);
+        actor.yHeadRotO = yaw;
+        actor.yBodyRotO = yaw;
+    }
+
+    private void applyFacing(LivingEntity actor, float yaw, float pitch) {
+        applyFacingYaw(actor, yaw);
+        actor.setXRot(Mth.clamp(pitch, -80.0F, 80.0F));
+        actor.setOldPosAndRot();
+    }
+
+    private void prepareFacingForNextBatch() {
+        if (pendingCardBatches.isEmpty()) {
+            pendingFacing = null;
+            return;
+        }
+        prepareFacingForBatch(pendingCardBatches.getFirst());
+    }
+
+    private void prepareFacingForBatch(PendingCardBatch batch) {
+        Vec3 point = facingPointForBatch(batch);
+        pendingFacing = point == null ? null : new PendingFacing(batch);
+    }
+
+    private void tickPendingFacing() {
+        if (pendingFacing == null || pendingCardBatches.isEmpty() || pendingCardBatches.getFirst() != pendingFacing.batch()) {
+            pendingFacing = null;
+            return;
+        }
+        PendingCardBatch batch = pendingFacing.batch();
+        Vec3 point = facingPointForBatch(batch);
+        if (point == null || !batch.user().entity().isAlive()) {
+            pendingFacing = null;
+            return;
+        }
+        turnTowardPosition(batch.user().entity(), point, CARD_FACING_TURN_DEGREES_PER_TICK);
+    }
+
+    private void finishPendingFacing(PendingCardBatch batch) {
+        if (pendingFacing != null && pendingFacing.batch() != batch) {
+            pendingFacing = null;
+        }
+        Vec3 point = facingPointForBatch(batch);
+        if (point != null && batch.user().entity().isAlive()) {
+            facePosition(batch.user().entity(), point);
+        }
+        pendingFacing = null;
+    }
+
+    private Vec3 facingPointForBatch(PendingCardBatch batch) {
+        LinkedHashSet<CombatantState> targets = new LinkedHashSet<>();
+        for (PendingEffect effect : batch.effects()) {
+            CombatantState target = effect.target();
+            if (target != null && target != batch.user() && !target.fakeDead() && target.entity().isAlive()) {
+                targets.add(target);
+            }
+        }
+        return facingPointForTargets(batch.user().entity(), List.copyOf(targets));
+    }
+
+    private Vec3 facingPointForTargets(LivingEntity actor, List<CombatantState> targets) {
+        if (targets.isEmpty()) {
+            return null;
+        }
+        if (targets.size() == 1) {
+            return visualFacingPoint(targets.getFirst().entity());
+        }
+        Vec3 actorPos = actor.position();
+        double x = 0.0D;
+        double y = 0.0D;
+        double z = 0.0D;
+        Vec3 directionSum = Vec3.ZERO;
+        int count = 0;
+        for (CombatantState target : targets) {
+            Vec3 targetPos = visualFacingPoint(target.entity());
+            x += targetPos.x;
+            y += targetPos.y;
+            z += targetPos.z;
+            Vec3 horizontal = targetPos.subtract(actorPos).multiply(1.0D, 0.0D, 1.0D);
+            if (horizontal.lengthSqr() > 0.0001D) {
+                directionSum = directionSum.add(horizontal.normalize());
+            }
+            count++;
+        }
+        Vec3 center = new Vec3(x / count, y / count, z / count);
+        Vec3 toCenter = center.subtract(actorPos).multiply(1.0D, 0.0D, 1.0D);
+        double directionStability = directionSum.length() / count;
+        if (toCenter.lengthSqr() >= CARD_FACING_CENTER_MIN_DISTANCE_SQR && directionStability >= CARD_FACING_DIRECTION_STABILITY_MIN) {
+            return center;
+        }
+        CombatantState stableTarget = stableFacingTarget(actor, targets);
+        return stableTarget == null ? null : visualFacingPoint(stableTarget.entity());
+    }
+
+    private CombatantState stableFacingTarget(LivingEntity actor, List<CombatantState> targets) {
+        CombatantState bestTarget = null;
+        float bestYawDelta = Float.MAX_VALUE;
+        double bestDistanceSqr = Double.MAX_VALUE;
+        for (CombatantState target : targets) {
+            Vec3 targetPos = visualFacingPoint(target.entity());
+            Vec3 horizontal = targetPos.subtract(actor.position()).multiply(1.0D, 0.0D, 1.0D);
+            double distanceSqr = horizontal.lengthSqr();
+            if (distanceSqr <= 0.0001D) {
+                continue;
+            }
+            float yawDelta = Math.abs(Mth.wrapDegrees(yawTo(actor, targetPos) - actor.getYRot()));
+            if (yawDelta + 0.1F < bestYawDelta || (Math.abs(yawDelta - bestYawDelta) <= 0.1F && distanceSqr < bestDistanceSqr)) {
+                bestTarget = target;
+                bestYawDelta = yawDelta;
+                bestDistanceSqr = distanceSqr;
+            }
+        }
+        return bestTarget;
+    }
+
+    private Vec3 visualFacingPoint(LivingEntity target) {
+        if (target == null) {
+            return Vec3.ZERO;
+        }
+        return new Vec3(target.getX(), target.getEyeY(), target.getZ());
     }
 
     private void lockBattleEntities() {
@@ -1926,14 +2106,13 @@ public class BattleState {
                 entity.setJumping(false);
                 continue;
             }
-            int releaseTicks = knockbackTicks.getOrDefault(entity.getId(), 0);
-            Vec3 nextLockedPos = freezeEntity(entity, lock.lockedPos(), releaseTicks);
+            KnockbackState knockbackState = knockbackStates.get(entity.getId());
+            Vec3 nextLockedPos = freezeEntity(entity, lock.lockedPos(), knockbackState);
             locks.put(entity.getId(), lock.withLockedPos(nextLockedPos));
-            int nextTicks = nextKnockbackTicks(entity, releaseTicks);
-            if (nextTicks > 0) {
-                knockbackTicks.put(entity.getId(), nextTicks);
+            if (knockbackState != null && knockbackState.active()) {
+                knockbackStates.put(entity.getId(), knockbackState);
             } else {
-                knockbackTicks.remove(entity.getId());
+                knockbackStates.remove(entity.getId());
             }
         }
         freezeAi();
@@ -1958,7 +2137,7 @@ public class BattleState {
         }
     }
 
-    private Vec3 freezeEntity(LivingEntity entity, Vec3 lockedPos, int knockbackTicks) {
+    private Vec3 freezeEntity(LivingEntity entity, Vec3 lockedPos, KnockbackState knockbackState) {
         if (byEntityId.get(entity.getId()).fakeDead()) {
             entity.setDeltaMovement(Vec3.ZERO);
             entity.xxa = 0.0F;
@@ -1969,15 +2148,27 @@ public class BattleState {
             if (entity instanceof Mob mob) {
                 mob.getNavigation().stop();
             }
+            if (knockbackState != null) {
+                knockbackState.stop();
+            }
             return entity.position();
         }
-        if (knockbackTicks > 0) {
-            entity.setDeltaMovement(applyNoAiBattleFall(entity, entity.getDeltaMovement()));
+        if (knockbackState != null && knockbackState.active()) {
+            Vec3 nextLockedPos = advanceBattleKnockback(entity, knockbackState);
             entity.xxa = 0.0F;
             entity.yya = 0.0F;
             entity.zza = 0.0F;
             entity.setJumping(false);
-            return entity.position();
+            if (!knockbackState.active()) {
+                Vec3 safePosition = safeReturnPosition(entity, entity.position());
+                if (safePosition.distanceToSqr(entity.position()) > 0.0004D) {
+                    entity.teleportTo(safePosition.x, safePosition.y, safePosition.z);
+                    entity.setOldPosAndRot();
+                }
+                syncFinalPlayerPosition(entity);
+                return safePosition;
+            }
+            return nextLockedPos;
         }
         Vec3 movement = applyNoAiBattleFall(entity, entity.getDeltaMovement());
         entity.setDeltaMovement(0.0D, movement.y, 0.0D);
@@ -2018,14 +2209,26 @@ public class BattleState {
         return new Vec3(movement.x, fallY, movement.z);
     }
 
-    private int nextKnockbackTicks(LivingEntity entity, int knockbackTicks) {
-        if (knockbackTicks <= 0) {
-            return 0;
+    private Vec3 advanceBattleKnockback(LivingEntity entity, KnockbackState state) {
+        Vec3 velocity = state.velocity();
+        if (!entity.isNoGravity() && (!entity.onGround() || velocity.y > 0.0D)) {
+            velocity = new Vec3(velocity.x, Math.max(KNOCKBACK_MAX_FALL_SPEED, velocity.y - KNOCKBACK_GRAVITY), velocity.z);
         }
-        if (entity.onGround() && knockbackTicks <= KNOCKBACK_RELEASE_TICKS - MIN_KNOCKBACK_RELEASE_TICKS) {
-            return 0;
+        entity.move(MoverType.SELF, velocity);
+        if (entity.onGround() && velocity.y < 0.0D) {
+            velocity = new Vec3(velocity.x, 0.0D, velocity.z);
         }
-        return knockbackTicks - 1;
+        Vec3 nextVelocity = new Vec3(velocity.x * KNOCKBACK_HORIZONTAL_DRAG, velocity.y * KNOCKBACK_VERTICAL_DRAG, velocity.z * KNOCKBACK_HORIZONTAL_DRAG);
+        entity.setDeltaMovement(Vec3.ZERO);
+        entity.hasImpulse = true;
+        state.advance(nextVelocity, entity.onGround());
+        return entity.position();
+    }
+
+    private void syncFinalPlayerPosition(LivingEntity entity) {
+        if (entity instanceof ServerPlayer player) {
+            player.connection.teleport(entity.getX(), entity.getY(), entity.getZ(), entity.getYRot(), entity.getXRot());
+        }
     }
 
     private void pacifyOutsideHostiles() {
@@ -2079,7 +2282,7 @@ public class BattleState {
                 locks.put(state.entity().getId(), lock.withLockedPos(safeStart));
             }
         }
-        knockbackTicks.clear();
+        knockbackStates.clear();
         faceTeams();
     }
 
@@ -2284,9 +2487,7 @@ public class BattleState {
         return kind == CardEffectKind.EXHAUST_HAND ? PendingHandSelectionSnapshot.Action.EXHAUST : PendingHandSelectionSnapshot.Action.DISCARD;
     }
 
-    private static int nonPlayerBaseSpeed(LivingEntity entity) {
-        double movementSpeed = entity.getAttributeValue(Attributes.MOVEMENT_SPEED);
-        return Math.max(1, Math.round((float) (movementSpeed / CardBalance.NON_PLAYER_BASELINE_MOVEMENT_SPEED * CardBalance.PLAYER_BASE_SPEED)));
+    private record PendingFacing(PendingCardBatch batch) {
     }
 
     private record EntityLock(Vec3 startPos, Vec3 lockedPos, float yRot, float xRot, float startHealth, int hotbarSlot, boolean noAiBeforeBattle, boolean noPhysicsBeforeBattle) {
@@ -2339,6 +2540,44 @@ public class BattleState {
             entity.zza = 0.0F;
             entity.setJumping(false);
             entity.setOldPosAndRot();
+        }
+    }
+
+    private static final class KnockbackState {
+        private int remainingTicks;
+        private int minimumTicks;
+        private Vec3 velocity;
+
+        private KnockbackState(int remainingTicks, int minimumTicks, Vec3 velocity) {
+            this.remainingTicks = Math.max(0, remainingTicks);
+            this.minimumTicks = Math.max(0, minimumTicks);
+            this.velocity = velocity == null ? Vec3.ZERO : velocity;
+        }
+
+        private boolean active() {
+            return remainingTicks > 0 && (minimumTicks > 0 || velocity.lengthSqr() > KNOCKBACK_STOP_SPEED_SQR);
+        }
+
+        private Vec3 velocity() {
+            return velocity;
+        }
+
+        private void advance(Vec3 nextVelocity, boolean onGround) {
+            remainingTicks = Math.max(0, remainingTicks - 1);
+            minimumTicks = Math.max(0, minimumTicks - 1);
+            velocity = nextVelocity == null ? Vec3.ZERO : nextVelocity;
+            if (onGround && minimumTicks <= 0 && velocity.lengthSqr() <= KNOCKBACK_STOP_SPEED_SQR) {
+                stop();
+            }
+            if (remainingTicks <= 0) {
+                stop();
+            }
+        }
+
+        private void stop() {
+            remainingTicks = 0;
+            minimumTicks = 0;
+            velocity = Vec3.ZERO;
         }
     }
 
@@ -2499,6 +2738,7 @@ public class BattleState {
         private final LivingEntity actor;
         private final Vec3 start;
         private final Vec3 strike;
+        private final boolean pounce;
         private final boolean noPhysicsBeforeAnimation;
         private int ticks;
         private Phase phase = Phase.LUNGE;
@@ -2509,13 +2749,15 @@ public class BattleState {
             this.target = target;
             this.actor = batch.user().entity();
             this.start = actor.position();
+            this.pounce = batch.card() != null && "builtin_monster_pounce".equals(batch.card().cardId());
             this.noPhysicsBeforeAnimation = actor.noPhysics;
             Vec3 targetPos = target.entity().position();
             Vec3 direction = targetPos.subtract(start);
             Vec3 horizontal = new Vec3(direction.x, 0.0D, direction.z);
             Vec3 normalized = horizontal.lengthSqr() > 0.0001D ? horizontal.normalize() : actor.getLookAngle().multiply(1.0D, 0.0D, 1.0D).normalize();
-            double distance = Math.max(0.0D, Math.min(LUNGE_REACH, horizontal.length() - LUNGE_STOP_DISTANCE));
-            if (distance < MIN_LUNGE_TRAVEL_DISTANCE) {
+            double stopDistance = pounce ? pounceStopDistance(actor, target.entity()) : LUNGE_STOP_DISTANCE;
+            double distance = Math.max(0.0D, Math.min(LUNGE_REACH, horizontal.length() - stopDistance));
+            if (!pounce && distance < MIN_LUNGE_TRAVEL_DISTANCE) {
                 distance = 0.0D;
             }
             this.strike = start.add(normalized.scale(distance));
@@ -2536,10 +2778,10 @@ public class BattleState {
                 finishAtCurrentPosition();
                 return true;
             }
-            faceTarget(actor, target.entity());
+            finishPendingFacing(batch);
             if (phase == Phase.LUNGE) {
                 ticks++;
-                moveActor(lerp(start, strike, ticks / (double) MELEE_LUNGE_TICKS));
+                moveActor(lungePosition(ticks / (double) MELEE_LUNGE_TICKS));
                 if (ticks >= MELEE_LUNGE_TICKS) {
                     ticks = 0;
                     phase = Phase.HIT_PAUSE;
@@ -2589,27 +2831,28 @@ public class BattleState {
             return strike;
         }
 
+        private Vec3 lungePosition(double progress) {
+            Vec3 position = lerp(start, strike, progress);
+            if (!pounce) {
+                return position;
+            }
+            double t = Math.max(0.0D, Math.min(1.0D, progress));
+            double jump = Math.sin(Math.PI * t) * POUNCE_JUMP_HEIGHT;
+            return position.add(0.0D, jump, 0.0D);
+        }
+
         private void moveActor(Vec3 pos) {
             actor.noPhysics = true;
-            if (actor instanceof ServerPlayer) {
-                actor.setDeltaMovement(Vec3.ZERO);
-                actor.absMoveTo(pos.x, pos.y, pos.z, actor.getYRot(), actor.getXRot());
-                actor.setOldPosAndRot();
-                return;
-            }
             Vec3 delta = pos.subtract(actor.position());
             actor.move(MoverType.SELF, delta);
             actor.setDeltaMovement(Vec3.ZERO);
-            actor.setOldPosAndRot();
             actor.hasImpulse = true;
         }
 
         private void finishAtStrike() {
             Vec3 safeStrike = safeReturnPosition(actor, strike);
             moveActor(safeStrike);
-            if (actor instanceof ServerPlayer player) {
-                player.connection.teleport(safeStrike.x, safeStrike.y, safeStrike.z, actor.getYRot(), actor.getXRot());
-            }
+            syncFinalPlayerPosition(actor);
             actor.noPhysics = noPhysicsBeforeAnimation;
             EntityLock lock = locks.get(actor.getId());
             if (lock != null) {
@@ -2617,12 +2860,16 @@ public class BattleState {
             }
         }
 
+        private double pounceStopDistance(LivingEntity actor, LivingEntity target) {
+            double actorRadius = actor.getBbWidth() * 0.5D;
+            double targetRadius = target.getBbWidth() * 0.5D;
+            return Math.max(0.12D, actorRadius + targetRadius + POUNCE_CONTACT_MARGIN);
+        }
+
         private void finishAtCurrentPosition() {
             Vec3 safePosition = safeReturnPosition(actor, actor.position());
             moveActor(safePosition);
-            if (actor instanceof ServerPlayer player) {
-                player.connection.teleport(safePosition.x, safePosition.y, safePosition.z, actor.getYRot(), actor.getXRot());
-            }
+            syncFinalPlayerPosition(actor);
             actor.noPhysics = noPhysicsBeforeAnimation;
             EntityLock lock = locks.get(actor.getId());
             if (lock != null) {
@@ -2666,7 +2913,7 @@ public class BattleState {
                 discardArrow();
                 return true;
             }
-            faceTarget(actor, target.entity());
+            finishPendingFacing(batch);
             if (ticks < prepareTicks) {
                 ticks++;
                 return false;

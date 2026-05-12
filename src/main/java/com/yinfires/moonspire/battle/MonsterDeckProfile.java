@@ -1,5 +1,6 @@
 package com.yinfires.moonspire.battle;
 
+import com.yinfires.moonspire.card.CardBalance;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
@@ -43,9 +44,25 @@ public final class MonsterDeckProfile {
     private static final List<String> SPIDER_DEFAULT_DECK = List.of(
             "builtin_monster_pounce",
             "builtin_monster_skitter",
+            "builtin_monster_skitter",
+            "builtin_monster_bite",
             "builtin_monster_bite",
             "builtin_monster_pounce",
-            "builtin_monster_skitter");
+            "builtin_monster_pounce",
+            "builtin_monster_skitter",
+            "builtin_monster_web",
+            "builtin_monster_web");
+    private static final List<String> CAVE_SPIDER_DEFAULT_DECK = List.of(
+            "builtin_monster_pounce",
+            "builtin_monster_skitter",
+            "builtin_monster_skitter",
+            "builtin_monster_pounce",
+            "builtin_monster_pounce",
+            "builtin_monster_skitter",
+            "builtin_monster_web",
+            "builtin_monster_web",
+            "builtin_monster_venom_fang",
+            "builtin_monster_venom_fang");
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
             "builtin_monster_strike",
             "builtin_monster_guard",
@@ -93,7 +110,10 @@ public final class MonsterDeckProfile {
         if (isSkeletonFamily(type)) {
             return cards(SKELETON_DEFAULT_DECK);
         }
-        if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
+        if (type == EntityType.CAVE_SPIDER) {
+            return cards(CAVE_SPIDER_DEFAULT_DECK);
+        }
+        if (type == EntityType.SPIDER) {
             return cards(SPIDER_DEFAULT_DECK);
         }
         return fallback(monster);
@@ -109,7 +129,10 @@ public final class MonsterDeckProfile {
         if (isSkeletonFamily(type)) {
             return SKELETON_DEFAULT_DECK;
         }
-        if (type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER) {
+        if (type == EntityType.CAVE_SPIDER) {
+            return CAVE_SPIDER_DEFAULT_DECK;
+        }
+        if (type == EntityType.SPIDER) {
             return SPIDER_DEFAULT_DECK;
         }
         return FALLBACK_DEFAULT_DECK;
@@ -120,6 +143,17 @@ public final class MonsterDeckProfile {
                 || type == EntityType.STRAY
                 || type == EntityType.BOGGED
                 || type == EntityType.WITHER_SKELETON;
+    }
+
+    public static int defaultBaseSpeed(LivingEntity entity) {
+        if (entity == null) {
+            return CardBalance.PLAYER_BASE_SPEED;
+        }
+        if (entity != null && entity.getType() == EntityType.CAVE_SPIDER) {
+            return 9;
+        }
+        double movementSpeed = entity.getAttributeValue(Attributes.MOVEMENT_SPEED);
+        return Math.max(1, Math.round((float) (movementSpeed / CardBalance.NON_PLAYER_BASELINE_MOVEMENT_SPEED * CardBalance.PLAYER_BASE_SPEED)));
     }
 
     private static boolean isZombieFamily(EntityType<?> type) {

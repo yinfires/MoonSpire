@@ -24,7 +24,8 @@ public record BattleVisualEvent(
         boolean armorEquipSound,
         Vec3 animationStart,
         Vec3 animationStrike,
-        Vec3 knockbackDelta) {
+        Vec3 knockbackDelta,
+        Vec3 lookTarget) {
     public static final StreamCodec<RegistryFriendlyByteBuf, BattleVisualEvent> STREAM_CODEC = StreamCodec.of(
             BattleVisualEvent::write,
             BattleVisualEvent::read);
@@ -63,6 +64,7 @@ public record BattleVisualEvent(
                 armorEquipSound,
                 null,
                 null,
+                null,
                 null);
     }
 
@@ -88,6 +90,7 @@ public record BattleVisualEvent(
         writeOptionalVec3(buf, event.animationStart);
         writeOptionalVec3(buf, event.animationStrike);
         writeOptionalVec3(buf, event.knockbackDelta);
+        writeOptionalVec3(buf, event.lookTarget);
     }
 
     private static BattleVisualEvent read(RegistryFriendlyByteBuf buf) {
@@ -107,6 +110,7 @@ public record BattleVisualEvent(
                 buf.readBoolean(),
                 buf.readBoolean(),
                 buf.readBoolean(),
+                readOptionalVec3(buf),
                 readOptionalVec3(buf),
                 readOptionalVec3(buf),
                 readOptionalVec3(buf));
