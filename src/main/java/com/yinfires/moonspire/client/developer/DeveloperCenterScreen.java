@@ -2,6 +2,7 @@ package com.yinfires.moonspire.client.developer;
 
 import com.yinfires.moonspire.card.CardBalance;
 import com.yinfires.moonspire.card.CardEffectKind;
+import com.yinfires.moonspire.card.CardEffectOrder;
 import com.yinfires.moonspire.card.CardSourceType;
 import com.yinfires.moonspire.card.CardTarget;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
@@ -1417,6 +1418,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             if (previous == null) {
                 return;
             }
+            if (isSelfDestructViewCard(previous.id())) {
+                return;
+            }
             String displayName = valueOr(nameKeyBox, "Unnamed Card").trim();
             String previousId = MoonSpireCardRegistry.registeredDeveloperId(previous.id());
             String id = shouldDeriveCustomIdFromName(previous, displayName)
@@ -1691,7 +1695,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         DeveloperCardDefinition card = data.cards.stream()
                 .filter(saved -> registeredId.equals(MoonSpireCardRegistry.registeredDeveloperId(saved.id())))
                 .findFirst()
-                .orElseGet(() -> MoonSpireCardRegistry.baseCard(registeredId).map(this::cardView).orElse(null));
+                .orElseGet(() -> isSelfDestructViewCard(registeredId)
+                        ? cardView(MoonSpireCardRegistry.selfDestructViewCard())
+                        : MoonSpireCardRegistry.baseCard(registeredId).map(this::cardView).orElse(null));
         if (card == null) {
             return null;
         }
@@ -1791,6 +1797,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.POISON, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BURN && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BURN, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.FUSE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.FUSE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.WEAKNESS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.WEAKNESS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.SLOWNESS && effect.amount() > 0) {
@@ -1858,6 +1866,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void replaceCard(DeveloperCardDefinition previous, DeveloperCardDefinition next) {
+        if (previous != null && isSelfDestructViewCard(previous.id())) {
+            return;
+        }
         invalidateFilteredCaches();
         if (previous == null) {
             data.cards.add(next);
@@ -1991,7 +2002,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void requestDelete() {
-        if (tab == Tab.CARDS && selectedCard() != null) {
+        if (tab == Tab.CARDS && selectedCard() != null && !isSelfDestructViewCard(selectedCardId)) {
             applyFields();
             closePickersForDelete();
             confirmDeleteAll = false;
@@ -2023,7 +2034,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 deleteAllChangesAndSave();
             } else if (tab == Tab.CARDS) {
                 DeveloperCardDefinition card = selectedCard();
-                if (card != null) {
+                if (card != null && !isSelfDestructViewCard(card.id())) {
                     String deletedId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
                     DeveloperDataManager.forgetDisplayName(card.nameKey());
                     data.cards.removeIf(saved -> deletedId.equals(MoonSpireCardRegistry.registeredDeveloperId(saved.id())));
@@ -2242,9 +2253,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (card == null) {
             return;
         }
-        replaceCard(card, new DeveloperCardDefinition(card.id(), card.displayName(), card.nameKey(), card.descriptionKey(), card.cost(), 0, 0, 0, effects, card.sourceType(), card.artPath(), card.artItemId(), card.artX(), card.artY(), card.artScale(), card.faceId()));
-        effectScrollOffset = clampScroll(effectScrollOffset, effectEditorGrid(layout(), effects.size() + 1));
-        if (targetPickerEffectIndex >= effects.size()) {
+        List<DeveloperCardEffect> orderedEffects = CardEffectOrder.orderedDeveloperEffects(effects);
+        replaceCard(card, new DeveloperCardDefinition(card.id(), card.displayName(), card.nameKey(), card.descriptionKey(), card.cost(), 0, 0, 0, orderedEffects, card.sourceType(), card.artPath(), card.artItemId(), card.artX(), card.artY(), card.artScale(), card.faceId()));
+        effectScrollOffset = clampScroll(effectScrollOffset, effectEditorGrid(layout(), orderedEffects.size() + 1));
+        if (targetPickerEffectIndex >= orderedEffects.size()) {
             closeTargetPicker();
         }
         init();
@@ -2284,6 +2296,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.HASTE,
                         DeveloperCardEffect.Kind.POISON,
                         DeveloperCardEffect.Kind.BURN,
+                        DeveloperCardEffect.Kind.FUSE,
                         DeveloperCardEffect.Kind.WEAKNESS,
                         DeveloperCardEffect.Kind.SLOWNESS,
                         DeveloperCardEffect.Kind.DRAW_CARDS,
@@ -2328,7 +2341,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             int count = i < effectCountBoxes.size() && effect.canChangeCount() ? positiveIntValue(effectCountBoxes.get(i), effect.count()) : effect.count();
             effects.add(new DeveloperCardEffect(effect.kind(), amount, effect.target(), count));
         }
-        return effects;
+        return CardEffectOrder.orderedDeveloperEffects(effects);
     }
 
     private List<DeveloperMonsterInitialEffect> monsterEffectsFromBoxes(List<DeveloperMonsterInitialEffect> fallback) {
@@ -2933,8 +2946,16 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             DeveloperCardDefinition card = cardView(definition);
             cards.put(MoonSpireCardRegistry.registeredDeveloperId(card.id()), card);
         }
-        for (DeveloperCardDefinition card : data.cards) {
+        if (cardFilterIndex == 4) {
+            RegisteredCardDefinition selfDestruct = MoonSpireCardRegistry.selfDestructViewCard();
+            DeveloperCardDefinition card = cardView(selfDestruct);
             cards.put(MoonSpireCardRegistry.registeredDeveloperId(card.id()), card);
+        }
+        for (DeveloperCardDefinition card : data.cards) {
+            String registeredId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
+            if (!MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(registeredId)) {
+                cards.put(registeredId, card);
+            }
         }
         filteredCardsCacheKey = cacheKey;
         filteredCardsCache = cards.values().stream()
@@ -3067,7 +3088,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             cards.put(registeredId, card);
         }
         for (DeveloperCardDefinition card : source.cards) {
-            cards.put(MoonSpireCardRegistry.registeredDeveloperId(card.id()), card);
+            String registeredId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
+            if (!MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(registeredId)) {
+                cards.put(registeredId, card);
+            }
         }
         return List.copyOf(cards.values());
     }
@@ -3965,8 +3989,15 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private boolean cardIdExists(String id, String currentId) {
         String normalized = MoonSpireCardRegistry.registeredDeveloperId(id);
         String current = MoonSpireCardRegistry.registeredDeveloperId(currentId);
+        if (isSelfDestructViewCard(normalized) && !normalized.equals(current)) {
+            return true;
+        }
         return data.cards.stream().anyMatch(card -> normalized.equals(MoonSpireCardRegistry.registeredDeveloperId(card.id())) && !normalized.equals(current))
                 || MoonSpireCardRegistry.baseCards().stream().anyMatch(card -> normalized.equals(card.id()) && !normalized.equals(current));
+    }
+
+    private static boolean isSelfDestructViewCard(String id) {
+        return MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(MoonSpireCardRegistry.registeredDeveloperId(id));
     }
 
     private static String stableSlug(String value, String fallback) {

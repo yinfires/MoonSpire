@@ -10,6 +10,7 @@ import com.yinfires.moonspire.battle.BattleEnemyIntentSnapshot;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
+import com.yinfires.moonspire.battle.BattleVisualEvent;
 import com.yinfires.moonspire.battle.PendingHandSelectionSnapshot;
 import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardEffectKind;
@@ -129,6 +130,7 @@ public class BattleScreen extends NoBlurScreen {
     private boolean awaitingEndTurnSnapshot;
     private int awaitingEndTurnRound = -1;
     private final Set<UUID> locallyUsedCardIds = new HashSet<>();
+    private final Set<UUID> locallyDisplayedVisualCardIds = new HashSet<>();
     private HandSelectionOverlay handSelectionOverlay = HandSelectionOverlay.empty();
     private HandSelectionConfirmation handSelectionConfirmation = HandSelectionConfirmation.empty();
     private PileRequestKey requestedPileKey;
@@ -1662,7 +1664,9 @@ public class BattleScreen extends NoBlurScreen {
         float maxY = height - halfH - 4.0F;
         float centerX = minX <= maxX ? clamp(rect.x() + rect.width() / 2.0F, minX, maxX) : width / 2.0F;
         float centerY = minY <= maxY ? clamp(rect.y() + rect.height() / 2.0F, minY, maxY) : height / 2.0F;
-        CardRenderHelper.CardValues values = cardValues(snapshot, card, snapshot.monster(), true);
+        BattleCombatantSnapshot attacker = snapshot.combatant(ClientBattleState.monsterPlayedCardAttackerId());
+        boolean attackerIsMonster = attacker == null || snapshot.isEnemyEntity(attacker.entityId());
+        CardRenderHelper.CardValues values = cardValues(snapshot, card, attacker == null ? snapshot.monster() : attacker, attackerIsMonster);
         renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, MONSTER_PLAYED_CARD_SCALE, 0.0F, false, true, ClientBattleState.monsterPlayedCardAlpha(), values);
     }
 
@@ -2014,6 +2018,7 @@ public class BattleScreen extends NoBlurScreen {
             awaitingUseCardSnapshot = false;
             clearAwaitingEndTurnSnapshot();
             locallyUsedCardIds.clear();
+            locallyDisplayedVisualCardIds.clear();
             handSelectionOverlay = HandSelectionOverlay.empty();
             handSelectionConfirmation = HandSelectionConfirmation.empty();
             requestedPileKey = null;
@@ -2077,6 +2082,20 @@ public class BattleScreen extends NoBlurScreen {
                 }
                 representedFlyingIds.add(oldCard.id());
             }
+        }
+        for (BattleVisualEvent event : snapshot.visualEvents()) {
+            CardInstance playedCard = event.playedCard();
+            if (playedCard == null || event.attackerId() != snapshot.localPlayerEntityId() || event.animationType() != BattleVisualEvent.AnimationType.SELF_DESTRUCT) {
+                continue;
+            }
+            if (representedFlyingIds.contains(playedCard.id()) || locallyDisplayedVisualCardIds.contains(playedCard.id())) {
+                continue;
+            }
+            FlyingCardAnimation animation = FlyingCardAnimation.played(playedCard, battlefieldCenterX(), battlefieldCenterY(), battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), true, Math.max(PLAYED_CARD_HOLD_TICKS, event.animationTicks()));
+            animation.releaseExhaust();
+            flyingCards.add(animation);
+            representedFlyingIds.add(playedCard.id());
+            locallyDisplayedVisualCardIds.add(playedCard.id());
         }
         for (int i = 0; i < snapshot.hand().size(); i++) {
             CardInstance card = snapshot.hand().get(i);
@@ -2428,7 +2447,8 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
-                || kind == CardEffectKind.HASTE;
+                || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.FUSE;
     }
 
     private static boolean negativeEffect(CardEffectKind kind) {
@@ -4247,6 +4267,10 @@ public class BattleScreen extends NoBlurScreen {
 
         private static FlyingCardAnimation played(CardInstance card, float fromX, float fromY, float midX, float midY, float toX, float toY, boolean fadeOut) {
             return new FlyingCardAnimation(card, fromX, fromY, midX, midY, toX, toY, PLAYED_CARD_TO_CENTER_TICKS, PLAYED_CARD_HOLD_TICKS, FLY_TO_DISCARD_TICKS, true, fadeOut);
+        }
+
+        private static FlyingCardAnimation played(CardInstance card, float fromX, float fromY, float midX, float midY, float toX, float toY, boolean fadeOut, int holdTicks) {
+            return new FlyingCardAnimation(card, fromX, fromY, midX, midY, toX, toY, PLAYED_CARD_TO_CENTER_TICKS, Math.max(0, holdTicks), FLY_TO_DISCARD_TICKS, true, fadeOut);
         }
 
         private static FlyingCardAnimation toDiscard(CardInstance card, float fromX, float fromY, float toX, float toY) {

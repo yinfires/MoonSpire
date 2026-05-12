@@ -276,6 +276,9 @@ public final class DeveloperDataManager {
             return false;
         }
         String registeredId = MoonSpireCardRegistry.registeredDeveloperId(card.id());
+        if (MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(registeredId)) {
+            return false;
+        }
         return !registeredId.startsWith("builtin_monster_") || MoonSpireCardRegistry.baseCard(registeredId).isPresent();
     }
 

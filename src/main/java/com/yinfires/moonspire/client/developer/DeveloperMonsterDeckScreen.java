@@ -234,6 +234,7 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         }
         cachedQuery = query;
         cachedFilteredCards = allCards().stream()
+                .filter(card -> !MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(MoonSpireCardRegistry.registeredDeveloperId(card.id())))
                 .filter(card -> query.isBlank()
                         || MoonSpireCardRegistry.registeredDeveloperId(card.id()).toLowerCase(Locale.ROOT).contains(query)
                         || card.nameKey().toLowerCase(Locale.ROOT).contains(query)

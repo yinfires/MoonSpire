@@ -9,6 +9,7 @@ public enum BattleEffectType {
     HASTE("haste", "effect.moonspire.haste.name", "effect.moonspire.haste.description", "effect.moonspire.haste.active_description", "gui/effects/haste.png"),
     POISON("poison", "effect.moonspire.poison.name", "effect.moonspire.poison.description", "effect.moonspire.poison.active_description", "gui/effects/poison.png"),
     BURN("burn", "effect.moonspire.burn.name", "effect.moonspire.burn.description", "effect.moonspire.burn.active_description", "gui/effects/burn.png"),
+    FUSE("fuse", "effect.moonspire.fuse.name", "effect.moonspire.fuse.description", "effect.moonspire.fuse.active_description", "gui/effects/fuse.png"),
     WEAKNESS("weakness", "effect.moonspire.weakness.name", "effect.moonspire.weakness.description", "effect.moonspire.weakness.active_description", "gui/effects/weakness.png"),
     SLOWNESS("slowness", "effect.moonspire.slowness.name", "effect.moonspire.slowness.description", "effect.moonspire.slowness.active_description", "gui/effects/slowness.png"),
     ABUNDANT_ARROWS("abundant_arrows", "effect.moonspire.abundant_arrows.name", "effect.moonspire.abundant_arrows.description", "effect.moonspire.abundant_arrows.active_description", "gui/effects/abundant_arrows.png");

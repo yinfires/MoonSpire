@@ -164,6 +164,11 @@ public class CombatantState {
         return new BattleDamageResult(0, damage, damage);
     }
 
+    public void killForSelfDestruct(UUID creditedPlayerKill) {
+        battleHealth = 0.0F;
+        markFakeDead(creditedPlayerKill);
+    }
+
     public int heal(int amount) {
         if (fakeDead || amount <= 0 || battleHealth >= maxBattleHealth) {
             return 0;
@@ -202,6 +207,14 @@ public class CombatantState {
         } else {
             effects.remove(type);
         }
+        syncEntityGlowing();
+    }
+
+    public void clearEffect(BattleEffectType type) {
+        if (type == null || !effects.containsKey(type)) {
+            return;
+        }
+        effects.remove(type);
         syncEntityGlowing();
     }
 

@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.yinfires.moonspire.MoonSpire;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.MonsterDeckProfile;
@@ -17,13 +18,18 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.Util;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.entity.LivingEntityRenderer;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
@@ -33,6 +39,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
@@ -47,6 +54,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.CalculateDetachedCameraDistanceEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.MovementInputUpdateEvent;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
@@ -76,6 +84,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
+    private static final List<ScheduledSelfDestructExplosion> SCHEDULED_SELF_DESTRUCT_EXPLOSIONS = new ArrayList<>();
     private static long lastUiDebugKeyMillis;
     private static boolean battleRenderActive;
 
@@ -85,6 +94,7 @@ public final class ClientEvents {
     public static void registerModBus(IEventBus modEventBus) {
         modEventBus.addListener(ModBus::registerKeys);
         modEventBus.addListener(ModBus::registerHud);
+        modEventBus.addListener(ModBus::addSelfDestructWhiteFlashLayers);
     }
 
     public static final class ModBus {
@@ -101,6 +111,22 @@ public final class ClientEvents {
 
         public static void registerHud(RegisterGuiLayersEvent event) {
             event.registerAbove(VanillaGuiLayers.HOTBAR, BATTLE_HUD_LAYER, BattleHud::render);
+        }
+
+        public static void addSelfDestructWhiteFlashLayers(EntityRenderersEvent.AddLayers event) {
+            for (EntityType<?> type : event.getEntityTypes()) {
+                addSelfDestructWhiteFlashLayer(event.getRenderer(type));
+            }
+            for (var skin : event.getSkins()) {
+                addSelfDestructWhiteFlashLayer(event.getSkin(skin));
+            }
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static void addSelfDestructWhiteFlashLayer(net.minecraft.client.renderer.entity.EntityRenderer<?> renderer) {
+            if (renderer instanceof LivingEntityRenderer livingRenderer) {
+                livingRenderer.addLayer(new SelfDestructWhiteFlashLayer(livingRenderer));
+            }
         }
     }
 
@@ -144,6 +170,7 @@ public final class ClientEvents {
                 syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
                 tickScheduledBattleSounds(minecraft);
+                tickScheduledSelfDestructExplosions(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
             }
@@ -282,9 +309,14 @@ public final class ClientEvents {
                     Mth.lerp(event.getPartialTick(), entity.yOld, entity.getY()),
                     Mth.lerp(event.getPartialTick(), entity.zOld, entity.getZ()));
             Vec3 offset = ClientBattleState.visualRenderOffset(entity.getId(), renderedPosition, event.getPartialTick());
-            if (offset.lengthSqr() > 0.000001D) {
+            float selfDestructScale = ClientBattleState.visualSelfDestructScale(entity.getId(), event.getPartialTick());
+            boolean scaleSelfDestruct = Math.abs(selfDestructScale - 1.0F) > 0.001F;
+            if (offset.lengthSqr() > 0.000001D || scaleSelfDestruct) {
                 event.getPoseStack().pushPose();
                 event.getPoseStack().translate(offset.x, offset.y, offset.z);
+                if (scaleSelfDestruct) {
+                    event.getPoseStack().scale(selfDestructScale, selfDestructScale, selfDestructScale);
+                }
                 VISUAL_LUNGE_POSE_PUSHES.add(entity.getId());
             }
         }
@@ -573,6 +605,7 @@ public final class ClientEvents {
             TEMP_ARM_POSES.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
+            SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();
             ClientBattleState.clearVisualStates();
         }
 
@@ -676,6 +709,10 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_MIDDLE.value(), Math.max(1, event.animationTicks() / 2), 0.5F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_END.value(), Math.max(1, event.animationTicks()), 0.5F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_SHOOT, Math.max(1, event.animationTicks() + 1), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.SELF_DESTRUCT) {
+                scheduleBattleSound(attacker, SoundEvents.CREEPER_PRIMED, 0, 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.GENERIC_EXPLODE.value(), Math.max(1, event.animationTicks()), 1.4F, 0.9F);
+                SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.add(new ScheduledSelfDestructExplosion(attacker.getId(), Math.max(1, event.animationTicks())));
             }
         }
 
@@ -698,6 +735,33 @@ public final class ClientEvents {
                 Entity entity = minecraft.level.getEntity(sound.entityId);
                 if (entity != null) {
                     minecraft.level.playLocalSound(entity.getX(), entity.getY(), entity.getZ(), sound.sound, SoundSource.PLAYERS, sound.volume, sound.pitch, false);
+                }
+                iterator.remove();
+            }
+        }
+
+        private static void tickScheduledSelfDestructExplosions(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();
+                return;
+            }
+            Iterator<ScheduledSelfDestructExplosion> iterator = SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.iterator();
+            while (iterator.hasNext()) {
+                ScheduledSelfDestructExplosion explosion = iterator.next();
+                if (explosion.delayTicks > 0) {
+                    explosion.delayTicks--;
+                    continue;
+                }
+                Entity entity = minecraft.level.getEntity(explosion.entityId);
+                if (entity != null) {
+                    minecraft.level.addParticle(
+                            ParticleTypes.EXPLOSION_EMITTER,
+                            entity.getX(),
+                            entity.getY() + entity.getBbHeight() * 0.5D,
+                            entity.getZ(),
+                            0.0D,
+                            0.0D,
+                            0.0D);
                 }
                 iterator.remove();
             }
@@ -743,6 +807,32 @@ public final class ClientEvents {
             this.delayTicks = delayTicks;
             this.volume = volume;
             this.pitch = pitch;
+        }
+    }
+
+    private static final class ScheduledSelfDestructExplosion {
+        private final int entityId;
+        private int delayTicks;
+
+        private ScheduledSelfDestructExplosion(int entityId, int delayTicks) {
+            this.entityId = entityId;
+            this.delayTicks = delayTicks;
+        }
+    }
+
+    private static final class SelfDestructWhiteFlashLayer<T extends LivingEntity, M extends EntityModel<T>> extends net.minecraft.client.renderer.entity.layers.RenderLayer<T, M> {
+        private SelfDestructWhiteFlashLayer(net.minecraft.client.renderer.entity.RenderLayerParent<T, M> renderer) {
+            super(renderer);
+        }
+
+        @Override
+        public void render(com.mojang.blaze3d.vertex.PoseStack poseStack, net.minecraft.client.renderer.MultiBufferSource bufferSource, int packedLight, T livingEntity, float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks, float netHeadYaw, float headPitch) {
+            float progress = ClientBattleState.selfDestructWhiteOverlayProgress(livingEntity.getId(), partialTick);
+            if (progress <= 0.0F || livingEntity.isInvisible()) {
+                return;
+            }
+            VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityTranslucent(getTextureLocation(livingEntity), false));
+            getParentModel().renderToBuffer(poseStack, consumer, packedLight, OverlayTexture.pack(progress, false), 0xFFFFFFFF);
         }
     }
 

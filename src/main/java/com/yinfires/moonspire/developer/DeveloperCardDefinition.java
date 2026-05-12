@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.developer;
 
 import com.yinfires.moonspire.card.CardEffect;
+import com.yinfires.moonspire.card.CardEffectOrder;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.CardSourceType;
@@ -32,7 +33,7 @@ public record DeveloperCardDefinition(
         displayName = displayName == null ? "" : displayName;
         nameKey = nameKey == null ? "" : nameKey;
         descriptionKey = descriptionKey == null ? "" : descriptionKey;
-        cardEffects = List.copyOf(cardEffects == null ? List.of() : cardEffects);
+        cardEffects = CardEffectOrder.orderedDeveloperEffects(cardEffects == null ? List.of() : cardEffects);
         sourceType = sourceType == null ? CardSourceType.CUSTOM : sourceType;
         artPath = artPath == null ? "" : artPath;
         artItemId = artItemId == null ? "" : artItemId;
@@ -109,6 +110,7 @@ public record DeveloperCardDefinition(
             case HASTE -> CardEffectKind.HASTE;
             case POISON -> CardEffectKind.POISON;
             case BURN -> CardEffectKind.BURN;
+            case FUSE -> CardEffectKind.FUSE;
             case WEAKNESS -> CardEffectKind.WEAKNESS;
             case SLOWNESS -> CardEffectKind.SLOWNESS;
             case DRAW_CARDS -> CardEffectKind.DRAW_CARDS;
@@ -125,7 +127,7 @@ public record DeveloperCardDefinition(
 
     public List<DeveloperCardEffect> normalizedEffects() {
         if (cardEffects != null && !cardEffects.isEmpty()) {
-            return List.copyOf(cardEffects);
+            return CardEffectOrder.orderedDeveloperEffects(cardEffects);
         }
         List<DeveloperCardEffect> migrated = new ArrayList<>();
         if (attack > 0) {
@@ -137,7 +139,7 @@ public record DeveloperCardDefinition(
         if (bleed > 0) {
             migrated.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BLEED, bleed, CardTarget.SINGLE_ENEMY, 1));
         }
-        return List.copyOf(migrated);
+        return CardEffectOrder.orderedDeveloperEffects(migrated);
     }
 
     public DeveloperCardDefinition withIdAndKeys(String id, String displayName, String nameKey) {

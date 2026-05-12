@@ -63,6 +63,14 @@ public final class MonsterDeckProfile {
             "builtin_monster_web",
             "builtin_monster_venom_fang",
             "builtin_monster_venom_fang");
+    private static final List<String> CREEPER_DEFAULT_DECK = List.of(
+            "builtin_monster_light_fuse",
+            "builtin_monster_hissing_advance",
+            "builtin_monster_hissing_advance",
+            "builtin_monster_hissing_advance",
+            "builtin_monster_powder_shell",
+            "builtin_monster_powder_shell",
+            "builtin_monster_powder_shell");
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
             "builtin_monster_strike",
             "builtin_monster_guard",
@@ -116,6 +124,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.SPIDER) {
             return cards(SPIDER_DEFAULT_DECK);
         }
+        if (type == EntityType.CREEPER) {
+            return cards(CREEPER_DEFAULT_DECK);
+        }
         return fallback(monster);
     }
 
@@ -134,6 +145,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.SPIDER) {
             return SPIDER_DEFAULT_DECK;
+        }
+        if (type == EntityType.CREEPER) {
+            return CREEPER_DEFAULT_DECK;
         }
         return FALLBACK_DEFAULT_DECK;
     }

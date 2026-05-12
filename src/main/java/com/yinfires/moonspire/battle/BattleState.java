@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -71,6 +72,7 @@ public class BattleState {
     private static final int MONSTER_AI_HIGH_BLOCK_SOFT_CAP = 12;
     private static final int MONSTER_AI_STATUS_SOFT_CAP = 4;
     private static final int MONSTER_AI_LONG_STATUS_SOFT_CAP = 6;
+    private static final int SELF_DESTRUCT_ANIMATION_TICKS = 30;
 
     private final UUID id = UUID.randomUUID();
     private final ServerPlayer leader;
@@ -97,6 +99,7 @@ public class BattleState {
     private int suppressedSyncLogTicks;
     private boolean syncDirty = true;
     private long snapshotSequence;
+    private int finishDelayTicks;
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
     private final List<PendingCardStep> pendingCardSteps = new ArrayList<>();
@@ -106,6 +109,7 @@ public class BattleState {
     private CardInstance pendingUsedCard;
     private PendingHandSelection pendingHandSelection;
     private PendingFacing pendingFacing;
+    private final List<PendingSelfDestruct> pendingSelfDestructs = new ArrayList<>();
 
     public BattleState(ServerPlayer leader, List<ServerPlayer> players, List<LivingEntity> enemies, Map<UUID, List<CardInstance>> playerCards, Map<Integer, List<CardInstance>> enemyCards) {
         this.leader = leader;
@@ -230,6 +234,12 @@ public class BattleState {
             return allFakeDeathAnimationsDone();
         }
         if (hasWinner()) {
+            if (finishDelayTicks > 0) {
+                finishDelayTicks--;
+                markDirty();
+                lockBattleEntities();
+                return false;
+            }
             endingAfterAnimations = true;
             markDirty();
             lockBattleEntities();
@@ -238,6 +248,7 @@ public class BattleState {
         lockBattleEntities();
         pacifyOutsideHostiles();
         protectOpeningHealth();
+        tickPendingSelfDestructs();
         tickPendingCardBatches();
         phaseTicks++;
         if (hasPendingCardBatches()) {
@@ -250,6 +261,11 @@ public class BattleState {
             beginPlayerTurn();
         }
         if (hasWinner()) {
+            if (finishDelayTicks > 0) {
+                finishDelayTicks--;
+                markDirty();
+                return false;
+            }
             endingAfterAnimations = true;
             markDirty();
         }
@@ -366,6 +382,9 @@ public class BattleState {
         if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
             for (CombatantState playerState : alivePlayers()) {
                 applyOwnTurnEndEffects(playerState);
+                if (playerState.fakeDead()) {
+                    continue;
+                }
                 playerState.reduceRetainedCardCosts();
                 playerState.deck().discardHand(true);
             }
@@ -561,7 +580,7 @@ public class BattleState {
             logSyncSuppressed("pending-hand-selection");
             return false;
         }
-        if (!pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingUsedCard != null) {
+        if (!pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingUsedCard != null || !pendingSelfDestructs.isEmpty()) {
             if (!pendingVisualEvents.isEmpty()) {
                 syncCooldownTicks = 0;
                 logSyncReason("resolving-visual");
@@ -705,6 +724,9 @@ public class BattleState {
         markDirty();
         for (CombatantState state : aliveEnemies()) {
             applyOwnTurnEndEffects(state);
+            if (state.fakeDead()) {
+                continue;
+            }
             state.reduceRetainedCardCosts();
             state.deck().discardHand(true);
         }
@@ -796,6 +818,10 @@ public class BattleState {
     }
 
     private MonsterCardChoice chooseMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        MonsterCardChoice priority = priorityMonsterCard(hand, energyLeft, self, players);
+        if (priority != null) {
+            return priority;
+        }
         MonsterCardChoice best = null;
         for (int i = 0; i < hand.size(); i++) {
             CardInstance card = hand.get(i);
@@ -811,6 +837,17 @@ public class BattleState {
             }
         }
         return best;
+    }
+
+    private MonsterCardChoice priorityMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players) {
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance card = hand.get(i);
+            if ("builtin_monster_light_fuse".equals(card.cardId()) && card.cost() <= energyLeft && card.hasAnyEffect()) {
+                MonsterAiView target = bestEnemyTarget(players, self, 0);
+                return new MonsterCardChoice(i, target == null ? -1 : target.entityId(), target == null ? null : target.state(), 1_000_000.0D);
+            }
+        }
+        return null;
     }
 
     private MonsterCardChoice scoreMonsterCard(int handIndex, CardInstance card, List<CardInstance> hand, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
@@ -979,6 +1016,7 @@ public class BattleState {
             case HASTE -> scorePositiveStatus(totalAmount, target, BattleEffectType.HASTE, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
             case POISON -> scoreNegativeStatus(totalAmount, target, BattleEffectType.POISON, 2.8D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case BURN -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case FUSE -> scorePositiveStatus(totalAmount, target, BattleEffectType.FUSE, 8.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case WEAKNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
             case SLOWNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.SLOWNESS, 2.6D, MONSTER_AI_STATUS_SOFT_CAP);
             case DRAW_CARDS -> Math.max(0, totalAmount) * 1.6D;
@@ -1168,6 +1206,7 @@ public class BattleState {
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.FUSE
                 || kind == CardEffectKind.DRAW_CARDS
                 || kind == CardEffectKind.GAIN_ENERGY;
     }
@@ -1252,6 +1291,7 @@ public class BattleState {
             case HASTE -> target.addEffect(BattleEffectType.HASTE, amount);
             case POISON -> target.addEffect(BattleEffectType.POISON, amount);
             case BURN -> target.addEffect(BattleEffectType.BURN, amount);
+            case FUSE -> target.addEffect(BattleEffectType.FUSE, amount);
             case WEAKNESS -> target.addEffect(BattleEffectType.WEAKNESS, amount);
             case SLOWNESS -> target.addEffect(BattleEffectType.SLOWNESS, amount);
             default -> {
@@ -1563,7 +1603,7 @@ public class BattleState {
     }
 
     private boolean hasPendingCardBatches() {
-        return pendingAnimation != null || !pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingHandSelection != null || pendingUsedCard != null;
+        return pendingAnimation != null || !pendingCardBatches.isEmpty() || !pendingCardSteps.isEmpty() || pendingHandSelection != null || pendingUsedCard != null || !pendingSelfDestructs.isEmpty();
     }
 
     private void tickPendingCardBatches() {
@@ -1840,6 +1880,9 @@ public class BattleState {
             } else if (effect.kind() == CardEffectKind.BURN) {
                 effect.target().addEffect(BattleEffectType.BURN, effect.amount());
                 effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.FUSE) {
+                effect.target().addEffect(BattleEffectType.FUSE, effect.amount());
+                effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.WEAKNESS) {
                 effect.target().addEffect(BattleEffectType.WEAKNESS, effect.amount());
                 effectOnlyTargets.add(effect.target());
@@ -1904,6 +1947,9 @@ public class BattleState {
     }
 
     private void applyOwnTurnEndEffects(CombatantState state) {
+        if (state == null) {
+            return;
+        }
         int regeneration = state.effectAmount(BattleEffectType.REGENERATION);
         if (regeneration > 0) {
             int healed = state.heal(regeneration);
@@ -1914,13 +1960,85 @@ public class BattleState {
         }
         int burn = state.effectAmount(BattleEffectType.BURN);
         if (burn > 0) {
+            boolean triggerFuse = state.effectAmount(BattleEffectType.FUSE) > 0;
             BattleDamageResult result = state.applyEffectDamage(burn, null);
             emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
             state.reduceEffect(BattleEffectType.BURN, 1);
+            if (triggerFuse) {
+                if (state.fakeDead()) {
+                    state.clearFakeDeath();
+                }
+                triggerSelfDestruct(state);
+                return;
+            }
+        }
+        int fuse = state.effectAmount(BattleEffectType.FUSE);
+        if (fuse > 0) {
+            state.reduceEffect(BattleEffectType.FUSE, 1);
+            if (fuse <= 1) {
+                triggerSelfDestruct(state);
+                return;
+            }
         }
         state.reduceEffect(BattleEffectType.WEAKNESS, 1);
         state.reduceEffect(BattleEffectType.GLOWING, 1);
         state.decayEndOfTurnEffects();
+    }
+
+    private void triggerSelfDestruct(CombatantState user) {
+        if (user == null) {
+            return;
+        }
+        if (user.fakeDead()) {
+            return;
+        }
+        if (pendingSelfDestructs.stream().anyMatch(pending -> pending.user() == user)) {
+            return;
+        }
+        user.clearEffect(BattleEffectType.FUSE);
+        emitVisual(user.entity(), user.entity(), ItemStack.EMPTY, ItemStack.EMPTY, MoonSpireCardRegistry.selfDestructViewCard().createInstance(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.SELF_DESTRUCT, SELF_DESTRUCT_ANIMATION_TICKS);
+        pendingSelfDestructs.add(new PendingSelfDestruct(user, SELF_DESTRUCT_ANIMATION_TICKS));
+        markDirty();
+    }
+
+    private void tickPendingSelfDestructs() {
+        if (pendingSelfDestructs.isEmpty()) {
+            return;
+        }
+        Iterator<PendingSelfDestruct> iterator = pendingSelfDestructs.iterator();
+        List<PendingSelfDestruct> nextPending = new ArrayList<>();
+        while (iterator.hasNext()) {
+            PendingSelfDestruct pending = iterator.next();
+            PendingSelfDestruct next = pending.next();
+            if (next.ticks() > 0) {
+                nextPending.add(next);
+            } else {
+                resolveSelfDestruct(pending.user());
+            }
+            iterator.remove();
+        }
+        pendingSelfDestructs.addAll(nextPending);
+    }
+
+    private void resolveSelfDestruct(CombatantState user) {
+        if (user == null || user.fakeDead()) {
+            return;
+        }
+        Map<CombatantState, BattleDamageResult> damageResults = new LinkedHashMap<>();
+        UUID killCredit = playerKillCredit(user);
+        for (CombatantState target : alive(allStates())) {
+            if (target == user || target.fakeDead()) {
+                continue;
+            }
+            BattleDamageResult result = target.applyEffectDamage(CardBalance.SELF_DESTRUCT_DAMAGE, killCredit);
+            damageResults.put(target, result);
+        }
+        for (Map.Entry<CombatantState, BattleDamageResult> entry : damageResults.entrySet()) {
+            emitVisual(user.entity(), entry.getKey().entity(), ItemStack.EMPTY, ItemStack.EMPTY, null, entry.getValue(), 0, 0, 0, BattleVisualEvent.AnimationType.NONE, 0);
+        }
+        user.killForSelfDestruct(null);
+        finishDelayTicks = Math.max(finishDelayTicks, CombatantState.FAKE_DEATH_ANIMATION_TICKS);
+        markDirty();
     }
 
     private UUID playerKillCredit(CombatantState user) {
@@ -2488,6 +2606,12 @@ public class BattleState {
     }
 
     private record PendingFacing(PendingCardBatch batch) {
+    }
+
+    private record PendingSelfDestruct(CombatantState user, int ticks) {
+        private PendingSelfDestruct next() {
+            return new PendingSelfDestruct(user, ticks - 1);
+        }
     }
 
     private record EntityLock(Vec3 startPos, Vec3 lockedPos, float yRot, float xRot, float startHealth, int hotbarSlot, boolean noAiBeforeBattle, boolean noPhysicsBeforeBattle) {

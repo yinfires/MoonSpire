@@ -145,6 +145,7 @@ public record BattleVisualEvent(
         NONE,
         MELEE_LUNGE,
         BOW_DRAW,
-        CROSSBOW_LOAD
+        CROSSBOW_LOAD,
+        SELF_DESTRUCT
     }
 }

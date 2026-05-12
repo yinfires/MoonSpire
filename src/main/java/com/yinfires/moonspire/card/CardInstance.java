@@ -441,7 +441,7 @@ public record CardInstance(
         if (defense > 0 && normalized.stream().noneMatch(effect -> effect.kind() == CardEffectKind.BLOCK && effect.target().targetsSelf())) {
             normalized.add(new CardEffect(CardEffectKind.BLOCK, defense, CardTarget.SELF));
         }
-        return List.copyOf(normalized);
+        return CardEffectOrder.orderedCardEffects(normalized);
     }
 
     private static String normalizeCardId(String cardId, ItemStack stack, CardSourceType sourceType, String developerCardId, String nameKey) {
@@ -467,6 +467,9 @@ public record CardInstance(
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";
             case "card.moonspire.monster.web.name" -> "builtin_monster_web";
             case "card.moonspire.monster.venom_fang.name" -> "builtin_monster_venom_fang";
+            case "card.moonspire.monster.light_fuse.name" -> "builtin_monster_light_fuse";
+            case "card.moonspire.monster.hissing_advance.name" -> "builtin_monster_hissing_advance";
+            case "card.moonspire.monster.powder_shell.name" -> "builtin_monster_powder_shell";
             case "card.moonspire.monster.strike.name" -> "builtin_monster_strike";
             case "card.moonspire.monster.guard.name" -> "builtin_monster_guard";
             case "card.moonspire.monster.heavy_strike.name" -> "builtin_monster_heavy_strike";

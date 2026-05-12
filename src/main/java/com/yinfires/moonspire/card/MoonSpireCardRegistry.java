@@ -24,11 +24,16 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.Item;
 
 public final class MoonSpireCardRegistry {
+    public static final String SELF_DESTRUCT_VIEW_CARD_ID = "custom_self_destruct";
+
     private MoonSpireCardRegistry() {
     }
 
     public static Optional<RegisteredCardDefinition> card(String id) {
         String normalized = normalizeId(id);
+        if (SELF_DESTRUCT_VIEW_CARD_ID.equals(normalized)) {
+            return Optional.empty();
+        }
         Optional<DeveloperCardDefinition> developer = developerByRegisteredId(normalized);
         if (developer.isPresent()) {
             return Optional.of(developer.get().toRegisteredCard(normalized));
@@ -68,11 +73,30 @@ public final class MoonSpireCardRegistry {
         }
         for (DeveloperCardDefinition developer : DeveloperDataManager.load().cards) {
             String registeredId = registeredDeveloperId(developer.id());
-            if (!registeredId.isBlank()) {
+            if (!registeredId.isBlank() && !SELF_DESTRUCT_VIEW_CARD_ID.equals(registeredId)) {
                 cards.put(registeredId, developer.toRegisteredCard(registeredId));
             }
         }
         return List.copyOf(cards.values());
+    }
+
+    public static RegisteredCardDefinition selfDestructViewCard() {
+        return new RegisteredCardDefinition(
+                SELF_DESTRUCT_VIEW_CARD_ID,
+                "card.moonspire.custom.self_destruct.name",
+                "card.moonspire.custom.self_destruct.description",
+                0,
+                0,
+                0,
+                List.of(new CardEffect(CardEffectKind.DAMAGE, CardBalance.SELF_DESTRUCT_DAMAGE, CardTarget.ALL_OTHER_UNITS)),
+                CardSourceType.CUSTOM,
+                "",
+                "minecraft:gunpowder",
+                0,
+                0,
+                1.0F,
+                "default",
+                "");
     }
 
     public static List<RegisteredCardDefinition> baseCards() {
@@ -265,6 +289,16 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_venom_fang", "card.moonspire.monster.venom_fang.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
                         new CardEffect(CardEffectKind.POISON, 5, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_light_fuse", "card.moonspire.monster.light_fuse.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.INNATE, 1),
+                        new CardEffect(CardEffectKind.FUSE, 2, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.BLOCK, 4, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:flint_and_steel", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_hissing_advance", "card.moonspire.monster.hissing_advance.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_powder_shell", "card.moonspire.monster.powder_shell.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 7, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_strike", "card.moonspire.monster.strike.name", "", 1, 3, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_guard", "card.moonspire.monster.guard.name", "", 1, 0, 2, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_heavy_strike", "card.moonspire.monster.heavy_strike.name", "", 2, 6, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""));

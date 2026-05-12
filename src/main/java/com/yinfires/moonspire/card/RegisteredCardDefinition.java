@@ -24,7 +24,7 @@ public record RegisteredCardDefinition(
         String faceId,
         String developerCardId) {
     public RegisteredCardDefinition {
-        effects = List.copyOf(effects == null ? List.of() : effects);
+        effects = CardEffectOrder.orderedCardEffects(effects == null ? List.of() : effects);
         sourceType = sourceType == null ? CardSourceType.UNKNOWN : sourceType;
         id = safe(id);
         nameKey = safe(nameKey);

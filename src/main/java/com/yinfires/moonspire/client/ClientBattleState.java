@@ -8,6 +8,7 @@ import com.yinfires.moonspire.battle.BattleVisualEvent;
 import com.yinfires.moonspire.battle.CombatantState;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
+import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.client.ui.MoonSpireBattleLayoutEditor;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,6 +48,7 @@ public final class ClientBattleState {
     private static final double KNOCKBACK_GRAVITY = 0.08D;
     private static final double KNOCKBACK_MAX_FALL_SPEED = -3.92D;
     private static final double KNOCKBACK_STOP_SPEED_SQR = 0.0025D;
+    private static final float SELF_DESTRUCT_MAX_SCALE = 1.35F;
     private static BattleSnapshot snapshot = BattleSnapshot.inactive();
     private static long snapshotVersion;
     private static UUID serverBattleId = BattleSnapshot.INACTIVE_BATTLE_ID;
@@ -82,6 +84,7 @@ public final class ClientBattleState {
     private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
     private static final Map<PileContentsKey, PileContents> pileContents = new HashMap<>();
     private static CardInstance monsterPlayedCard;
+    private static int monsterPlayedCardAttackerId = -1;
     private static float monsterPlayedCardTicks;
     private static long monsterPlayedCardEventSequence;
 
@@ -136,6 +139,7 @@ public final class ClientBattleState {
             clearFakeDeathStarts();
             pileContents.clear();
             monsterPlayedCard = null;
+            monsterPlayedCardAttackerId = -1;
             monsterPlayedCardTicks = 0.0F;
             monsterPlayedCardEventSequence = 0L;
             MoonSpireBattleLayoutEditor.close();
@@ -433,6 +437,10 @@ public final class ClientBattleState {
         return monsterPlayedCard;
     }
 
+    public static int monsterPlayedCardAttackerId() {
+        return monsterPlayedCardAttackerId;
+    }
+
     public static long monsterPlayedCardEventSequence() {
         return monsterPlayedCardEventSequence;
     }
@@ -447,11 +455,12 @@ public final class ClientBattleState {
         monsterPlayedCardTicks = Math.max(0.0F, monsterPlayedCardTicks - Math.max(0.0F, deltaTicks));
         if (monsterPlayedCardTicks <= 0.0F) {
             monsterPlayedCard = null;
+            monsterPlayedCardAttackerId = -1;
         }
     }
 
     public static float monsterPlayedCardAlpha() {
-        if (monsterPlayedCard == null || !monsterPlayedCardHasEffect(CardEffectKind.EXHAUST)) {
+        if (monsterPlayedCard == null || !monsterPlayedCardFadesOut()) {
             return 1.0F;
         }
         return Math.max(0.0F, Math.min(1.0F, monsterPlayedCardTicks / 10.0F));
@@ -510,6 +519,21 @@ public final class ClientBattleState {
     public static BattleVisualEvent.AnimationType visualAnimationType(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? BattleVisualEvent.AnimationType.NONE : state.animationType();
+    }
+
+    public static float visualSelfDestructScale(int entityId, float partialTick) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 1.0F : state.selfDestructScale(partialTick);
+    }
+
+    public static float selfDestructWhiteOverlayProgress(int entityId, float partialTick) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0.0F : state.selfDestructWhiteOverlayProgress(partialTick);
+    }
+
+    public static boolean visualSelfDestructing(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.selfDestructTicks() > 0;
     }
 
     public static void clearVisualStates() {
@@ -634,6 +658,9 @@ public final class ClientBattleState {
             }
         }
         for (int entityId : fakeDeadIds) {
+            if (visualSelfDestructing(entityId)) {
+                continue;
+            }
             fakeDeathStarts.putIfAbsent(entityId, now);
         }
     }
@@ -656,16 +683,23 @@ public final class ClientBattleState {
     }
 
     private static void updatePlayedCardDisplay(BattleSnapshot next, BattleVisualEvent event) {
-        if (event.playedCard() == null || event.attackerId() != next.monster().entityId()) {
+        if (event.playedCard() == null || event.attackerId() == next.localPlayerEntityId()) {
             return;
         }
         monsterPlayedCard = event.playedCard();
-        monsterPlayedCardTicks = 20.0F;
+        monsterPlayedCardAttackerId = event.attackerId();
+        monsterPlayedCardTicks = Math.max(20.0F, event.animationTicks());
         monsterPlayedCardEventSequence++;
     }
 
     private static boolean monsterPlayedCardHasEffect(CardEffectKind kind) {
         return monsterPlayedCard != null && monsterPlayedCard.effects().stream().anyMatch(effect -> effect.kind() == kind);
+    }
+
+    private static boolean monsterPlayedCardFadesOut() {
+        return monsterPlayedCard != null
+                && (MoonSpireCardRegistry.SELF_DESTRUCT_VIEW_CARD_ID.equals(monsterPlayedCard.cardId())
+                || monsterPlayedCardHasEffect(CardEffectKind.EXHAUST));
     }
 
     private static boolean isPounceEvent(BattleVisualEvent event) {
@@ -719,6 +753,9 @@ public final class ClientBattleState {
         private int lungeTicks;
         private int lungeAge;
         private int lungeSettleTicks;
+        private int selfDestructTicks;
+        private int selfDestructAge;
+        private int selfDestructTotalTicks;
         private Vec3 lungeStart = Vec3.ZERO;
         private Vec3 lungeStrike = Vec3.ZERO;
         private Vec3 previousLungePosition = Vec3.ZERO;
@@ -755,8 +792,12 @@ public final class ClientBattleState {
             return lungeTicks;
         }
 
+        public int selfDestructTicks() {
+            return selfDestructTicks;
+        }
+
         public BattleVisualEvent.AnimationType animationType() {
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0) {
                 return BattleVisualEvent.AnimationType.NONE;
             }
             return animationType;
@@ -774,6 +815,12 @@ public final class ClientBattleState {
                 currentLungePosition = lungeStart;
                 lungeSettleTicks = 0;
                 walkSpeed = 0.0F;
+                this.animationType = nextType;
+            }
+            if (nextType == BattleVisualEvent.AnimationType.SELF_DESTRUCT && animationTicks > 0) {
+                selfDestructTicks = Math.max(1, animationTicks);
+                selfDestructTotalTicks = selfDestructTicks;
+                selfDestructAge = 0;
                 this.animationType = nextType;
             }
             if (stack != null && !stack.isEmpty()) {
@@ -858,6 +905,23 @@ public final class ClientBattleState {
             return walkSpeed;
         }
 
+        private float selfDestructScale(float partialTick) {
+            if (selfDestructTicks <= 0 || selfDestructTotalTicks <= 0) {
+                return 1.0F;
+            }
+            float progress = Math.max(0.0F, Math.min(1.0F, (selfDestructAge + Math.max(0.0F, partialTick)) / selfDestructTotalTicks));
+            float pulse = 0.5F + 0.5F * (float) Math.sin(progress * Math.PI * 8.0F);
+            return 1.0F + (SELF_DESTRUCT_MAX_SCALE - 1.0F) * progress + pulse * 0.06F;
+        }
+
+        private float selfDestructWhiteOverlayProgress(float partialTick) {
+            if (selfDestructTicks <= 0 || selfDestructTotalTicks <= 0) {
+                return 0.0F;
+            }
+            float progress = Math.max(0.0F, Math.min(1.0F, (selfDestructAge + Math.max(0.0F, partialTick)) / selfDestructTotalTicks));
+            return (int) (progress * 10.0F) % 2 == 0 ? 0.0F : Math.max(0.5F, progress);
+        }
+
         private boolean movingVisually() {
             return lungeTicks > 0 || lungeSettleTicks > 0 || knockbackTicks > 0 || knockbackSettleTicks > 0;
         }
@@ -897,6 +961,13 @@ public final class ClientBattleState {
             } else {
                 usingAge = 0;
             }
+            if (selfDestructTicks > 0) {
+                selfDestructTicks--;
+                selfDestructAge++;
+            } else {
+                selfDestructAge = 0;
+                selfDestructTotalTicks = 0;
+            }
             float lungeWalkSpeed = 0.0F;
             if (lungeTicks > 0) {
                 previousLungePosition = currentLungePosition;
@@ -922,7 +993,7 @@ public final class ClientBattleState {
             if (walkSpeed <= 0.001F) {
                 walkSpeed = 0.0F;
             }
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0) {
                 animationType = BattleVisualEvent.AnimationType.NONE;
             }
         }
@@ -980,7 +1051,7 @@ public final class ClientBattleState {
         }
 
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
         }
     }
 

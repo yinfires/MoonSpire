@@ -208,7 +208,8 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
-                || kind == CardEffectKind.HASTE;
+                || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.FUSE;
     }
 
     private static boolean negativeEffect(CardEffectKind kind) {
