@@ -217,6 +217,7 @@ public final class BattleWorldOverlay {
         return kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WITHER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
                 || kind == CardEffectKind.GLOWING;

@@ -653,6 +653,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.poison.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.BURN) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "burn", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.burn.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.WITHER) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "wither", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.wither.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.FUSE) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "fuse", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.fuse.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.WEAKNESS) {
@@ -896,6 +898,8 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.WITHER && renderedTips.add("wither")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.wither.name"), Component.translatable("effect.moonspire.wither.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.fuse.name"), Component.translatable("effect.moonspire.fuse.description", CardBalance.SELF_DESTRUCT_DAMAGE), x, tipY);
             } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {
@@ -995,6 +999,8 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description")) + 4;
             } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.WITHER && renderedTips.add("wither")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.wither.name"), Component.translatable("effect.moonspire.wither.description")) + 4;
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.fuse.name"), Component.translatable("effect.moonspire.fuse.description", CardBalance.SELF_DESTRUCT_DAMAGE)) + 4;
             } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {

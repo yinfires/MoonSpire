@@ -1016,6 +1016,7 @@ public class BattleState {
             case HASTE -> scorePositiveStatus(totalAmount, target, BattleEffectType.HASTE, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
             case POISON -> scoreNegativeStatus(totalAmount, target, BattleEffectType.POISON, 2.8D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case BURN -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case WITHER -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WITHER, 3.1D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case FUSE -> scorePositiveStatus(totalAmount, target, BattleEffectType.FUSE, 8.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case WEAKNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
             case SLOWNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.SLOWNESS, 2.6D, MONSTER_AI_STATUS_SOFT_CAP);
@@ -1131,7 +1132,7 @@ public class BattleState {
     }
 
     private double scoreHeal(int amount, MonsterAiView target) {
-        float missing = Math.max(0.0F, target.maxHealth() - target.health());
+        float missing = Math.max(0.0F, target.effectiveMaxHealth() - target.health());
         double healed = Math.min(Math.max(0, amount), missing);
         if (healed <= 0.0D) {
             return 0.0D;
@@ -1178,6 +1179,9 @@ public class BattleState {
         if (kind == CardEffectKind.BURN) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
         }
+        if (kind == CardEffectKind.WITHER) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.WITHER, 3.1D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+        }
         if (kind == CardEffectKind.WEAKNESS) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
         }
@@ -1195,6 +1199,7 @@ public class BattleState {
                 || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WITHER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS;
     }
@@ -1291,6 +1296,7 @@ public class BattleState {
             case HASTE -> target.addEffect(BattleEffectType.HASTE, amount);
             case POISON -> target.addEffect(BattleEffectType.POISON, amount);
             case BURN -> target.addEffect(BattleEffectType.BURN, amount);
+            case WITHER -> target.addEffect(BattleEffectType.WITHER, amount);
             case FUSE -> target.addEffect(BattleEffectType.FUSE, amount);
             case WEAKNESS -> target.addEffect(BattleEffectType.WEAKNESS, amount);
             case SLOWNESS -> target.addEffect(BattleEffectType.SLOWNESS, amount);
@@ -1805,7 +1811,7 @@ public class BattleState {
         for (CardEffect arrowEffect : arrow.effects()) {
             if (arrowEffect.kind() == CardEffectKind.DAMAGE && arrowEffect.target().targetsEnemy()) {
                 effects.add(new CardEffect(CardEffectKind.DAMAGE, arrowEffect.amount(), arrowEffect.target(), arrowEffect.count()));
-            } else if (arrowEffect.kind() == CardEffectKind.GLOWING) {
+            } else if (arrowEffect.kind() == CardEffectKind.GLOWING || arrowEffect.kind() == CardEffectKind.WITHER) {
                 effects.add(arrowEffect);
             }
         }
@@ -1879,6 +1885,9 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.BURN) {
                 effect.target().addEffect(BattleEffectType.BURN, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.WITHER) {
+                effect.target().addEffect(BattleEffectType.WITHER, effect.amount());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.FUSE) {
                 effect.target().addEffect(BattleEffectType.FUSE, effect.amount());
@@ -2791,11 +2800,11 @@ public class BattleState {
         }
 
         private float maxHealth() {
-            return maxHealth;
+            return effectiveMaxHealth();
         }
 
         private double healthRatio() {
-            return Math.max(0.0D, Math.min(1.0D, health / maxHealth));
+            return Math.max(0.0D, Math.min(1.0D, health / effectiveMaxHealth()));
         }
 
         private int defense() {
@@ -2815,7 +2824,7 @@ public class BattleState {
         }
 
         private void heal(int amount) {
-            health = Math.min(maxHealth, health + Math.max(0, amount));
+            health = Math.min(effectiveMaxHealth(), health + Math.max(0, amount));
         }
 
         private void takeDamage(int amount) {
@@ -2837,6 +2846,11 @@ public class BattleState {
             } else {
                 effects.remove(type);
             }
+            health = Math.min(health, effectiveMaxHealth());
+        }
+
+        private float effectiveMaxHealth() {
+            return Math.max(1.0F, maxHealth - Math.max(0, effectAmount(BattleEffectType.WITHER)));
         }
     }
 

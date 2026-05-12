@@ -84,6 +84,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         HASTE,
         POISON,
         BURN,
+        WITHER,
         FUSE,
         WEAKNESS,
         SLOWNESS,

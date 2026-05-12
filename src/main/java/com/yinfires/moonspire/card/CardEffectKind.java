@@ -18,6 +18,7 @@ public enum CardEffectKind {
     HASTE(CardTarget.SELF),
     POISON(CardTarget.SINGLE_ENEMY),
     BURN(CardTarget.SINGLE_ENEMY),
+    WITHER(CardTarget.SINGLE_ENEMY),
     WEAKNESS(CardTarget.SINGLE_ENEMY),
     SLOWNESS(CardTarget.SINGLE_ENEMY),
     FUSE(CardTarget.SELF),

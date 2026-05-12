@@ -110,6 +110,7 @@ public record DeveloperCardDefinition(
             case HASTE -> CardEffectKind.HASTE;
             case POISON -> CardEffectKind.POISON;
             case BURN -> CardEffectKind.BURN;
+            case WITHER -> CardEffectKind.WITHER;
             case FUSE -> CardEffectKind.FUSE;
             case WEAKNESS -> CardEffectKind.WEAKNESS;
             case SLOWNESS -> CardEffectKind.SLOWNESS;

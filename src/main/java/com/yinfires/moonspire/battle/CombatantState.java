@@ -86,6 +86,10 @@ public class CombatantState {
         return maxBattleHealth;
     }
 
+    public float effectiveMaxBattleHealth() {
+        return Math.max(1.0F, maxBattleHealth - Math.max(0, effectAmount(BattleEffectType.WITHER)));
+    }
+
     public int defense() {
         return defense;
     }
@@ -170,11 +174,12 @@ public class CombatantState {
     }
 
     public int heal(int amount) {
-        if (fakeDead || amount <= 0 || battleHealth >= maxBattleHealth) {
+        float effectiveMaxHealth = effectiveMaxBattleHealth();
+        if (fakeDead || amount <= 0 || battleHealth >= effectiveMaxHealth) {
             return 0;
         }
         float before = battleHealth;
-        battleHealth = Math.min(maxBattleHealth, battleHealth + amount);
+        battleHealth = Math.min(effectiveMaxHealth, battleHealth + amount);
         return Math.round(battleHealth - before);
     }
 
@@ -190,6 +195,7 @@ public class CombatantState {
         } else {
             effects.remove(type);
         }
+        clampBattleHealthToEffectiveMax();
         syncEntityGlowing();
     }
 
@@ -207,6 +213,7 @@ public class CombatantState {
         } else {
             effects.remove(type);
         }
+        clampBattleHealthToEffectiveMax();
         syncEntityGlowing();
     }
 
@@ -215,6 +222,7 @@ public class CombatantState {
             return;
         }
         effects.remove(type);
+        clampBattleHealthToEffectiveMax();
         syncEntityGlowing();
     }
 
@@ -228,6 +236,7 @@ public class CombatantState {
                 effects.remove(BattleEffectType.BLEED);
             }
         }
+        reduceEffect(BattleEffectType.WITHER, 1);
         syncEntityGlowing();
     }
 
@@ -251,8 +260,8 @@ public class CombatantState {
     public BattleCombatantSnapshot snapshot(int battleDeckCount) {
         return new BattleCombatantSnapshot(
                 entity.getId(),
-                battleHealth,
-                maxBattleHealth,
+                Math.min(battleHealth, effectiveMaxBattleHealth()),
+                effectiveMaxBattleHealth(),
                 defense,
                 energyLeft(),
                 maxEnergy,
@@ -288,6 +297,10 @@ public class CombatantState {
                 markFakeDead(creditedPlayerKill);
             }
         }
+    }
+
+    private void clampBattleHealthToEffectiveMax() {
+        battleHealth = Math.min(battleHealth, effectiveMaxBattleHealth());
     }
 
     private void markFakeDead(UUID creditedPlayerKill) {

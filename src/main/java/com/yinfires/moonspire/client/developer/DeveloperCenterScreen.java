@@ -1797,6 +1797,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.POISON, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BURN && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BURN, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.WITHER && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.WITHER, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.FUSE && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.FUSE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.WEAKNESS && effect.amount() > 0) {
@@ -2296,6 +2298,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.HASTE,
                         DeveloperCardEffect.Kind.POISON,
                         DeveloperCardEffect.Kind.BURN,
+                        DeveloperCardEffect.Kind.WITHER,
                         DeveloperCardEffect.Kind.FUSE,
                         DeveloperCardEffect.Kind.WEAKNESS,
                         DeveloperCardEffect.Kind.SLOWNESS,
