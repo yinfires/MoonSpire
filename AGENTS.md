@@ -91,6 +91,7 @@
 - Do not use `Component.literal(...)` or direct English/Chinese UI text for names, descriptions, HUD labels, messages, buttons, phases, card stats, or card text.
 - Store card display text as translation keys (`nameKey`, `descriptionKey`) and render them with `Component.translatable(...)`.
 - Card effect description lines default to ending punctuation through the shared card description builder; new effect description branches should use the shared helper instead of adding raw lines without punctuation.
+- In Simplified Chinese card effect descriptions, keep the existing wording "造成伤害" for damage dealt by cards; use "攻击伤害" for direct damage only in combat status, intent, shield/block resolution, and similar non-card-description contexts.
 - Before adding, moving, or deleting language file entries, read `docs/language_categories.md`; keep language keys in that documented category order, and update that document if a new category or prefix is needed.
 - Reuse existing same-category language keys when the player-facing meaning and placeholder structure match; add a new key only when reuse would be misleading or incompatible.
 - Whenever language files are modified, remove translation keys that no longer have an effective code path or resource reference in the same change.

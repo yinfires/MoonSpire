@@ -470,6 +470,14 @@ public record CardInstance(
             case "card.moonspire.monster.light_fuse.name" -> "builtin_monster_light_fuse";
             case "card.moonspire.monster.hissing_advance.name" -> "builtin_monster_hissing_advance";
             case "card.moonspire.monster.powder_shell.name" -> "builtin_monster_powder_shell";
+            case "card.moonspire.monster.guardian_beam.name" -> "builtin_monster_guardian_beam";
+            case "card.moonspire.monster.tidal_gaze.name" -> "builtin_monster_tidal_gaze";
+            case "card.moonspire.monster.spiked_carapace.name" -> "builtin_monster_spiked_carapace";
+            case "card.moonspire.monster.deep_sea_reflux.name" -> "builtin_monster_deep_sea_reflux";
+            case "card.moonspire.monster.elder_beam.name" -> "builtin_monster_elder_beam";
+            case "card.moonspire.monster.elder_tidal_erosion.name" -> "builtin_monster_elder_tidal_erosion";
+            case "card.moonspire.monster.elder_thorn_crown.name" -> "builtin_monster_elder_thorn_crown";
+            case "card.moonspire.monster.deep_sea_pressure.name" -> "builtin_monster_deep_sea_pressure";
             case "card.moonspire.monster.strike.name" -> "builtin_monster_strike";
             case "card.moonspire.monster.guard.name" -> "builtin_monster_guard";
             case "card.moonspire.monster.heavy_strike.name" -> "builtin_monster_heavy_strike";

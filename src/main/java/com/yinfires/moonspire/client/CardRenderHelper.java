@@ -655,6 +655,12 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "burn", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.burn.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.WITHER) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "wither", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.wither.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.TIDAL_EROSION) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "tidal_erosion", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.tidal_erosion.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.PARALYSIS) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "paralysis", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.paralysis.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.THORNS) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "thorns", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.thorns.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.FUSE) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "fuse", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.fuse.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.WEAKNESS) {
@@ -815,11 +821,19 @@ public final class CardRenderHelper {
     }
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender) {
+        return previewAttack(card, attacker, defender, effectAmount(attacker, BattleEffectType.PARALYSIS) > 0 && card.hasAttack());
+    }
+
+    public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender, boolean paralyzedAttack) {
         int incoming = card.effects().stream()
                 .filter(effect -> (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy())
-                .mapToInt(effect -> previewDamageAmount(effect.amount(), attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), effectAmount(defender, BattleEffectType.GLOWING) > 0) * effect.count())
+                .mapToInt(effect -> previewDamageAmount(paralysisAdjustedDamage(effect.amount(), paralyzedAttack), attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), effectAmount(defender, BattleEffectType.GLOWING) > 0) * effect.count())
                 .sum();
         return Math.max(0, incoming);
+    }
+
+    private static int paralysisAdjustedDamage(int amount, boolean paralyzedAttack) {
+        return paralyzedAttack ? Math.max(0, amount - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : amount;
     }
 
     public static CardLocalArea smallDescriptionArea(CardInstance card) {
@@ -900,6 +914,12 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.WITHER && renderedTips.add("wither")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.wither.name"), Component.translatable("effect.moonspire.wither.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.TIDAL_EROSION && renderedTips.add("tidal_erosion")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.tidal_erosion.name"), Component.translatable("effect.moonspire.tidal_erosion.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.PARALYSIS && renderedTips.add("paralysis")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.paralysis.name"), Component.translatable("effect.moonspire.paralysis.description", effect.amount()), x, tipY);
+            } else if (effect.kind() == CardEffectKind.THORNS && renderedTips.add("thorns")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.thorns.name"), Component.translatable("effect.moonspire.thorns.description", effect.amount()), x, tipY);
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.fuse.name"), Component.translatable("effect.moonspire.fuse.description", CardBalance.SELF_DESTRUCT_DAMAGE), x, tipY);
             } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {
@@ -1001,6 +1021,12 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.burn.name"), Component.translatable("effect.moonspire.burn.description")) + 4;
             } else if (effect.kind() == CardEffectKind.WITHER && renderedTips.add("wither")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.wither.name"), Component.translatable("effect.moonspire.wither.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.TIDAL_EROSION && renderedTips.add("tidal_erosion")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.tidal_erosion.name"), Component.translatable("effect.moonspire.tidal_erosion.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.PARALYSIS && renderedTips.add("paralysis")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.paralysis.name"), Component.translatable("effect.moonspire.paralysis.description", effect.amount())) + 4;
+            } else if (effect.kind() == CardEffectKind.THORNS && renderedTips.add("thorns")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.thorns.name"), Component.translatable("effect.moonspire.thorns.description", effect.amount())) + 4;
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.fuse.name"), Component.translatable("effect.moonspire.fuse.description", CardBalance.SELF_DESTRUCT_DAMAGE)) + 4;
             } else if (effect.kind() == CardEffectKind.WEAKNESS && renderedTips.add("weakness")) {

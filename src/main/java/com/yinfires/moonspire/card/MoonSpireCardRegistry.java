@@ -299,6 +299,45 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_powder_shell", "card.moonspire.monster.powder_shell.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.BLOCK, 7, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_trident_throw", "card.moonspire.monster.trident_throw.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:trident", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_channeling_throw", "card.moonspire.monster.channeling_throw.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 6, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 1, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.PARALYSIS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:trident", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_riptide_rush", "card.moonspire.monster.riptide_rush.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 8, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:trident", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_nautilus_shell", "card.moonspire.monster.nautilus_shell.name", "", 1, 0, 6, List.of(), CardSourceType.MONSTER, "", "minecraft:nautilus_shell", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_guardian_beam", "card.moonspire.monster.guardian_beam.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:prismarine_crystals", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_tidal_gaze", "card.moonspire.monster.tidal_gaze.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:prismarine_crystals", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_spiked_carapace", "card.moonspire.monster.spiked_carapace.name", "", 1, 0, 5, List.of(
+                        new CardEffect(CardEffectKind.THORNS, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:prismarine_shard", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_deep_sea_reflux", "card.moonspire.monster.deep_sea_reflux.name", "", 2, 0, 7, List.of(
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:dark_prismarine", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_elder_beam", "card.moonspire.monster.elder_beam.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 9, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:prismarine_crystals", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_elder_tidal_erosion", "card.moonspire.monster.elder_tidal_erosion.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 6, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 3, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:prismarine_crystals", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_elder_thorn_crown", "card.moonspire.monster.elder_thorn_crown.name", "", 1, 0, 8, List.of(
+                        new CardEffect(CardEffectKind.THORNS, 3, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:prismarine_shard", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_deep_sea_pressure", "card.moonspire.monster.deep_sea_pressure.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.TIDAL_EROSION, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:dark_prismarine", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_strike", "card.moonspire.monster.strike.name", "", 1, 3, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_guard", "card.moonspire.monster.guard.name", "", 1, 0, 2, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_heavy_strike", "card.moonspire.monster.heavy_strike.name", "", 2, 6, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""));

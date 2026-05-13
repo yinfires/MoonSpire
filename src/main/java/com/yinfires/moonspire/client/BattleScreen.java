@@ -12,6 +12,7 @@ import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
 import com.yinfires.moonspire.battle.BattleVisualEvent;
 import com.yinfires.moonspire.battle.PendingHandSelectionSnapshot;
+import com.yinfires.moonspire.card.CardBalance;
 import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardInstance;
@@ -608,7 +609,12 @@ public class BattleScreen extends NoBlurScreen {
         int block = 0;
         int negativeEffects = 0;
         int positiveEffects = 0;
+        int paralysis = Math.max(0, CardRenderHelper.effectAmount(entry, BattleEffectType.PARALYSIS));
         for (CardInstance card : intentCards) {
+            boolean paralyzedAttack = paralysis > 0 && card.hasAttack();
+            if (paralyzedAttack) {
+                paralysis--;
+            }
             for (CardEffect effect : card.effects()) {
                 if (effect.amount() <= 0) {
                     continue;
@@ -616,7 +622,8 @@ public class BattleScreen extends NoBlurScreen {
                 List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true, -1, entry.entityId());
                 int totalAmount = Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && targets.contains(snapshot.player().entityId())) {
-                    attack += CardRenderHelper.previewDamageAmount(effect.amount(), entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GLOWING) > 0) * Math.max(1, effect.count());
+                    int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
+                    attack += CardRenderHelper.previewDamageAmount(baseDamage, entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GLOWING) > 0) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(entry.entityId())) {
                     block += totalAmount;
                 } else if (negativeEffect(effect.kind()) && targets.contains(snapshot.player().entityId())) {
@@ -2419,6 +2426,7 @@ public class BattleScreen extends NoBlurScreen {
         List<Integer> blockAmounts = new ArrayList<>(card.effects().size());
         int previewAttackTotal = 0;
         boolean hasPreviewAttack = false;
+        boolean paralyzedAttack = paralyzedAttackForCardPreview(snapshot, card, attacker);
         for (CardEffect effect : card.effects()) {
             int damageAmount = effect.amount();
             int blockAmount = effect.amount();
@@ -2426,10 +2434,11 @@ public class BattleScreen extends NoBlurScreen {
             if (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) {
                 int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
                 boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
+                int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
                 if (singleTarget.entityId() >= 0) {
-                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GLOWING) > 0);
+                    damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GLOWING) > 0);
                 } else {
-                    damageAmount = CardRenderHelper.previewDamageAmount(effect.amount(), 1, 1, 0, 0, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false);
+                    damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, 1, 1, 0, 0, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false);
                 }
             }
             damageAmounts.add(damageAmount);
@@ -2445,6 +2454,25 @@ public class BattleScreen extends NoBlurScreen {
         return new CardRenderHelper.CardValues(attack, defense, damageAmounts, blockAmounts);
     }
 
+    private boolean paralyzedAttackForCardPreview(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker) {
+        int paralysis = Math.max(0, CardRenderHelper.effectAmount(attacker, BattleEffectType.PARALYSIS));
+        if (paralysis <= 0 || !card.hasAttack()) {
+            return false;
+        }
+        List<CardInstance> intentCards = snapshot.intentCardsFor(attacker.entityId());
+        if (!intentCards.isEmpty()) {
+            for (CardInstance intentCard : intentCards) {
+                if (intentCard.id().equals(card.id())) {
+                    return paralysis > 0;
+                }
+                if (intentCard.hasAttack()) {
+                    paralysis = Math.max(0, paralysis - 1);
+                }
+            }
+        }
+        return true;
+    }
+
     private static boolean positiveEffect(CardEffectKind kind) {
         return kind == CardEffectKind.HEAL
                 || kind == CardEffectKind.DRAW_CARDS
@@ -2453,6 +2481,7 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.THORNS
                 || kind == CardEffectKind.FUSE;
     }
 
@@ -2462,6 +2491,8 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WITHER
+                || kind == CardEffectKind.TIDAL_EROSION
+                || kind == CardEffectKind.PARALYSIS
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
                 || kind == CardEffectKind.GLOWING;

@@ -71,6 +71,39 @@ public final class MonsterDeckProfile {
             "builtin_monster_powder_shell",
             "builtin_monster_powder_shell",
             "builtin_monster_powder_shell");
+    private static final List<String> DROWNED_DEFAULT_DECK = List.of(
+            "builtin_monster_trident_throw",
+            "builtin_monster_trident_throw",
+            "builtin_monster_trident_throw",
+            "builtin_monster_channeling_throw",
+            "builtin_monster_riptide_rush",
+            "builtin_monster_riptide_rush",
+            "builtin_monster_nautilus_shell",
+            "builtin_monster_nautilus_shell",
+            "builtin_monster_nautilus_shell",
+            "builtin_monster_nautilus_shell");
+    private static final List<String> GUARDIAN_DEFAULT_DECK = List.of(
+            "builtin_monster_guardian_beam",
+            "builtin_monster_guardian_beam",
+            "builtin_monster_guardian_beam",
+            "builtin_monster_tidal_gaze",
+            "builtin_monster_tidal_gaze",
+            "builtin_monster_spiked_carapace",
+            "builtin_monster_spiked_carapace",
+            "builtin_monster_spiked_carapace",
+            "builtin_monster_deep_sea_reflux",
+            "builtin_monster_deep_sea_reflux");
+    private static final List<String> ELDER_GUARDIAN_DEFAULT_DECK = List.of(
+            "builtin_monster_elder_beam",
+            "builtin_monster_elder_beam",
+            "builtin_monster_elder_beam",
+            "builtin_monster_elder_tidal_erosion",
+            "builtin_monster_elder_tidal_erosion",
+            "builtin_monster_elder_thorn_crown",
+            "builtin_monster_elder_thorn_crown",
+            "builtin_monster_elder_thorn_crown",
+            "builtin_monster_deep_sea_pressure",
+            "builtin_monster_deep_sea_pressure");
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
             "builtin_monster_strike",
             "builtin_monster_guard",
@@ -112,6 +145,15 @@ public final class MonsterDeckProfile {
 
     public static List<CardInstance> createDefaultDeck(LivingEntity monster) {
         EntityType<?> type = monster.getType();
+        if (type == EntityType.ELDER_GUARDIAN) {
+            return cards(ELDER_GUARDIAN_DEFAULT_DECK);
+        }
+        if (type == EntityType.GUARDIAN) {
+            return cards(GUARDIAN_DEFAULT_DECK);
+        }
+        if (type == EntityType.DROWNED) {
+            return cards(DROWNED_DEFAULT_DECK);
+        }
         if (isZombieFamily(type)) {
             return cards(ZOMBIE_DEFAULT_DECK);
         }
@@ -133,6 +175,15 @@ public final class MonsterDeckProfile {
     public static List<String> defaultDeckCardIds(EntityType<?> type) {
         if (!hasDefaultDeck(type)) {
             return List.of();
+        }
+        if (type == EntityType.ELDER_GUARDIAN) {
+            return ELDER_GUARDIAN_DEFAULT_DECK;
+        }
+        if (type == EntityType.GUARDIAN) {
+            return GUARDIAN_DEFAULT_DECK;
+        }
+        if (type == EntityType.DROWNED) {
+            return DROWNED_DEFAULT_DECK;
         }
         if (isZombieFamily(type)) {
             return ZOMBIE_DEFAULT_DECK;
@@ -173,7 +224,6 @@ public final class MonsterDeckProfile {
     private static boolean isZombieFamily(EntityType<?> type) {
         return type == EntityType.ZOMBIE
                 || type == EntityType.HUSK
-                || type == EntityType.DROWNED
                 || type == EntityType.ZOMBIE_VILLAGER
                 || type == EntityType.ZOMBIFIED_PIGLIN;
     }

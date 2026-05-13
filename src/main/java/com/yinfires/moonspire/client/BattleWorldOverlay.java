@@ -2,6 +2,7 @@ package com.yinfires.moonspire.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
 import com.yinfires.moonspire.battle.BattleEffectType;
 import com.yinfires.moonspire.battle.BattleEffectSnapshot;
@@ -19,9 +20,12 @@ import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -29,11 +33,13 @@ import org.joml.Matrix4f;
 public final class BattleWorldOverlay {
     private static final double COMBATANT_OVERLAY_Y_OFFSET = 0.9D;
     private static final float WORLD_TEXT_Z = 0.18F;
+    private static final ResourceLocation GUARDIAN_BEAM_TEXTURE = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/guardian_beam.png");
+    private static final RenderType GUARDIAN_BEAM_RENDER_TYPE = RenderType.entityCutoutNoCull(GUARDIAN_BEAM_TEXTURE);
 
     private BattleWorldOverlay() {
     }
 
-    public static void renderLevel(PoseStack poseStack, Camera camera, MultiBufferSource.BufferSource bufferSource) {
+    public static void renderLevel(PoseStack poseStack, Camera camera, MultiBufferSource.BufferSource bufferSource, float partialTick) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         if (!snapshot.active()) {
             return;
@@ -54,6 +60,7 @@ public final class BattleWorldOverlay {
             }
             renderHighlight(minecraft.level.getEntity(combatant.entityId()), combatant.entityId(), poseStack, camera, bufferSource);
         }
+        renderGuardianBeams(minecraft, poseStack, camera, bufferSource, partialTick);
     }
 
     public static boolean suppressBattleNameTag(Entity entity) {
@@ -115,6 +122,95 @@ public final class BattleWorldOverlay {
         LevelRenderer.renderLineBox(poseStack, bufferSource.getBuffer(RenderType.lines()), box, r, g, b, selected ? 0.95F : 0.75F);
     }
 
+    private static void renderGuardianBeams(Minecraft minecraft, PoseStack poseStack, Camera camera, MultiBufferSource bufferSource, float partialTick) {
+        Vec3 cameraPos = camera.getPosition();
+        VertexConsumer consumer = bufferSource.getBuffer(GUARDIAN_BEAM_RENDER_TYPE);
+        for (ClientBattleState.GuardianBeamAnimation beam : ClientBattleState.guardianBeamAnimations()) {
+            Entity attacker = minecraft.level.getEntity(beam.attackerId());
+            Entity target = minecraft.level.getEntity(beam.targetId());
+            if (!(attacker instanceof LivingEntity livingAttacker) || target == null) {
+                continue;
+            }
+            renderGuardianBeam(poseStack, consumer, livingAttacker, target, cameraPos, beam, partialTick);
+        }
+    }
+
+    private static void renderGuardianBeam(PoseStack poseStack, VertexConsumer consumer, LivingEntity attacker, Entity target, Vec3 cameraPos, ClientBattleState.GuardianBeamAnimation beam, float partialTick) {
+        float attackScale = beam.attackScale(partialTick);
+        float attackTime = beam.attackTime(partialTick);
+        float textureOffset = attackTime * 0.5F % 1.0F;
+        float eyeHeight = attacker.getEyeHeight();
+        Vec3 targetPos = new Vec3(
+                Mth.lerp(partialTick, target.xOld, target.getX()),
+                Mth.lerp(partialTick, target.yOld, target.getY()) + target.getBbHeight() * 0.5D,
+                Mth.lerp(partialTick, target.zOld, target.getZ()));
+        Vec3 attackerPos = new Vec3(
+                Mth.lerp(partialTick, attacker.xOld, attacker.getX()),
+                Mth.lerp(partialTick, attacker.yOld, attacker.getY()) + eyeHeight,
+                Mth.lerp(partialTick, attacker.zOld, attacker.getZ()));
+        Vec3 direction = targetPos.subtract(attackerPos);
+        float length = (float) (direction.length() + 1.0D);
+        if (length <= 0.05F) {
+            return;
+        }
+        direction = direction.normalize();
+        float xRotation = (float) Math.acos(direction.y);
+        float yRotation = (float) Math.atan2(direction.z, direction.x);
+        poseStack.pushPose();
+        poseStack.translate(attackerPos.x - cameraPos.x, attackerPos.y - cameraPos.y, attackerPos.z - cameraPos.z);
+        poseStack.mulPose(Axis.YP.rotationDegrees(((float) (Math.PI / 2.0D) - yRotation) * (180.0F / (float) Math.PI)));
+        poseStack.mulPose(Axis.XP.rotationDegrees(xRotation * (180.0F / (float) Math.PI)));
+        float scroll = attackTime * 0.05F * -1.5F;
+        float colorScale = attackScale * attackScale;
+        int red = 64 + (int) (colorScale * 191.0F);
+        int green = 32 + (int) (colorScale * 191.0F);
+        int blue = 128 - (int) (colorScale * 64.0F);
+        float wide = 0.282F;
+        float narrow = 0.2F;
+        float x0 = Mth.cos(scroll + (float) Math.PI) * narrow;
+        float z0 = Mth.sin(scroll + (float) Math.PI) * narrow;
+        float x1 = Mth.cos(scroll) * narrow;
+        float z1 = Mth.sin(scroll) * narrow;
+        float x2 = Mth.cos(scroll + (float) (Math.PI / 2.0D)) * narrow;
+        float z2 = Mth.sin(scroll + (float) (Math.PI / 2.0D)) * narrow;
+        float x3 = Mth.cos(scroll + (float) (Math.PI * 3.0D / 2.0D)) * narrow;
+        float z3 = Mth.sin(scroll + (float) (Math.PI * 3.0D / 2.0D)) * narrow;
+        float x4 = Mth.cos(scroll + (float) (Math.PI * 3.0D / 4.0D)) * wide;
+        float z4 = Mth.sin(scroll + (float) (Math.PI * 3.0D / 4.0D)) * wide;
+        float x5 = Mth.cos(scroll + (float) (Math.PI / 4.0D)) * wide;
+        float z5 = Mth.sin(scroll + (float) (Math.PI / 4.0D)) * wide;
+        float x6 = Mth.cos(scroll + (float) (Math.PI * 5.0D / 4.0D)) * wide;
+        float z6 = Mth.sin(scroll + (float) (Math.PI * 5.0D / 4.0D)) * wide;
+        float x7 = Mth.cos(scroll + (float) (Math.PI * 7.0D / 4.0D)) * wide;
+        float z7 = Mth.sin(scroll + (float) (Math.PI * 7.0D / 4.0D)) * wide;
+        float v0 = -1.0F + textureOffset;
+        float v1 = length * 2.5F + v0;
+        PoseStack.Pose pose = poseStack.last();
+        vertex(consumer, pose, x0, length, z0, red, green, blue, 0.4999F, v1);
+        vertex(consumer, pose, x0, 0.0F, z0, red, green, blue, 0.4999F, v0);
+        vertex(consumer, pose, x1, 0.0F, z1, red, green, blue, 0.0F, v0);
+        vertex(consumer, pose, x1, length, z1, red, green, blue, 0.0F, v1);
+        vertex(consumer, pose, x2, length, z2, red, green, blue, 0.4999F, v1);
+        vertex(consumer, pose, x2, 0.0F, z2, red, green, blue, 0.4999F, v0);
+        vertex(consumer, pose, x3, 0.0F, z3, red, green, blue, 0.0F, v0);
+        vertex(consumer, pose, x3, length, z3, red, green, blue, 0.0F, v1);
+        float capV = attacker.tickCount % 2 == 0 ? 0.5F : 0.0F;
+        vertex(consumer, pose, x4, length, z4, red, green, blue, 0.5F, capV + 0.5F);
+        vertex(consumer, pose, x5, length, z5, red, green, blue, 1.0F, capV + 0.5F);
+        vertex(consumer, pose, x7, length, z7, red, green, blue, 1.0F, capV);
+        vertex(consumer, pose, x6, length, z6, red, green, blue, 0.5F, capV);
+        poseStack.popPose();
+    }
+
+    private static void vertex(VertexConsumer consumer, PoseStack.Pose pose, float x, float y, float z, int red, int green, int blue, float u, float v) {
+        consumer.addVertex(pose, x, y, z)
+                .setColor(red, green, blue, 255)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(LightTexture.FULL_BRIGHT)
+                .setNormal(pose, 0.0F, 1.0F, 0.0F);
+    }
+
     private static void drawBar(Font font, Matrix4f matrix, MultiBufferSource bufferSource, BattleCombatantSnapshot combatant, int packedLight) {
         int backgroundWidth = 90;
         int backgroundHeight = 16;
@@ -145,8 +241,13 @@ public final class BattleWorldOverlay {
         int block = 0;
         int negative = 0;
         int positive = 0;
+        int paralysis = Math.max(0, CardRenderHelper.effectAmount(enemy, BattleEffectType.PARALYSIS));
         for (CardInstance card : intentCards) {
-            attack += Math.max(0, card.hasAttack() ? CardRenderHelper.previewAttack(card, enemy, snapshot.player()) : 0);
+            boolean paralyzedAttack = paralysis > 0 && card.hasAttack();
+            attack += Math.max(0, card.hasAttack() ? CardRenderHelper.previewAttack(card, enemy, snapshot.player(), paralyzedAttack) : 0);
+            if (paralyzedAttack) {
+                paralysis--;
+            }
             for (CardEffect effect : card.effects()) {
                 if (effect.kind() == CardEffectKind.BLOCK && effect.target().targetsSelf()) {
                     block += Math.max(0, effect.amount()) * Math.max(1, effect.count());
@@ -210,6 +311,7 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.THORNS
                 || kind == CardEffectKind.FUSE;
     }
 
@@ -218,6 +320,8 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WITHER
+                || kind == CardEffectKind.TIDAL_EROSION
+                || kind == CardEffectKind.PARALYSIS
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
                 || kind == CardEffectKind.GLOWING;

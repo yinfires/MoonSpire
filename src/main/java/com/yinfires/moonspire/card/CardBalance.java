@@ -11,6 +11,7 @@ public final class CardBalance {
     public static final float MAX_SPEED_DAMAGE_BONUS = 1.0F;
     public static final float MAX_SPEED_DAMAGE_REDUCTION = 0.5F;
     public static final int SELF_DESTRUCT_DAMAGE = 30;
+    public static final int PARALYSIS_ATTACK_DAMAGE_REDUCTION = 5;
 
     private CardBalance() {
     }

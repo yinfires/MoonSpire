@@ -146,6 +146,10 @@ public record BattleVisualEvent(
         MELEE_LUNGE,
         BOW_DRAW,
         CROSSBOW_LOAD,
-        SELF_DESTRUCT
+        SELF_DESTRUCT,
+        TRIDENT_THROW,
+        CHANNELING_TRIDENT_THROW,
+        RIPTIDE_RUSH,
+        GUARDIAN_BEAM
     }
 }

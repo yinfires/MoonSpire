@@ -139,8 +139,18 @@ public class CombatantState {
         roundSpeed = Math.max(1, baseSpeed + random.nextInt(5) - 2);
     }
 
-    public void addDefense(int amount) {
-        defense += Math.max(0, amount);
+    public int addDefense(int amount) {
+        int gain = Math.max(0, amount);
+        if (gain <= 0) {
+            return 0;
+        }
+        int eroded = Math.min(gain, Math.max(0, effectAmount(BattleEffectType.TIDAL_EROSION)));
+        if (eroded > 0) {
+            reduceEffect(BattleEffectType.TIDAL_EROSION, eroded);
+        }
+        int actualGain = Math.max(0, gain - eroded);
+        defense += actualGain;
+        return actualGain;
     }
 
     public void clearDefense() {
@@ -237,6 +247,7 @@ public class CombatantState {
             }
         }
         reduceEffect(BattleEffectType.WITHER, 1);
+        reduceEffect(BattleEffectType.TIDAL_EROSION, 1);
         syncEntityGlowing();
     }
 

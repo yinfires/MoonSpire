@@ -11,6 +11,9 @@ public enum BattleEffectType {
     BURN("burn", "effect.moonspire.burn.name", "effect.moonspire.burn.description", "effect.moonspire.burn.active_description", "gui/effects/burn.png"),
     WITHER("wither", "effect.moonspire.wither.name", "effect.moonspire.wither.description", "effect.moonspire.wither.active_description", "gui/effects/wither.png"),
     FUSE("fuse", "effect.moonspire.fuse.name", "effect.moonspire.fuse.description", "effect.moonspire.fuse.active_description", "gui/effects/fuse.png"),
+    TIDAL_EROSION("tidal_erosion", "effect.moonspire.tidal_erosion.name", "effect.moonspire.tidal_erosion.description", "effect.moonspire.tidal_erosion.active_description", "gui/effects/tidal_erosion.png"),
+    PARALYSIS("paralysis", "effect.moonspire.paralysis.name", "effect.moonspire.paralysis.description", "effect.moonspire.paralysis.active_description", "gui/effects/paralysis.png"),
+    THORNS("thorns", "effect.moonspire.thorns.name", "effect.moonspire.thorns.description", "effect.moonspire.thorns.active_description", "gui/effects/thorns.png"),
     WEAKNESS("weakness", "effect.moonspire.weakness.name", "effect.moonspire.weakness.description", "effect.moonspire.weakness.active_description", "gui/effects/weakness.png"),
     SLOWNESS("slowness", "effect.moonspire.slowness.name", "effect.moonspire.slowness.description", "effect.moonspire.slowness.active_description", "gui/effects/slowness.png"),
     ABUNDANT_ARROWS("abundant_arrows", "effect.moonspire.abundant_arrows.name", "effect.moonspire.abundant_arrows.description", "effect.moonspire.abundant_arrows.active_description", "gui/effects/abundant_arrows.png");

@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.yinfires.moonspire.MoonSpire;
 import com.yinfires.moonspire.battle.BattlePhase;
@@ -24,14 +25,17 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -43,10 +47,14 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
+import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import com.mojang.math.Axis;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -82,6 +90,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryHandState> TEMP_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
+    private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
     private static final List<ScheduledSelfDestructExplosion> SCHEDULED_SELF_DESTRUCT_EXPLOSIONS = new ArrayList<>();
@@ -95,6 +104,7 @@ public final class ClientEvents {
         modEventBus.addListener(ModBus::registerKeys);
         modEventBus.addListener(ModBus::registerHud);
         modEventBus.addListener(ModBus::addSelfDestructWhiteFlashLayers);
+        modEventBus.addListener(ModBus::addRiptideLayers);
     }
 
     public static final class ModBus {
@@ -126,6 +136,17 @@ public final class ClientEvents {
         private static void addSelfDestructWhiteFlashLayer(net.minecraft.client.renderer.entity.EntityRenderer<?> renderer) {
             if (renderer instanceof LivingEntityRenderer livingRenderer) {
                 livingRenderer.addLayer(new SelfDestructWhiteFlashLayer(livingRenderer));
+            }
+        }
+
+        public static void addRiptideLayers(EntityRenderersEvent.AddLayers event) {
+            addDrownedRiptideLayer(event.getRenderer(EntityType.DROWNED), event);
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static void addDrownedRiptideLayer(net.minecraft.client.renderer.entity.EntityRenderer<?> renderer, EntityRenderersEvent.AddLayers event) {
+            if (renderer instanceof LivingEntityRenderer livingRenderer) {
+                livingRenderer.addLayer(new BattleRiptideLayer(livingRenderer, event.getEntityModels()));
             }
         }
     }
@@ -171,6 +192,7 @@ public final class ClientEvents {
                 syncVisualHandOverrides(minecraft);
                 tickScheduledBattleSounds(minecraft);
                 tickScheduledSelfDestructExplosions(minecraft);
+                syncVisualRiptideStates(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
             }
@@ -266,7 +288,7 @@ public final class ClientEvents {
         @SubscribeEvent
         public static void renderBattleWorldOverlay(RenderLevelStageEvent event) {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
-                BattleWorldOverlay.renderLevel(event.getPoseStack(), event.getCamera(), Minecraft.getInstance().renderBuffers().bufferSource());
+                BattleWorldOverlay.renderLevel(event.getPoseStack(), event.getCamera(), Minecraft.getInstance().renderBuffers().bufferSource(), event.getPartialTick().getGameTimeDeltaPartialTick(true));
             }
         }
 
@@ -473,9 +495,11 @@ public final class ClientEvents {
             }
             if (entity instanceof AbstractSkeleton skeleton && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.BOW_DRAW) {
                 skeleton.setAggressive(true);
+            } else if (entity instanceof Drowned drowned && ClientBattleState.visualDrownedTridentPose(entity.getId())) {
+                drowned.setAggressive(true);
             }
             ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
-            if (ClientBattleState.visualUsingItem(entity.getId())) {
+            if (ClientBattleState.visualUsingItem(entity.getId()) && !useDrownedTridentPose(entity)) {
                 if (!entity.isUsingItem()) {
                     entity.startUsingItem(InteractionHand.MAIN_HAND);
                 }
@@ -483,6 +507,62 @@ public final class ClientEvents {
                 state.startedUsing = true;
             } else if (!ClientBattleState.visualUsingItem(entity.getId()) && state.startedUsing && entity.isUsingItem()) {
                 clearVisualUseItemState(entity);
+            }
+        }
+
+        private static boolean useDrownedTridentPose(LivingEntity entity) {
+            return entity instanceof Drowned && ClientBattleState.visualDrownedTridentPose(entity.getId());
+        }
+
+        private static void syncVisualRiptideStates(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_RIPTIDE_STATES.clear();
+                return;
+            }
+            Set<Integer> activeRiptides = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualRiptideState(minecraft.level.getEntity(combatant.entityId()), activeRiptides);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualRiptideState(minecraft.level.getEntity(combatant.entityId()), activeRiptides);
+            }
+            for (int entityId : VISUAL_RIPTIDE_STATES.keySet().toArray(Integer[]::new)) {
+                if (!activeRiptides.contains(entityId)) {
+                    if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                        restoreVisualRiptideState(living);
+                    } else {
+                        VISUAL_RIPTIDE_STATES.remove(entityId);
+                    }
+                }
+            }
+        }
+
+        private static void syncVisualRiptideState(Entity entity, Set<Integer> activeRiptides) {
+            if (!(entity instanceof LivingEntity living)) {
+                return;
+            }
+            int spinTicks = ClientBattleState.visualRiptideSpinTicks(living.getId());
+            if (spinTicks <= 0) {
+                restoreVisualRiptideState(living);
+                return;
+            }
+            activeRiptides.add(living.getId());
+            ItemStack stack = ClientBattleState.visualMainHandOverride(living.getId());
+            if (stack.isEmpty()) {
+                stack = new ItemStack(Items.TRIDENT);
+            }
+            VISUAL_RIPTIDE_STATES.computeIfAbsent(living.getId(), id -> VisualRiptideState.capture(living));
+            living.autoSpinAttackTicks = 0;
+            living.autoSpinAttackDmg = 0.0F;
+            living.autoSpinAttackItemStack = stack.copy();
+            living.setLivingEntityFlag(4, true);
+            living.setPose(Pose.SPIN_ATTACK);
+        }
+
+        private static void restoreVisualRiptideState(LivingEntity living) {
+            VisualRiptideState state = VISUAL_RIPTIDE_STATES.remove(living.getId());
+            if (state != null) {
+                state.restore(living);
             }
         }
 
@@ -526,6 +606,7 @@ public final class ClientEvents {
             if (state != null) {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
                 state.restoreAggressive(entity);
+                restoreVisualRiptideState(entity);
                 if (state.startedUsing && entity.isUsingItem()) {
                     clearVisualUseItemState(entity);
                 }
@@ -592,6 +673,11 @@ public final class ClientEvents {
                         restoreArmPose(living);
                     }
                 }
+                for (int entityId : VISUAL_RIPTIDE_STATES.keySet().toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
+                        restoreVisualRiptideState(living);
+                    }
+                }
                 for (var combatant : ClientBattleState.snapshot().players()) {
                     clearEntityHandAnimation(minecraft.level.getEntity(combatant.entityId()), stopUsingItems);
                 }
@@ -603,6 +689,7 @@ public final class ClientEvents {
             TEMP_MAIN_HANDS.clear();
             VISUAL_MAIN_HANDS.clear();
             TEMP_ARM_POSES.clear();
+            VISUAL_RIPTIDE_STATES.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
             SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();
@@ -709,6 +796,15 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_MIDDLE.value(), Math.max(1, event.animationTicks() / 2), 0.5F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_END.value(), Math.max(1, event.animationTicks()), 0.5F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_SHOOT, Math.max(1, event.animationTicks() + 1), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.TRIDENT_THROW) {
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, event.animationTicks()), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW) {
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, event.animationTicks()), 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THUNDER.value(), Math.max(1, event.animationTicks() + 8), 1.2F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
+                scheduleBattleSound(attacker, SoundEvents.GUARDIAN_ATTACK, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.SELF_DESTRUCT) {
                 scheduleBattleSound(attacker, SoundEvents.CREEPER_PRIMED, 0, 1.0F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.GENERIC_EXPLODE.value(), Math.max(1, event.animationTicks()), 1.4F, 0.9F);
@@ -780,18 +876,49 @@ public final class ClientEvents {
         }
 
         private static TemporaryHandState capture(LivingEntity entity) {
-            Boolean aggressive = entity instanceof AbstractSkeleton skeleton ? skeleton.isAggressive() : null;
+            Boolean aggressive = entity instanceof net.minecraft.world.entity.Mob mob ? mob.isAggressive() : null;
             return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive);
         }
 
         private void restoreAggressive(LivingEntity entity) {
-            if (originalAggressive != null && entity instanceof AbstractSkeleton skeleton) {
-                skeleton.setAggressive(originalAggressive);
+            if (originalAggressive != null && entity instanceof net.minecraft.world.entity.Mob mob) {
+                mob.setAggressive(originalAggressive);
             }
         }
     }
 
     private record TemporaryArmPoseState(HumanoidModel.ArmPose leftArmPose, HumanoidModel.ArmPose rightArmPose) {
+    }
+
+    private static final class VisualRiptideState {
+        private final boolean originalSpinFlag;
+        private final int originalAutoSpinAttackTicks;
+        private final float originalAutoSpinAttackDmg;
+        private final ItemStack originalAutoSpinAttackItemStack;
+        private final Pose originalPose;
+
+        private VisualRiptideState(boolean originalSpinFlag, int originalAutoSpinAttackTicks, float originalAutoSpinAttackDmg, ItemStack originalAutoSpinAttackItemStack, Pose originalPose) {
+            this.originalSpinFlag = originalSpinFlag;
+            this.originalAutoSpinAttackTicks = originalAutoSpinAttackTicks;
+            this.originalAutoSpinAttackDmg = originalAutoSpinAttackDmg;
+            this.originalAutoSpinAttackItemStack = originalAutoSpinAttackItemStack;
+            this.originalPose = originalPose;
+        }
+
+        private static VisualRiptideState capture(LivingEntity entity) {
+            ItemStack stack = entity.autoSpinAttackItemStack == null ? ItemStack.EMPTY : entity.autoSpinAttackItemStack.copy();
+            return new VisualRiptideState(entity.isAutoSpinAttack(), entity.autoSpinAttackTicks, entity.autoSpinAttackDmg, stack, entity.getPose());
+        }
+
+        private void restore(LivingEntity entity) {
+            entity.autoSpinAttackTicks = originalAutoSpinAttackTicks;
+            entity.autoSpinAttackDmg = originalAutoSpinAttackDmg;
+            entity.autoSpinAttackItemStack = originalAutoSpinAttackItemStack.isEmpty() ? null : originalAutoSpinAttackItemStack.copy();
+            entity.setLivingEntityFlag(4, originalSpinFlag);
+            if (!entity.isAutoSpinAttack() && entity.getPose() == Pose.SPIN_ATTACK) {
+                entity.setPose(originalPose == Pose.SPIN_ATTACK ? Pose.STANDING : originalPose);
+            }
+        }
     }
 
     private static final class ScheduledBattleSound {
@@ -833,6 +960,34 @@ public final class ClientEvents {
             }
             VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityTranslucent(getTextureLocation(livingEntity), false));
             getParentModel().renderToBuffer(poseStack, consumer, packedLight, OverlayTexture.pack(progress, false), 0xFFFFFFFF);
+        }
+    }
+
+    private static final class BattleRiptideLayer<T extends LivingEntity, M extends EntityModel<T>> extends net.minecraft.client.renderer.entity.layers.RenderLayer<T, M> {
+        private static final ResourceLocation TEXTURE = ResourceLocation.withDefaultNamespace("textures/entity/trident_riptide.png");
+        private final ModelPart box;
+
+        private BattleRiptideLayer(net.minecraft.client.renderer.entity.RenderLayerParent<T, M> renderer, net.minecraft.client.model.geom.EntityModelSet models) {
+            super(renderer);
+            box = models.bakeLayer(ModelLayers.PLAYER_SPIN_ATTACK).getChild("box");
+        }
+
+        @Override
+        public void render(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, T livingEntity, float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks, float netHeadYaw, float headPitch) {
+            if (!livingEntity.isAutoSpinAttack() || !ClientBattleState.visualRiptideSpin(livingEntity.getId())) {
+                return;
+            }
+            VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityCutoutNoCull(TEXTURE));
+            for (int i = 0; i < 3; i++) {
+                poseStack.pushPose();
+                float rotation = ageInTicks * -(45 + i * 5);
+                poseStack.mulPose(Axis.YP.rotationDegrees(rotation));
+                float scale = 0.75F * i;
+                poseStack.scale(scale, scale, scale);
+                poseStack.translate(0.0F, -0.2F + 0.6F * i, 0.0F);
+                box.render(poseStack, consumer, packedLight, OverlayTexture.NO_OVERLAY);
+                poseStack.popPose();
+            }
         }
     }
 

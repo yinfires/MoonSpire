@@ -19,14 +19,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
@@ -38,6 +40,11 @@ import net.minecraft.world.phys.Vec3;
 public final class ClientBattleState {
     private static final int MELEE_LUNGE_TICKS = 8;
     private static final int MELEE_HIT_PAUSE_TICKS = 6;
+    static final int RIPTIDE_CHARGE_TICKS = 16;
+    private static final int RIPTIDE_RUSH_TICKS = 10;
+    private static final int RIPTIDE_HIT_PAUSE_TICKS = 6;
+    private static final int RIPTIDE_SPIN_TICKS = RIPTIDE_RUSH_TICKS + RIPTIDE_HIT_PAUSE_TICKS;
+    private static final double DEFAULT_RIPTIDE_CENTER_Y_OFFSET = 0.9D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
     private static final double POUNCE_JUMP_HEIGHT = 1.0D;
     private static final double LUNGE_REACH = 10.0D;
@@ -79,6 +86,7 @@ public final class ClientBattleState {
     };
     private static final List<DamageNumber> damageNumbers = new ArrayList<>();
     private static final List<BlockGainAnimation> blockGainAnimations = new ArrayList<>();
+    private static final List<GuardianBeamAnimation> guardianBeamAnimations = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
     private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
@@ -134,6 +142,7 @@ public final class ClientBattleState {
             hoveredEntityIds.clear();
             damageNumbers.clear();
             blockGainAnimations.clear();
+            guardianBeamAnimations.clear();
             pendingVisualEvents.clear();
             clearVisualStates();
             clearFakeDeathStarts();
@@ -328,7 +337,6 @@ public final class ClientBattleState {
         if (cameraAnchor == null || cameraAnchor.level() != minecraft.level) {
             cameraAnchor = new CameraAnchor(minecraft.level);
         }
-        cameraAnchorEyeHeight = minecraft.player == null ? 0.0F : minecraft.player.getEyeHeight();
         cameraAnchor.refreshDimensions();
         Vec3 center = cameraCenter();
         cameraAnchor.setPos(center.x, center.y - cameraAnchorEyeHeight, center.z);
@@ -400,6 +408,10 @@ public final class ClientBattleState {
         return blockGainAnimations;
     }
 
+    public static List<GuardianBeamAnimation> guardianBeamAnimations() {
+        return guardianBeamAnimations;
+    }
+
     public static List<BattleVisualEvent> consumeVisualEvents() {
         List<BattleVisualEvent> events = new ArrayList<>();
         Iterator<ScheduledVisualEvent> iterator = pendingVisualEvents.iterator();
@@ -411,12 +423,15 @@ public final class ClientBattleState {
             }
             BattleVisualEvent event = scheduled.event;
             VisualState attackerVisual = visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState());
-            attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event), isPounceEvent(event));
+            attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event), isPounceEvent(event), riptideCenterYOffset(event));
             if (event.healthDamage() > 0) {
                 visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash(event.knockbackDelta());
             }
             if (event.gainedBlock() > 0) {
                 blockGainAnimations.add(new BlockGainAnimation(event.targetId(), System.nanoTime()));
+            }
+            if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
+                guardianBeamAnimations.add(new GuardianBeamAnimation(event.attackerId(), event.targetId(), Math.max(1, event.animationTicks())));
             }
             updatePlayedCardDisplay(snapshot, event);
             events.add(event);
@@ -485,9 +500,24 @@ public final class ClientBattleState {
         return state != null && state.usingTicks() > 0;
     }
 
+    public static boolean visualDrownedTridentPose(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.drownedTridentPose();
+    }
+
     public static int visualTicksUsingItem(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? 0 : state.ticksUsingItem();
+    }
+
+    public static boolean visualRiptideSpin(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.riptideSpinTicks() > 0;
+    }
+
+    public static int visualRiptideSpinTicks(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.riptideSpinTicks();
     }
 
     public static boolean visualMeleeLunge(int entityId) {
@@ -538,6 +568,7 @@ public final class ClientBattleState {
 
     public static void clearVisualStates() {
         visualStates.clear();
+        guardianBeamAnimations.clear();
     }
 
     public static int fakeDeathRenderTicks(int entityId) {
@@ -576,6 +607,14 @@ public final class ClientBattleState {
         if (!tickVisualStates) {
             return;
         }
+        Iterator<GuardianBeamAnimation> beamIterator = guardianBeamAnimations.iterator();
+        while (beamIterator.hasNext()) {
+            GuardianBeamAnimation animation = beamIterator.next();
+            animation.tick(snapshot);
+            if (animation.done()) {
+                beamIterator.remove();
+            }
+        }
         Iterator<VisualState> visualIterator = visualStates.values().iterator();
         while (visualIterator.hasNext()) {
             VisualState state = visualIterator.next();
@@ -605,7 +644,7 @@ public final class ClientBattleState {
         }
         previousCameraEntity = minecraft.getCameraEntity();
         lockedCameraCenter = null;
-        cameraAnchorEyeHeight = 0.0F;
+        cameraAnchorEyeHeight = minecraft.player == null ? 0.0F : minecraft.player.getEyeHeight();
         updateCameraAnchor(minecraft);
     }
 
@@ -709,8 +748,19 @@ public final class ClientBattleState {
                 && "builtin_monster_pounce".equals(event.playedCard().cardId());
     }
 
+    private static double riptideCenterYOffset(BattleVisualEvent event) {
+        if (event == null || event.animationType() != BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
+            return 0.0D;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null && minecraft.level.getEntity(event.attackerId()) instanceof Entity attacker) {
+            return Math.max(0.1D, attacker.getBbHeight() * 0.5D);
+        }
+        return DEFAULT_RIPTIDE_CENTER_Y_OFFSET;
+    }
+
     private static Vec3 lungeStart(BattleVisualEvent event) {
-        if (event == null || event.animationType() != BattleVisualEvent.AnimationType.MELEE_LUNGE || event.animationTicks() <= 0) {
+        if (event == null || !usesMovementAnimation(event.animationType()) || event.animationTicks() <= 0) {
             return null;
         }
         if (event.animationStart() != null) {
@@ -724,7 +774,7 @@ public final class ClientBattleState {
     }
 
     private static Vec3 lungeStrike(BattleVisualEvent event) {
-        if (event == null || event.animationType() != BattleVisualEvent.AnimationType.MELEE_LUNGE || event.animationTicks() <= 0) {
+        if (event == null || !usesMovementAnimation(event.animationType()) || event.animationTicks() <= 0) {
             return null;
         }
         if (event.animationStrike() != null) {
@@ -744,6 +794,90 @@ public final class ClientBattleState {
         return start.add(normalized.scale(distance));
     }
 
+    private static boolean usesMovementAnimation(BattleVisualEvent.AnimationType animationType) {
+        return animationType == BattleVisualEvent.AnimationType.MELEE_LUNGE
+                || animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH;
+    }
+
+    public static final class GuardianBeamAnimation {
+        private final int attackerId;
+        private final int targetId;
+        private final int totalTicks;
+        private int age;
+
+        private GuardianBeamAnimation(int attackerId, int targetId, int totalTicks) {
+            this.attackerId = attackerId;
+            this.targetId = targetId;
+            this.totalTicks = Math.max(1, totalTicks);
+        }
+
+        public int attackerId() {
+            return attackerId;
+        }
+
+        public int targetId() {
+            return targetId;
+        }
+
+        public int age() {
+            return age;
+        }
+
+        public int totalTicks() {
+            return totalTicks;
+        }
+
+        public float attackTime(float partialTick) {
+            return age + Math.max(0.0F, partialTick);
+        }
+
+        public float attackScale(float partialTick) {
+            return Math.max(0.0F, Math.min(1.0F, attackTime(partialTick) / (float) totalTicks));
+        }
+
+        private void tick(BattleSnapshot snapshot) {
+            spawnBubbles(snapshot);
+            age++;
+        }
+
+        private boolean done() {
+            return age > totalTicks;
+        }
+
+        private void spawnBubbles(BattleSnapshot snapshot) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.level == null) {
+                return;
+            }
+            Entity attacker = minecraft.level.getEntity(attackerId);
+            Entity target = minecraft.level.getEntity(targetId);
+            if (!(attacker instanceof LivingEntity livingAttacker) || target == null || snapshot.combatant(attackerId) == null || snapshot.combatant(targetId) == null) {
+                return;
+            }
+            Vec3 start = new Vec3(livingAttacker.getX(), livingAttacker.getEyeY(), livingAttacker.getZ());
+            Vec3 end = new Vec3(target.getX(), target.getY(0.5D), target.getZ());
+            Vec3 delta = end.subtract(start);
+            double distance = delta.length();
+            if (distance <= 0.0001D) {
+                return;
+            }
+            Vec3 direction = delta.scale(1.0D / distance);
+            double scale = attackScale(0.0F);
+            double position = livingAttacker.getRandom().nextDouble();
+            while (position < distance) {
+                position += 1.8D - scale + livingAttacker.getRandom().nextDouble() * (1.7D - scale);
+                minecraft.level.addParticle(
+                        ParticleTypes.BUBBLE,
+                        start.x + direction.x * position,
+                        start.y + direction.y * position,
+                        start.z + direction.z * position,
+                        0.0D,
+                        0.0D,
+                        0.0D);
+            }
+        }
+    }
+
     public static final class VisualState {
         private ItemStack itemStack = ItemStack.EMPTY;
         private BattleVisualEvent.AnimationType animationType = BattleVisualEvent.AnimationType.NONE;
@@ -760,6 +894,7 @@ public final class ClientBattleState {
         private Vec3 lungeStrike = Vec3.ZERO;
         private Vec3 previousLungePosition = Vec3.ZERO;
         private Vec3 currentLungePosition = Vec3.ZERO;
+        private double riptideCenterYOffset = DEFAULT_RIPTIDE_CENTER_Y_OFFSET;
         private boolean pounceLunge;
         private float walkSpeed;
         private int hurtTicks;
@@ -788,6 +923,28 @@ public final class ClientBattleState {
             return usingTicks <= 0 ? 0 : usingAge;
         }
 
+        public boolean drownedTridentPose() {
+            if (itemTicks <= 0 || !itemStack.is(Items.TRIDENT)) {
+                return false;
+            }
+            if (animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
+                return lungeTicks > 0 && lungeAge < RIPTIDE_CHARGE_TICKS;
+            }
+            return animationType == BattleVisualEvent.AnimationType.TRIDENT_THROW
+                    || animationType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW;
+        }
+
+        public int riptideSpinTicks() {
+            if (animationType != BattleVisualEvent.AnimationType.RIPTIDE_RUSH || lungeTicks <= 0) {
+                return 0;
+            }
+            if (lungeAge < RIPTIDE_CHARGE_TICKS) {
+                return 0;
+            }
+            int spinTicks = RIPTIDE_SPIN_TICKS - (lungeAge - RIPTIDE_CHARGE_TICKS);
+            return Math.max(0, Math.min(RIPTIDE_SPIN_TICKS, spinTicks));
+        }
+
         public int lungeTicks() {
             return lungeTicks;
         }
@@ -803,14 +960,20 @@ public final class ClientBattleState {
             return animationType;
         }
 
-        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 lungeStart, Vec3 lungeStrike, boolean pounceLunge) {
+        private void showItem(ItemStack stack, BattleVisualEvent.AnimationType animationType, int animationTicks, Vec3 lungeStart, Vec3 lungeStrike, boolean pounceLunge, double riptideCenterYOffset) {
             BattleVisualEvent.AnimationType nextType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
-            if (nextType == BattleVisualEvent.AnimationType.MELEE_LUNGE && animationTicks > 0 && lungeStart != null && lungeStrike != null) {
-                lungeTicks = Math.max(1, Math.max(MELEE_LUNGE_TICKS, animationTicks) + MELEE_HIT_PAUSE_TICKS);
+            if (usesMovementAnimation(nextType) && animationTicks > 0 && lungeStart != null && lungeStrike != null) {
+                int minimumTicks = nextType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH
+                        ? RIPTIDE_CHARGE_TICKS + RIPTIDE_RUSH_TICKS + RIPTIDE_HIT_PAUSE_TICKS
+                        : MELEE_LUNGE_TICKS + MELEE_HIT_PAUSE_TICKS;
+                lungeTicks = Math.max(1, Math.max(minimumTicks, animationTicks));
                 lungeAge = 0;
                 this.lungeStart = lungeStart;
                 this.lungeStrike = lungeStrike;
-                this.pounceLunge = pounceLunge;
+                this.pounceLunge = nextType == BattleVisualEvent.AnimationType.MELEE_LUNGE && pounceLunge;
+                this.riptideCenterYOffset = nextType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH
+                        ? Math.max(0.1D, riptideCenterYOffset)
+                        : DEFAULT_RIPTIDE_CENTER_Y_OFFSET;
                 previousLungePosition = lungeStart;
                 currentLungePosition = lungeStart;
                 lungeSettleTicks = 0;
@@ -827,8 +990,14 @@ public final class ClientBattleState {
                 itemStack = stack.copy();
                 itemTicks = Math.max(18, animationTicks + 8);
                 this.animationType = nextType;
-                if (nextType == BattleVisualEvent.AnimationType.BOW_DRAW || nextType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
+                if (nextType == BattleVisualEvent.AnimationType.BOW_DRAW
+                        || nextType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
+                        || nextType == BattleVisualEvent.AnimationType.TRIDENT_THROW
+                        || nextType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW) {
                     usingTicks = Math.max(usingTicks, Math.max(1, animationTicks));
+                    usingAge = 0;
+                } else if (nextType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
+                    usingTicks = Math.max(usingTicks, RIPTIDE_CHARGE_TICKS);
                     usingAge = 0;
                 }
             }
@@ -843,6 +1012,21 @@ public final class ClientBattleState {
 
         private Vec3 lungePosition(float partialTick) {
             double age = Math.max(0.0D, lungeAge + Math.max(0.0F, partialTick));
+            if (animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
+                if (age <= RIPTIDE_CHARGE_TICKS) {
+                    return lungeStart;
+                }
+                Vec3 riptideStart = riptideVisualPosition(lungeStart);
+                Vec3 riptideStrike = riptideVisualPosition(lungeStrike);
+                age -= RIPTIDE_CHARGE_TICKS;
+                if (age <= RIPTIDE_RUSH_TICKS) {
+                    return lerp(riptideStart, riptideStrike, age / RIPTIDE_RUSH_TICKS);
+                }
+                if (age <= RIPTIDE_RUSH_TICKS + RIPTIDE_HIT_PAUSE_TICKS) {
+                    return riptideStrike;
+                }
+                return riptideStrike;
+            }
             if (age <= MELEE_LUNGE_TICKS) {
                 return lungePosition(age / MELEE_LUNGE_TICKS);
             }
@@ -877,6 +1061,10 @@ public final class ClientBattleState {
             }
             double t = Math.max(0.0D, Math.min(1.0D, progress));
             return position.add(0.0D, Math.sin(Math.PI * t) * POUNCE_JUMP_HEIGHT, 0.0D);
+        }
+
+        private Vec3 riptideVisualPosition(Vec3 footPosition) {
+            return footPosition.add(0.0D, riptideCenterYOffset, 0.0D);
         }
 
         private Vec3 knockbackOffset(Vec3 renderedPosition, float partialTick) {

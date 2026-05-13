@@ -43,6 +43,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
                 || kind == Kind.REGENERATION
                 || kind == Kind.HASTE
                 || kind == Kind.FUSE
+                || kind == Kind.THORNS
                 || kind == Kind.DRAW_CARDS
                 || kind == Kind.GAIN_ENERGY
                 || kind == Kind.EXHAUST
@@ -85,6 +86,9 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         POISON,
         BURN,
         WITHER,
+        TIDAL_EROSION,
+        PARALYSIS,
+        THORNS,
         FUSE,
         WEAKNESS,
         SLOWNESS,
