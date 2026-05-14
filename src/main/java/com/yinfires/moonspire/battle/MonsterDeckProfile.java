@@ -38,6 +38,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_claw",
             "builtin_monster_rotten_guard",
             "builtin_monster_undead_power");
+    private static final List<String> VINDICATOR_DEFAULT_DECK = List.of(
+            "builtin_monster_axe_chop",
+            "builtin_monster_axe_chop",
+            "builtin_monster_axe_chop",
+            "builtin_monster_heavy_axe_blow",
+            "builtin_monster_heavy_axe_blow",
+            "builtin_monster_executioners_blow",
+            "builtin_monster_raised_axe_guard",
+            "builtin_monster_raised_axe_guard",
+            "builtin_monster_fanatic_might",
+            "builtin_monster_fanatic_might");
     private static final List<String> SKELETON_DEFAULT_DECK = List.of(
             "builtin_monster_bow_strike",
             "builtin_monster_sidestep",
@@ -210,6 +221,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.HUSK) {
             return cards(HUSK_DEFAULT_DECK);
         }
+        if (type == EntityType.VINDICATOR) {
+            return cards(VINDICATOR_DEFAULT_DECK);
+        }
         if (isZombieFamily(type)) {
             return cards(ZOMBIE_DEFAULT_DECK);
         }
@@ -249,6 +263,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.HUSK) {
             return HUSK_DEFAULT_DECK;
+        }
+        if (type == EntityType.VINDICATOR) {
+            return VINDICATOR_DEFAULT_DECK;
         }
         if (isZombieFamily(type)) {
             return ZOMBIE_DEFAULT_DECK;

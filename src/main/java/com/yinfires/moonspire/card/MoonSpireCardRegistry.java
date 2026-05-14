@@ -272,6 +272,13 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_undead_power", "card.moonspire.monster.undead_power.name", "", 3, 0, 0, List.of(
                         new CardEffect(CardEffectKind.STRENGTH, 2, CardTarget.SELF),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_axe_chop", "card.moonspire.monster.axe_chop.name", "", 1, 6, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_heavy_axe_blow", "card.moonspire.monster.heavy_axe_blow.name", "", 2, 10, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_executioners_blow", "card.moonspire.monster.executioners_blow.name", "", 3, 14, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_raised_axe_guard", "card.moonspire.monster.raised_axe_guard.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_fanatic_might", "card.moonspire.monster.fanatic_might.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.STRENGTH, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_lunge", "card.moonspire.monster.lunge.name", "", 2, 8, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bow_strike", "card.moonspire.monster.bow_strike.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY),

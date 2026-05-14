@@ -233,9 +233,6 @@ public class BattleScreen extends NoBlurScreen {
             } else if (modalInputBlocked) {
                 hoveredTarget = -1;
                 ClientBattleState.setHoveredEntityId(-1);
-            } else if (hoveredTarget == -1 && monsterIntentCardAt(mouseX, mouseY, snapshot)) {
-                hoveredTarget = currentIntentEntityId(snapshot);
-                ClientBattleState.setHoveredEntityId(hoveredTarget);
             } else {
                 ClientBattleState.setHoveredEntityId(hoveredTarget);
             }
@@ -769,11 +766,11 @@ public class BattleScreen extends NoBlurScreen {
 
     private int currentIntentEntityId(BattleSnapshot snapshot) {
         int hovered = ClientBattleState.hoveredEntityId();
-        if (snapshot.isEnemyEntity(hovered) && !combatantFakeDead(snapshot, hovered)) {
+        if (liveEnemy(snapshot, hovered)) {
             return hovered;
         }
         int selected = ClientBattleState.selectedTargetId();
-        if (snapshot.isEnemyEntity(selected) && !combatantFakeDead(snapshot, selected)) {
+        if (liveEnemy(snapshot, selected)) {
             return selected;
         }
         for (BattleCombatantSnapshot enemy : snapshot.enemies()) {
@@ -782,6 +779,10 @@ public class BattleScreen extends NoBlurScreen {
             }
         }
         return snapshot.monster().entityId();
+    }
+
+    private boolean liveEnemy(BattleSnapshot snapshot, int entityId) {
+        return snapshot.isEnemyEntity(entityId) && !combatantFakeDead(snapshot, entityId);
     }
 
     private List<CardInstance> intentCardsFor(BattleSnapshot snapshot, int enemyEntityId) {

@@ -60,13 +60,15 @@ public class BattleDeck {
         }
     }
 
-    public void applyAdditionalStartTurnDrawReduction(int drawReduction) {
+    public boolean applyAdditionalStartTurnDrawReduction(int drawReduction) {
         int reduction = Math.max(0, drawReduction);
         int additionalReduction = Math.max(0, reduction - lastStartTurnDrawReduction);
+        boolean changed = false;
         if (additionalReduction > 0) {
-            returnLastStartTurnDrawsToDrawPile(additionalReduction);
+            changed = returnLastStartTurnDrawsToDrawPile(additionalReduction) > 0;
         }
         lastStartTurnDrawReduction = Math.max(lastStartTurnDrawReduction, reduction);
+        return changed;
     }
 
     public void discardHand() {
@@ -120,7 +122,7 @@ public class BattleDeck {
         return drawnCards;
     }
 
-    private void returnLastStartTurnDrawsToDrawPile(int count) {
+    private int returnLastStartTurnDrawsToDrawPile(int count) {
         int returned = 0;
         for (int i = lastStartTurnDrawn.size() - 1; i >= 0 && returned < count; i--) {
             UUID id = lastStartTurnDrawn.remove(i);
@@ -136,6 +138,7 @@ public class BattleDeck {
         if (returned > 0) {
             markChanged();
         }
+        return returned;
     }
 
     private static CardInstance removeCardById(List<CardInstance> cards, UUID id) {

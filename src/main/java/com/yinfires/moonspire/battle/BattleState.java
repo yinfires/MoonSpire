@@ -57,6 +57,10 @@ public class BattleState {
     private static final int REPEATED_EFFECT_VISUAL_INTERVAL_TICKS = 14;
     private static final int MELEE_LUNGE_TICKS = 8;
     private static final int MELEE_HIT_PAUSE_TICKS = 6;
+    private static final int VINDICATOR_AXE_RAISE_TICKS = 8;
+    private static final int VINDICATOR_AXE_APPROACH_TICKS = 8;
+    private static final int VINDICATOR_AXE_STRIKE_TICKS = 1;
+    private static final int VINDICATOR_AXE_RECOVER_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
@@ -80,6 +84,12 @@ public class BattleState {
     private static final int MONSTER_AI_HIGH_BLOCK_SOFT_CAP = 12;
     private static final int MONSTER_AI_STATUS_SOFT_CAP = 4;
     private static final int MONSTER_AI_LONG_STATUS_SOFT_CAP = 6;
+    private static final double MONSTER_AI_STATUS_SCORE_MULTIPLIER = 10.0D;
+    private static final double MONSTER_AI_STATUS_PLAY_BONUS = 40.0D;
+    private static final double MONSTER_AI_CATEGORY_STATUS_WEIGHT = 1.25D;
+    private static final double MONSTER_AI_CATEGORY_UTILITY_WEIGHT = 1.10D;
+    private static final double MONSTER_AI_CATEGORY_ATTACK_WEIGHT = 0.90D;
+    private static final double MONSTER_AI_CATEGORY_DEFENSE_WEIGHT = 0.90D;
     private static final int SELF_DESTRUCT_ANIMATION_TICKS = 30;
 
     private final UUID id = UUID.randomUUID();
@@ -89,6 +99,7 @@ public class BattleState {
     private final List<MonsterRewardPool> startingEnemyRewardPools = new ArrayList<>();
     private final Map<Integer, CombatantState> byEntityId = new HashMap<>();
     private final Map<UUID, CombatantState> byPlayerId = new HashMap<>();
+    private final Map<Integer, MonsterTurnPlan> monsterTurnPlans = new HashMap<>();
     private final Map<Integer, EntityLock> locks = new HashMap<>();
     private final Map<Integer, KnockbackState> knockbackStates = new HashMap<>();
     private final Vec3 cameraCenter;
@@ -717,6 +728,7 @@ public class BattleState {
         }
         enemyHandsPredrawnForCurrentTurn = true;
         selectedTargets.clear();
+        rebuildMonsterTurnPlans();
     }
 
     private void beginMonsterTurn() {
@@ -731,7 +743,9 @@ public class BattleState {
                 if (state.fakeDead()) {
                     continue;
                 }
-                consumeHungerDrawReduction(state, true);
+                if (consumeHungerDrawReduction(state, true) > 0) {
+                    markDirty();
+                }
                 state.resetEnergy();
             }
         }
@@ -739,6 +753,7 @@ public class BattleState {
         enemyTurnOrder = enemyActionOrder();
         currentEnemyIndex = 0;
         selectedTargets.clear();
+        ensureMonsterTurnPlans();
     }
 
     private void beginRoundEnd() {
@@ -753,6 +768,7 @@ public class BattleState {
             state.reduceRetainedCardCosts();
             state.deck().discardHand(true);
         }
+        monsterTurnPlans.clear();
         resetParticipantsToStart();
         round++;
     }
@@ -773,7 +789,7 @@ public class BattleState {
             return;
         }
         CombatantState enemy = enemyTurnOrder.get(currentEnemyIndex);
-        MonsterCardChoice choice = chooseMonsterCard(enemy);
+        MonsterCardChoice choice = nextPlannedMonsterCard(enemy);
         if (choice == null) {
             currentEnemyIndex++;
             monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
@@ -792,6 +808,7 @@ public class BattleState {
             monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
             return;
         }
+        syncMonsterTurnPlanState(enemy);
         queueCard(enemy, target, used);
         monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
     }
@@ -817,35 +834,117 @@ public class BattleState {
         if (monster == null || monster.fakeDead() || (phase != BattlePhase.MONSTER_TURN && phase != BattlePhase.PLAYER_TURN)) {
             return List.of();
         }
-        List<CardInstance> virtualHand = new ArrayList<>(monster.deck().hand());
-        int energyLeft = phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
-        MonsterAiView self = MonsterAiView.live(monster).withDefense(phase == BattlePhase.PLAYER_TURN ? 0 : monster.defense());
-        List<MonsterAiView> playerViews = liveAiViews(alivePlayers());
-        List<MonsterAiView> enemyViews = liveAiViews(aliveEnemies());
-        List<CardInstance> planned = new ArrayList<>();
-        while (!virtualHand.isEmpty() && self.health() > 0.0F) {
-            MonsterCardChoice choice = chooseMonsterCard(virtualHand, energyLeft, self, playerViews, enemyViews);
-            if (choice == null) {
-                break;
-            }
-            CardInstance card = virtualHand.remove(choice.handIndex());
-            planned.add(card);
-            energyLeft -= Math.max(0, card.cost());
-            applyMonsterAiSimulation(card, virtualHand, self, playerViews, enemyViews, choice.selectedEntityId());
+        if (phase == BattlePhase.MONSTER_TURN) {
+            MonsterTurnPlan plan = monsterTurnPlans.get(monster.entity().getId());
+            return plan == null ? List.of() : plan.cards(monster, true);
         }
-        return planned;
+        MonsterTurnPlan plan = monsterTurnPlans.computeIfAbsent(monster.entity().getId(), ignored -> createMonsterTurnPlan(monster));
+        refreshMonsterTurnPlan(monster, plan);
+        return plan.cards(monster, false);
     }
 
     private MonsterCardChoice chooseMonsterCard(CombatantState monster, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
         return chooseMonsterCard(monster.deck().hand(), monster.energyLeft(), self, players, enemies);
     }
 
-    private MonsterCardChoice chooseMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
-        MonsterCardChoice priority = priorityMonsterCard(hand, energyLeft, self, players);
-        if (priority != null) {
-            return priority;
+    private void rebuildMonsterTurnPlans() {
+        monsterTurnPlans.clear();
+        for (CombatantState enemy : enemyStates) {
+            if (!enemy.fakeDead()) {
+                monsterTurnPlans.put(enemy.entity().getId(), createMonsterTurnPlan(enemy));
+            }
         }
-        MonsterCardChoice best = null;
+    }
+
+    private void ensureMonsterTurnPlans() {
+        monsterTurnPlans.keySet().removeIf(entityId -> {
+            CombatantState enemy = byEntityId.get(entityId);
+            return enemy == null || enemy.fakeDead();
+        });
+        for (CombatantState enemy : enemyStates) {
+            if (!enemy.fakeDead()) {
+                monsterTurnPlans.computeIfAbsent(enemy.entity().getId(), ignored -> createMonsterTurnPlan(enemy));
+            }
+        }
+    }
+
+    private void syncMonsterTurnPlanState(CombatantState monster) {
+        MonsterTurnPlan plan = monsterTurnPlans.get(monster.entity().getId());
+        if (plan != null) {
+            plan.setHandVersion(monster.deck().version());
+            plan.setEnergyLeft(planEnergy(monster));
+        }
+    }
+
+    private MonsterTurnPlan createMonsterTurnPlan(CombatantState monster) {
+        MonsterTurnPlan plan = new MonsterTurnPlan(monster.deck().version(), planEnergy(monster));
+        refreshMonsterTurnPlan(monster, plan);
+        return plan;
+    }
+
+    private void refreshMonsterTurnPlan(CombatantState monster, MonsterTurnPlan plan) {
+        if (monster == null || monster.fakeDead()) {
+            if (plan != null) {
+                plan.clear();
+            }
+            return;
+        }
+        int energy = planEnergy(monster);
+        if (plan.handVersion() == monster.deck().version() && plan.energyLeft() == energy && (plan.exhausted() || plan.hasDisplayableEntry(monster))) {
+            return;
+        }
+        plan.rebuild(plannedMonsterChoices(monster));
+        plan.setHandVersion(monster.deck().version());
+        plan.setEnergyLeft(energy);
+    }
+
+    private int planEnergy(CombatantState monster) {
+        return phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
+    }
+
+    private List<MonsterCardChoice> plannedMonsterChoices(CombatantState monster) {
+        if (monster == null || monster.fakeDead()) {
+            return List.of();
+        }
+        List<CardInstance> virtualHand = new ArrayList<>(monster.deck().hand());
+        int energyLeft = phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
+        MonsterAiView self = MonsterAiView.live(monster).withDefense(phase == BattlePhase.PLAYER_TURN ? 0 : monster.defense());
+        List<MonsterAiView> playerViews = liveAiViews(alivePlayers());
+        List<MonsterAiView> enemyViews = liveAiViews(aliveEnemies());
+        List<MonsterCardChoice> planned = new ArrayList<>();
+        while (!virtualHand.isEmpty() && self.health() > 0.0F) {
+            MonsterCardChoice choice = chooseMonsterCard(virtualHand, energyLeft, self, playerViews, enemyViews);
+            if (choice == null) {
+                break;
+            }
+            CardInstance card = virtualHand.remove(choice.handIndex());
+            planned.add(choice.withCardId(card.id()));
+            energyLeft -= Math.max(0, card.cost());
+            applyMonsterAiSimulation(card, virtualHand, self, playerViews, enemyViews, choice.selectedEntityId());
+        }
+        return planned;
+    }
+
+    private MonsterCardChoice nextPlannedMonsterCard(CombatantState monster) {
+        MonsterTurnPlan plan = monsterTurnPlans.computeIfAbsent(monster.entity().getId(), ignored -> createMonsterTurnPlan(monster));
+        boolean hadPlannedEntries = !plan.entries().isEmpty();
+        MonsterCardChoice choice = plan.pollUsable(monster);
+        if (choice != null) {
+            return choice;
+        }
+        if (!hadPlannedEntries) {
+            return null;
+        }
+        choice = chooseMonsterCard(monster);
+        CardInstance card = choice == null ? null : monster.deck().peekHand(choice.handIndex());
+        if (card != null) {
+            return choice.withCardId(card.id()).withCategory(cardCategory(card));
+        }
+        return null;
+    }
+
+    private MonsterCardChoice chooseMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
+        List<MonsterCardChoice> choices = new ArrayList<>();
         for (int i = 0; i < hand.size(); i++) {
             CardInstance card = hand.get(i);
             if (card.cost() > energyLeft || !card.hasAnyEffect()) {
@@ -855,22 +954,129 @@ public class BattleState {
             if (choice == null || choice.score() <= MONSTER_AI_MIN_SCORE) {
                 continue;
             }
-            if (best == null || choice.score() > best.score()) {
-                best = choice;
-            }
+            choices.add(choice.withCategory(cardCategory(card)));
         }
-        return best;
+        MonsterCardChoice priority = priorityMonsterCard(hand, choices, self);
+        if (priority != null) {
+            return priority;
+        }
+        return chooseWeightedMonsterCard(choices);
     }
 
-    private MonsterCardChoice priorityMonsterCard(List<CardInstance> hand, int energyLeft, MonsterAiView self, List<MonsterAiView> players) {
-        for (int i = 0; i < hand.size(); i++) {
-            CardInstance card = hand.get(i);
-            if ("builtin_monster_light_fuse".equals(card.cardId()) && card.cost() <= energyLeft && card.hasAnyEffect()) {
-                MonsterAiView target = bestEnemyTarget(players, self, 0);
-                return new MonsterCardChoice(i, target == null ? -1 : target.entityId(), target == null ? null : target.state(), 1_000_000.0D);
+    private MonsterCardChoice priorityMonsterCard(List<CardInstance> hand, List<MonsterCardChoice> choices, MonsterAiView self) {
+        if (self == null || self.state() == null || self.state().entity().getType() != EntityType.CREEPER) {
+            return null;
+        }
+        for (MonsterCardChoice choice : choices) {
+            CardInstance card = hand.get(choice.handIndex());
+            if ("builtin_monster_light_fuse".equals(card.cardId())) {
+                return choice;
             }
         }
         return null;
+    }
+
+    private MonsterCardChoice chooseWeightedMonsterCard(List<MonsterCardChoice> choices) {
+        if (choices.isEmpty()) {
+            return null;
+        }
+        List<MonsterCardCategory> categories = new ArrayList<>();
+        double totalCategoryWeight = 0.0D;
+        for (MonsterCardCategory category : MonsterCardCategory.values()) {
+            if (choices.stream().anyMatch(choice -> choice.category() == category)) {
+                categories.add(category);
+                totalCategoryWeight += category.weight();
+            }
+        }
+        MonsterCardCategory selectedCategory = categories.getLast();
+        double categoryRoll = leader.getRandom().nextDouble() * totalCategoryWeight;
+        double categoryCursor = 0.0D;
+        for (MonsterCardCategory category : categories) {
+            categoryCursor += category.weight();
+            if (categoryRoll <= categoryCursor) {
+                selectedCategory = category;
+                break;
+            }
+        }
+        List<MonsterCardChoice> categoryChoices = new ArrayList<>();
+        for (MonsterCardChoice choice : choices) {
+            if (choice.category() == selectedCategory) {
+                categoryChoices.add(choice);
+            }
+        }
+        double totalChoiceWeight = 0.0D;
+        for (MonsterCardChoice choice : categoryChoices) {
+            totalChoiceWeight += choiceWeight(choice);
+        }
+        MonsterCardChoice selected = categoryChoices.getLast();
+        double choiceRoll = leader.getRandom().nextDouble() * totalChoiceWeight;
+        double choiceCursor = 0.0D;
+        for (MonsterCardChoice choice : categoryChoices) {
+            choiceCursor += choiceWeight(choice);
+            if (choiceRoll <= choiceCursor) {
+                selected = choice;
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private double choiceWeight(MonsterCardChoice choice) {
+        return 1.0D + Math.min(12.0D, Math.sqrt(Math.max(0.0D, choice.score())));
+    }
+
+    private MonsterCardCategory cardCategory(CardInstance card) {
+        boolean attack = false;
+        boolean defense = false;
+        boolean utility = false;
+        boolean status = false;
+        for (CardEffect effect : card.effects()) {
+            if (effect.amount() <= 0 || !effect.kind().makesCardPlayable()) {
+                continue;
+            }
+            if (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) {
+                attack = true;
+            } else if (effect.kind() == CardEffectKind.BLOCK) {
+                defense = true;
+            } else if (isMonsterAiStatusEffect(effect.kind())) {
+                status = true;
+            } else {
+                utility = true;
+            }
+        }
+        if (status) {
+            return MonsterCardCategory.STATUS;
+        }
+        if (utility) {
+            return MonsterCardCategory.UTILITY;
+        }
+        if (attack) {
+            return MonsterCardCategory.ATTACK;
+        }
+        if (defense) {
+            return MonsterCardCategory.DEFENSE;
+        }
+        return MonsterCardCategory.UTILITY;
+    }
+
+    private boolean isMonsterAiStatusEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.BLEED
+                || kind == CardEffectKind.GLOWING
+                || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.STRENGTH
+                || kind == CardEffectKind.LOSE_STRENGTH
+                || kind == CardEffectKind.REGENERATION
+                || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.POISON
+                || kind == CardEffectKind.BURN
+                || kind == CardEffectKind.WITHER
+                || kind == CardEffectKind.TIDAL_EROSION
+                || kind == CardEffectKind.PARALYSIS
+                || kind == CardEffectKind.HUNGER
+                || kind == CardEffectKind.THORNS
+                || kind == CardEffectKind.FUSE
+                || kind == CardEffectKind.WEAKNESS
+                || kind == CardEffectKind.SLOWNESS;
     }
 
     private MonsterCardChoice scoreMonsterCard(int handIndex, CardInstance card, List<CardInstance> hand, MonsterAiView self, List<MonsterAiView> players, List<MonsterAiView> enemies) {
@@ -1180,23 +1386,38 @@ public class BattleState {
     }
 
     private double scorePositiveStatus(int amount, MonsterAiView target, BattleEffectType type, double weight, int softCap) {
+        int positiveAmount = Math.max(0, amount);
+        if (positiveAmount <= 0) {
+            return 0.0D;
+        }
         int current = Math.max(0, target.effectAmount(type));
         double need = Math.max(0.15D, 1.0D - current / (double) Math.max(1, softCap));
         double healthFactor = type == BattleEffectType.GUARD || type == BattleEffectType.REGENERATION ? 1.0D + (1.0D - target.healthRatio()) : 1.0D;
-        return Math.max(0, amount) * weight * need * healthFactor;
+        return (positiveAmount * weight * MONSTER_AI_STATUS_SCORE_MULTIPLIER + MONSTER_AI_STATUS_PLAY_BONUS) * need * healthFactor;
     }
 
     private double scoreNegativeStatus(int amount, MonsterAiView target, BattleEffectType type, double weight, int softCap) {
+        int negativeAmount = Math.max(0, amount);
+        if (negativeAmount <= 0) {
+            return 0.0D;
+        }
         int current = Math.max(0, target.effectAmount(type));
         double need = Math.max(0.15D, 1.0D - current / (double) Math.max(1, softCap));
         double pressure = 1.0D + (1.0D - target.healthRatio()) * 0.65D + Math.min(4, target.effectAmount(BattleEffectType.GLOWING)) * 0.08D;
-        return Math.max(0, amount) * weight * need * pressure + targetPriority(target) * 0.2D;
+        return (negativeAmount * weight * MONSTER_AI_STATUS_SCORE_MULTIPLIER + MONSTER_AI_STATUS_PLAY_BONUS) * need * pressure + targetPriority(target) * 0.2D;
     }
 
     private double scoreLoseStrength(int amount, MonsterAiView target) {
-        int current = target.effectAmount(BattleEffectType.STRENGTH);
-        double value = current > 0 ? 4.0D : 2.0D;
-        return Math.max(0, amount) * value * (1.0D + Math.max(0, current) * 0.2D);
+        int removedAmount = Math.max(0, amount);
+        if (removedAmount <= 0) {
+            return 0.0D;
+        }
+        int current = Math.max(0, target.effectAmount(BattleEffectType.STRENGTH));
+        if (current <= 0) {
+            return removedAmount * 2.0D;
+        }
+        double pressure = 1.0D + current * 0.2D;
+        return (Math.min(removedAmount, current) * 4.0D * MONSTER_AI_STATUS_SCORE_MULTIPLIER + MONSTER_AI_STATUS_PLAY_BONUS) * pressure;
     }
 
     private double effectTargetPriority(CardInstance card, CardEffectKind kind, int amount, int count, MonsterAiView self, MonsterAiView target) {
@@ -1727,6 +1948,15 @@ public class BattleState {
         return card != null && "builtin_monster_riptide_rush".equals(card.cardId());
     }
 
+    private boolean isVindicatorAxeAttack(PendingCardBatch batch) {
+        if (batch == null || batch.card() == null || batch.user() == null || batch.user().entity().getType() != EntityType.VINDICATOR) {
+            return false;
+        }
+        return "builtin_monster_axe_chop".equals(batch.card().cardId())
+                || "builtin_monster_heavy_axe_blow".equals(batch.card().cardId())
+                || "builtin_monster_executioners_blow".equals(batch.card().cardId());
+    }
+
     private PendingEffect bleedEffectForAttack(CombatantState user) {
         int bleed = user.effectAmount(BattleEffectType.BLEED);
         if (bleed <= 0) {
@@ -1880,8 +2110,11 @@ public class BattleState {
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
-        LungeAnimation animation = new LungeAnimation(batch, animated.target());
-        emitVisual(batch.user().entity(), animated.target().entity(), visualStack(batch), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS, animation.start(), animation.strike());
+        LungeAnimation animation = new LungeAnimation(batch, animated.target(), isVindicatorAxeAttack(batch));
+        BattleVisualEvent.AnimationType animationType = animation.vindicatorAxeSwing()
+                ? BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
+                : BattleVisualEvent.AnimationType.MELEE_LUNGE;
+        emitVisual(batch.user().entity(), animated.target().entity(), visualStack(batch), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, animationType, animation.visualTicks(), animation.start(), animation.strike());
         pendingAnimation = animation;
         return true;
     }
@@ -1896,8 +2129,8 @@ public class BattleState {
     }
 
     private void completeAnimatedBatch(BattleAnimation animation) {
-        BattleVisualEvent.AnimationType hitAnimationType = animation instanceof LungeAnimation
-                ? BattleVisualEvent.AnimationType.MELEE_LUNGE
+        BattleVisualEvent.AnimationType hitAnimationType = animation instanceof LungeAnimation lunge
+                ? lunge.hitAnimationType()
                 : BattleVisualEvent.AnimationType.NONE;
         applyPendingCardBatch(animation.batch(), true, hitAnimationType);
     }
@@ -2182,10 +2415,24 @@ public class BattleState {
     }
 
     private static ItemStack visualStack(PendingCardBatch batch) {
+        if (batch.card() != null && isVindicatorAxeCard(batch.card())) {
+            return new ItemStack(Items.IRON_AXE);
+        }
         if (batch.card() != null && "builtin_monster_bow_strike".equals(batch.card().cardId())) {
             return new ItemStack(Items.BOW);
         }
         return batch.stack();
+    }
+
+    private static boolean isVindicatorAxeCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_axe_chop".equals(card.cardId())
+                || "builtin_monster_heavy_axe_blow".equals(card.cardId())
+                || "builtin_monster_executioners_blow".equals(card.cardId())
+                || "builtin_monster_raised_axe_guard".equals(card.cardId())
+                || "builtin_monster_fanatic_might".equals(card.cardId());
     }
 
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
@@ -2220,8 +2467,8 @@ public class BattleState {
     private int consumeHungerDrawReduction(CombatantState state, boolean adjustPredrawnHand) {
         int reduction = hungerDrawReduction(state);
         if (reduction > 0) {
-            if (adjustPredrawnHand) {
-                state.deck().applyAdditionalStartTurnDrawReduction(reduction);
+            if (adjustPredrawnHand && state.deck().applyAdditionalStartTurnDrawReduction(reduction)) {
+                markDirty();
             }
             state.reduceEffect(BattleEffectType.HUNGER, 1);
         }
@@ -2232,10 +2479,9 @@ public class BattleState {
         if (target == null || amount <= 0) {
             return;
         }
-        boolean lackedHunger = target.effectAmount(BattleEffectType.HUNGER) <= 0;
         target.addEffect(BattleEffectType.HUNGER, amount);
-        if (enemyHandsPredrawnForCurrentTurn && phase == BattlePhase.PLAYER_TURN && enemyStates.contains(target) && lackedHunger) {
-            target.deck().applyAdditionalStartTurnDrawReduction(1);
+        if (enemyHandsPredrawnForCurrentTurn && phase == BattlePhase.PLAYER_TURN && enemyStates.contains(target) && target.deck().applyAdditionalStartTurnDrawReduction(hungerDrawReduction(target))) {
+            markDirty();
         }
     }
 
@@ -3036,7 +3282,163 @@ public class BattleState {
         }
     }
 
-    private record MonsterCardChoice(int handIndex, int selectedEntityId, CombatantState selectedTarget, double score) {
+    private record MonsterCardChoice(UUID cardId, int handIndex, int selectedEntityId, CombatantState selectedTarget, double score, MonsterCardCategory category) {
+        private MonsterCardChoice(int handIndex, int selectedEntityId, CombatantState selectedTarget, double score) {
+            this(null, handIndex, selectedEntityId, selectedTarget, score, MonsterCardCategory.UTILITY);
+        }
+
+        private MonsterCardChoice withCardId(UUID cardId) {
+            return new MonsterCardChoice(cardId, handIndex, selectedEntityId, selectedTarget, score, category);
+        }
+
+        private MonsterCardChoice withCategory(MonsterCardCategory category) {
+            return new MonsterCardChoice(cardId, handIndex, selectedEntityId, selectedTarget, score, category);
+        }
+
+        private MonsterCardChoice withHandIndex(int handIndex) {
+            return new MonsterCardChoice(cardId, handIndex, selectedEntityId, selectedTarget, score, category);
+        }
+    }
+
+    private enum MonsterCardCategory {
+        STATUS(MONSTER_AI_CATEGORY_STATUS_WEIGHT),
+        UTILITY(MONSTER_AI_CATEGORY_UTILITY_WEIGHT),
+        ATTACK(MONSTER_AI_CATEGORY_ATTACK_WEIGHT),
+        DEFENSE(MONSTER_AI_CATEGORY_DEFENSE_WEIGHT);
+
+        private final double weight;
+
+        MonsterCardCategory(double weight) {
+            this.weight = weight;
+        }
+
+        private double weight() {
+            return weight;
+        }
+    }
+
+    private final class MonsterTurnPlan {
+        private final List<MonsterCardChoice> entries = new ArrayList<>();
+        private long handVersion;
+        private int energyLeft;
+        private boolean exhausted;
+
+        private MonsterTurnPlan(long handVersion, int energyLeft) {
+            this.handVersion = handVersion;
+            this.energyLeft = energyLeft;
+        }
+
+        private List<MonsterCardChoice> entries() {
+            return entries;
+        }
+
+        private long handVersion() {
+            return handVersion;
+        }
+
+        private void setHandVersion(long handVersion) {
+            this.handVersion = handVersion;
+        }
+
+        private int energyLeft() {
+            return energyLeft;
+        }
+
+        private void setEnergyLeft(int energyLeft) {
+            this.energyLeft = energyLeft;
+        }
+
+        private void rebuild(List<MonsterCardChoice> choices) {
+            entries.clear();
+            entries.addAll(choices);
+            exhausted = choices.isEmpty();
+        }
+
+        private void clear() {
+            entries.clear();
+            exhausted = true;
+        }
+
+        private boolean exhausted() {
+            return exhausted;
+        }
+
+        private boolean hasDisplayableEntry(CombatantState monster) {
+            return !displayableCards(monster, phase == BattlePhase.MONSTER_TURN, true).isEmpty();
+        }
+
+        private List<CardInstance> cards(CombatantState monster, boolean useCurrentEnergy) {
+            return displayableCards(monster, useCurrentEnergy, false);
+        }
+
+        private List<CardInstance> displayableCards(CombatantState monster, boolean useCurrentEnergy, boolean stopAfterFirst) {
+            if (monster == null) {
+                return List.of();
+            }
+            List<CardInstance> cards = new ArrayList<>();
+            int remainingEnergy = useCurrentEnergy ? monster.energyLeft() : energyLeft;
+            for (MonsterCardChoice entry : entries) {
+                int handIndex = entry == null || entry.cardId() == null ? -1 : handIndexById(monster.deck().hand(), entry.cardId());
+                CardInstance card = handIndex < 0 ? null : monster.deck().peekHand(handIndex);
+                if (card == null || !card.hasAnyEffect()) {
+                    continue;
+                }
+                if (card.cost() > remainingEnergy) {
+                    continue;
+                }
+                if (card.requiresExplicitTarget() && (entry.selectedTarget() == null || entry.selectedTarget().fakeDead())) {
+                    continue;
+                }
+                remainingEnergy -= Math.max(0, card.cost());
+                cards.add(card);
+                if (stopAfterFirst) {
+                    return cards;
+                }
+            }
+            return cards;
+        }
+
+        private MonsterCardChoice pollUsable(CombatantState monster) {
+            while (!entries.isEmpty()) {
+                MonsterCardChoice entry = entries.removeFirst();
+                MonsterCardChoice usable = usableChoice(monster, entry);
+                if (usable != null) {
+                    if (entries.isEmpty()) {
+                        exhausted = true;
+                    }
+                    return usable;
+                }
+            }
+            exhausted = true;
+            return null;
+        }
+
+        private MonsterCardChoice usableChoice(CombatantState monster, MonsterCardChoice entry) {
+            if (monster == null || entry == null || entry.cardId() == null) {
+                return null;
+            }
+            int handIndex = handIndexById(monster.deck().hand(), entry.cardId());
+            if (handIndex < 0) {
+                return null;
+            }
+            CardInstance card = monster.deck().peekHand(handIndex);
+            if (card == null || card.cost() > monster.energyLeft() || !card.hasAnyEffect()) {
+                return null;
+            }
+            if (card.requiresExplicitTarget() && (entry.selectedTarget() == null || entry.selectedTarget().fakeDead())) {
+                return null;
+            }
+            return entry.withHandIndex(handIndex);
+        }
+
+        private int handIndexById(List<CardInstance> hand, UUID id) {
+            for (int i = 0; i < hand.size(); i++) {
+                if (hand.get(i).id().equals(id)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
     }
 
     private static final class MonsterAiView {
@@ -3185,17 +3587,20 @@ public class BattleState {
         private final Vec3 start;
         private final Vec3 strike;
         private final boolean pounce;
+        private final boolean vindicatorAxeSwing;
         private final boolean noPhysicsBeforeAnimation;
         private int ticks;
         private Phase phase = Phase.LUNGE;
         private boolean effectsApplied;
 
-        private LungeAnimation(PendingCardBatch batch, CombatantState target) {
+        private LungeAnimation(PendingCardBatch batch, CombatantState target, boolean vindicatorAxeSwing) {
             this.batch = batch;
             this.target = target;
             this.actor = batch.user().entity();
             this.start = actor.position();
             this.pounce = batch.card() != null && "builtin_monster_pounce".equals(batch.card().cardId());
+            this.vindicatorAxeSwing = vindicatorAxeSwing;
+            this.phase = vindicatorAxeSwing ? Phase.RAISE_AXE : Phase.LUNGE;
             this.noPhysicsBeforeAnimation = actor.noPhysics;
             Vec3 targetPos = target.entity().position();
             Vec3 direction = targetPos.subtract(start);
@@ -3225,13 +3630,31 @@ public class BattleState {
                 return true;
             }
             finishPendingFacing(batch);
+            if (phase == Phase.RAISE_AXE) {
+                ticks++;
+                moveActor(start);
+                if (ticks >= VINDICATOR_AXE_RAISE_TICKS) {
+                    ticks = 0;
+                    phase = Phase.LUNGE;
+                }
+                return false;
+            }
             if (phase == Phase.LUNGE) {
                 ticks++;
-                moveActor(lungePosition(ticks / (double) MELEE_LUNGE_TICKS));
-                if (ticks >= MELEE_LUNGE_TICKS) {
+                moveActor(lungePosition(ticks / (double) lungeTicks()));
+                if (ticks >= lungeTicks()) {
                     ticks = 0;
-                    phase = Phase.HIT_PAUSE;
+                    phase = vindicatorAxeSwing ? Phase.AXE_STRIKE : Phase.HIT_PAUSE;
                     moveActor(strike);
+                    return false;
+                }
+                return false;
+            }
+            if (phase == Phase.AXE_STRIKE) {
+                ticks++;
+                moveActor(strike);
+                if (ticks >= VINDICATOR_AXE_STRIKE_TICKS) {
+                    phase = Phase.HIT_PAUSE;
                     return false;
                 }
                 return false;
@@ -3239,7 +3662,7 @@ public class BattleState {
             if (phase == Phase.HIT_PAUSE) {
                 ticks++;
                 moveActor(strike);
-                if (ticks >= MELEE_HIT_PAUSE_TICKS) {
+                if (ticks >= hitPauseTicks()) {
                     finishAtStrike();
                     return true;
                 }
@@ -3256,7 +3679,7 @@ public class BattleState {
 
         @Override
         public boolean readyToApplyEffects() {
-            return phase == Phase.HIT_PAUSE && !effectsApplied;
+            return phase == (vindicatorAxeSwing ? Phase.AXE_STRIKE : Phase.HIT_PAUSE) && !effectsApplied;
         }
 
         @Override
@@ -3275,6 +3698,31 @@ public class BattleState {
 
         private Vec3 strike() {
             return strike;
+        }
+
+        private boolean vindicatorAxeSwing() {
+            return vindicatorAxeSwing;
+        }
+
+        private int visualTicks() {
+            if (!vindicatorAxeSwing) {
+                return MELEE_LUNGE_TICKS;
+            }
+            return VINDICATOR_AXE_RAISE_TICKS + VINDICATOR_AXE_APPROACH_TICKS + VINDICATOR_AXE_STRIKE_TICKS + VINDICATOR_AXE_RECOVER_TICKS;
+        }
+
+        private BattleVisualEvent.AnimationType hitAnimationType() {
+            return vindicatorAxeSwing
+                    ? BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
+                    : BattleVisualEvent.AnimationType.MELEE_LUNGE;
+        }
+
+        private int lungeTicks() {
+            return vindicatorAxeSwing ? VINDICATOR_AXE_APPROACH_TICKS : MELEE_LUNGE_TICKS;
+        }
+
+        private int hitPauseTicks() {
+            return vindicatorAxeSwing ? VINDICATOR_AXE_RECOVER_TICKS : MELEE_HIT_PAUSE_TICKS;
         }
 
         private Vec3 lungePosition(double progress) {
@@ -3324,7 +3772,9 @@ public class BattleState {
         }
 
         private enum Phase {
+            RAISE_AXE,
             LUNGE,
+            AXE_STRIKE,
             HIT_PAUSE
         }
     }

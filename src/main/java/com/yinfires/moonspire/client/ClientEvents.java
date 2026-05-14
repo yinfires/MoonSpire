@@ -50,6 +50,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Drowned;
+import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -497,6 +498,8 @@ public final class ClientEvents {
                 skeleton.setAggressive(true);
             } else if (entity instanceof Drowned drowned && ClientBattleState.visualDrownedTridentPose(entity.getId())) {
                 drowned.setAggressive(true);
+            } else if (entity instanceof Vindicator vindicator && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING) {
+                vindicator.setAggressive(ClientBattleState.visualVindicatorAxeRaised(entity.getId()));
             }
             ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
             if (ClientBattleState.visualUsingItem(entity.getId()) && !useDrownedTridentPose(entity)) {
@@ -739,8 +742,9 @@ public final class ClientEvents {
                 }
                 boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
                 boolean meleeLungeHit = event.animationType() == BattleVisualEvent.AnimationType.MELEE_LUNGE && event.animationTicks() <= 0;
+                boolean vindicatorAxeHit = event.animationType() == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
-                if ((playedCardVisual && shouldSwing || meleeLungeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                if ((playedCardVisual && shouldSwing || meleeLungeHit || vindicatorAxeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (attacker instanceof LivingEntity livingAttacker) {
