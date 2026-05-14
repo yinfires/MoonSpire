@@ -10,7 +10,9 @@ public record DeveloperMonsterDefinition(
         int speed,
         List<DeveloperMonsterInitialEffect> initialEffects,
         List<String> deckCardIds,
-        boolean deckOverride) {
+        boolean deckOverride,
+        List<String> rewardCardIds,
+        boolean rewardOverride) {
     public DeveloperMonsterDefinition {
         if (initialEffects == null) {
             initialEffects = new ArrayList<>();
@@ -24,6 +26,21 @@ public record DeveloperMonsterDefinition(
         } else {
             deckCardIds = new ArrayList<>(deckCardIds);
         }
+        if (rewardCardIds == null) {
+            rewardCardIds = new ArrayList<>();
+        } else {
+            List<String> uniqueRewards = new ArrayList<>();
+            for (String id : rewardCardIds) {
+                if (id != null && !id.isBlank() && !uniqueRewards.contains(id)) {
+                    uniqueRewards.add(id);
+                }
+            }
+            rewardCardIds = uniqueRewards;
+        }
+    }
+
+    public DeveloperMonsterDefinition(String entityTypeId, float maxHealth, int energy, int speed, List<DeveloperMonsterInitialEffect> initialEffects, List<String> deckCardIds, boolean deckOverride) {
+        this(entityTypeId, maxHealth, energy, speed, initialEffects, deckCardIds, deckOverride, new ArrayList<>(), false);
     }
 
     public DeveloperMonsterDefinition(String entityTypeId, float maxHealth, int energy, int speed, List<String> deckCardIds) {
@@ -35,7 +52,7 @@ public record DeveloperMonsterDefinition(
     }
 
     public static DeveloperMonsterDefinition empty(String entityTypeId) {
-        return new DeveloperMonsterDefinition(entityTypeId, 0.0F, 0, 0, new ArrayList<>(), new ArrayList<>(), false);
+        return new DeveloperMonsterDefinition(entityTypeId, 0.0F, 0, 0, new ArrayList<>(), new ArrayList<>(), false, new ArrayList<>(), false);
     }
 
     public boolean hasHealthOverride() {
@@ -52,6 +69,10 @@ public record DeveloperMonsterDefinition(
 
     public boolean hasDeckOverride() {
         return deckOverride;
+    }
+
+    public boolean hasRewardOverride() {
+        return rewardOverride;
     }
 
     public boolean hasInitialEffectOverride() {

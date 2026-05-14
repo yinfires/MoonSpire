@@ -243,9 +243,20 @@ public final class DeveloperDataManager {
                     cleanDeck.add(registeredId);
                 }
             }
+            List<String> cleanRewards = new ArrayList<>();
+            for (String id : monster.rewardCardIds()) {
+                String registeredId = MoonSpireCardRegistry.registeredDeveloperId(id);
+                if (!registeredId.isBlank() && resolvableCardIds.contains(registeredId) && !cleanRewards.contains(registeredId)) {
+                    cleanRewards.add(registeredId);
+                }
+            }
             boolean deckOverride = monster.hasDeckOverride() || !monster.deckCardIds().isEmpty();
             if (deckOverride && !monster.deckCardIds().isEmpty() && cleanDeck.isEmpty() && hasDefaultMonsterDeck(monster.entityTypeId())) {
                 deckOverride = false;
+            }
+            boolean rewardOverride = monster.hasRewardOverride() || !monster.rewardCardIds().isEmpty();
+            if (rewardOverride && !monster.rewardCardIds().isEmpty() && cleanRewards.isEmpty()) {
+                rewardOverride = false;
             }
             monstersById.put(monster.entityTypeId(), new DeveloperMonsterDefinition(
                     monster.entityTypeId(),
@@ -254,7 +265,9 @@ public final class DeveloperDataManager {
                     monster.speed(),
                     monster.initialEffects(),
                     cleanDeck,
-                    deckOverride));
+                    deckOverride,
+                    cleanRewards,
+                    rewardOverride));
         }
         data.monsters = new ArrayList<>(monstersById.values());
     }

@@ -3,12 +3,15 @@ package com.yinfires.moonspire.battle;
 import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
 import com.yinfires.moonspire.card.CardFactory;
 import com.yinfires.moonspire.card.CardInstance;
+import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.card.PlayerCardData;
 import com.yinfires.moonspire.network.BattleSnapshotPayload;
+import com.yinfires.moonspire.network.OpenCardRewardScreenPayload;
 import com.yinfires.moonspire.network.BattlePileContentsPayload;
 import com.yinfires.moonspire.network.PlayerCardDataPayload;
 import com.yinfires.moonspire.registry.ModAttachments;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
@@ -31,6 +34,7 @@ public final class BattleManager {
     private static final double CHALLENGE_RANGE_SQR = CHALLENGE_RANGE * CHALLENGE_RANGE;
     private static final Map<UUID, BattleState> BY_PLAYER = new HashMap<>();
     private static final Map<Integer, BattleState> BY_ENTITY_ID = new HashMap<>();
+    private static final Map<UUID, PendingReward> REWARDS = new HashMap<>();
 
     private BattleManager() {
     }
@@ -237,6 +241,9 @@ public final class BattleManager {
     }
 
     public static void cleanup(LivingEntity entity) {
+        if (entity instanceof ServerPlayer player) {
+            REWARDS.entrySet().removeIf(entry -> entry.getValue().playerId().equals(player.getUUID()));
+        }
         BattleState battle = battleFor(entity);
         if (battle != null) {
             endBattle(battle);
@@ -248,6 +255,42 @@ public final class BattleManager {
         BattleState battle = BY_PLAYER.get(player.getUUID());
         if (battle != null) {
             sync(battle);
+        }
+    }
+
+    public static void selectCardReward(ServerPlayer player, UUID rewardId, int pageIndex, UUID cardInstanceId) {
+        if (player == null || rewardId == null) {
+            return;
+        }
+        PendingReward reward = REWARDS.get(rewardId);
+        if (reward == null || !reward.playerId().equals(player.getUUID()) || pageIndex != reward.nextPageIndex()) {
+            return;
+        }
+        OpenCardRewardScreenPayload.RewardPage page = reward.page(pageIndex);
+        if (page == null) {
+            REWARDS.remove(rewardId);
+            return;
+        }
+        if (cardInstanceId != null) {
+            CardInstance selected = null;
+            for (CardInstance card : page.cards()) {
+                if (card.id().equals(cardInstanceId)) {
+                    selected = card;
+                    break;
+                }
+            }
+            if (selected == null) {
+                return;
+            }
+            PlayerCardData data = player.getData(ModAttachments.PLAYER_CARDS.get());
+            data.addCard(selected.copyForBattle());
+            player.setData(ModAttachments.PLAYER_CARDS.get(), data);
+            player.syncData(ModAttachments.PLAYER_CARDS.get());
+            syncCardData(player);
+        }
+        reward.advance();
+        if (reward.complete()) {
+            REWARDS.remove(rewardId);
         }
     }
 
@@ -378,6 +421,8 @@ public final class BattleManager {
     }
 
     private static void endBattle(BattleState battle) {
+        boolean playerVictory = battle.playerVictory();
+        List<MonsterRewardPool> rewardPools = playerVictory ? battle.startingEnemyRewardPools() : List.of();
         for (ServerPlayer player : battle.players()) {
             BY_PLAYER.remove(player.getUUID());
             BY_ENTITY_ID.remove(player.getId());
@@ -389,6 +434,78 @@ public final class BattleManager {
         long sequence = battle.nextSnapshotSequence();
         for (ServerPlayer player : battle.players()) {
             PacketDistributor.sendToPlayer(player, new BattleSnapshotPayload(BattleSnapshot.inactive(battle.id(), sequence)));
+        }
+        if (playerVictory) {
+            sendRewards(battle.players(), rewardPools);
+        }
+    }
+
+    private static void sendRewards(List<ServerPlayer> players, List<MonsterRewardPool> rewardPools) {
+        for (ServerPlayer player : players) {
+            if (player == null || player.hasDisconnected()) {
+                continue;
+            }
+            List<OpenCardRewardScreenPayload.RewardPage> pages = rewardPages(player, rewardPools);
+            if (pages.isEmpty()) {
+                continue;
+            }
+            UUID rewardId = UUID.randomUUID();
+            REWARDS.put(rewardId, new PendingReward(player.getUUID(), pages));
+            PacketDistributor.sendToPlayer(player, new OpenCardRewardScreenPayload(rewardId, pages));
+        }
+    }
+
+    private static List<OpenCardRewardScreenPayload.RewardPage> rewardPages(ServerPlayer player, List<MonsterRewardPool> rewardPools) {
+        List<OpenCardRewardScreenPayload.RewardPage> pages = new ArrayList<>();
+        for (MonsterRewardPool pool : rewardPools) {
+            List<String> candidates = new ArrayList<>(pool.cardIds());
+            candidates.removeIf(id -> MoonSpireCardRegistry.card(id).isEmpty());
+            if (candidates.isEmpty()) {
+                continue;
+            }
+            Collections.shuffle(candidates, new java.util.Random(player.getRandom().nextLong()));
+            List<CardInstance> cards = new ArrayList<>();
+            for (String id : candidates) {
+                MoonSpireCardRegistry.cardInstance(id).ifPresent(cards::add);
+                if (cards.size() >= 3) {
+                    break;
+                }
+            }
+            if (!cards.isEmpty()) {
+                pages.add(new OpenCardRewardScreenPayload.RewardPage(pool.entityTypeId(), cards));
+            }
+        }
+        return pages;
+    }
+
+    private static final class PendingReward {
+        private final UUID playerId;
+        private final List<OpenCardRewardScreenPayload.RewardPage> pages;
+        private int nextPageIndex;
+
+        private PendingReward(UUID playerId, List<OpenCardRewardScreenPayload.RewardPage> pages) {
+            this.playerId = playerId;
+            this.pages = List.copyOf(pages);
+        }
+
+        private UUID playerId() {
+            return playerId;
+        }
+
+        private int nextPageIndex() {
+            return nextPageIndex;
+        }
+
+        private OpenCardRewardScreenPayload.RewardPage page(int index) {
+            return index >= 0 && index < pages.size() ? pages.get(index) : null;
+        }
+
+        private void advance() {
+            nextPageIndex++;
+        }
+
+        private boolean complete() {
+            return nextPageIndex >= pages.size();
         }
     }
 }

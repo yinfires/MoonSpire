@@ -6,8 +6,10 @@ import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
 import com.yinfires.moonspire.developer.DeveloperMonsterDefinition;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
@@ -171,6 +173,14 @@ public final class MonsterDeckProfile {
         return createDefaultDeck(monster);
     }
 
+    public static List<String> rewardPoolCardIds(LivingEntity monster, List<CardInstance> battleStartDeck) {
+        Optional<DeveloperMonsterDefinition> override = DeveloperDataManager.monsterOverride(monster);
+        if (override.isPresent() && override.get().hasRewardOverride()) {
+            return uniqueResolvableIds(override.get().rewardCardIds());
+        }
+        return uniqueCardIds(battleStartDeck);
+    }
+
     public static boolean hasBattleDeck(LivingEntity monster) {
         Optional<DeveloperMonsterDefinition> override = DeveloperDataManager.monsterOverride(monster);
         if (override.isPresent() && override.get().hasDeckOverride()) {
@@ -324,5 +334,34 @@ public final class MonsterDeckProfile {
             cards.add(card.copyForBattle());
         }
         return cards;
+    }
+
+    private static List<String> uniqueCardIds(List<CardInstance> cards) {
+        Set<String> unique = new LinkedHashSet<>();
+        if (cards != null) {
+            for (CardInstance card : cards) {
+                if (card == null || card.cardId().isBlank()) {
+                    continue;
+                }
+                String id = MoonSpireCardRegistry.registeredDeveloperId(card.cardId());
+                if (!id.isBlank() && MoonSpireCardRegistry.card(id).isPresent()) {
+                    unique.add(id);
+                }
+            }
+        }
+        return List.copyOf(unique);
+    }
+
+    private static List<String> uniqueResolvableIds(List<String> ids) {
+        Set<String> unique = new LinkedHashSet<>();
+        if (ids != null) {
+            for (String id : ids) {
+                String registeredId = MoonSpireCardRegistry.registeredDeveloperId(id);
+                if (!registeredId.isBlank() && MoonSpireCardRegistry.card(registeredId).isPresent()) {
+                    unique.add(registeredId);
+                }
+            }
+        }
+        return List.copyOf(unique);
     }
 }

@@ -737,7 +737,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
         for (int i = 0; i < effects.size(); i++) {
-            int rowY = layout.fieldBoxY(3) + 22 + i * 24;
+            int rowY = layout.fieldBoxY(4) + 22 + i * 24;
             EditBox box = addBox(layout.formX() + layout.formW() - MONSTER_EFFECT_AMOUNT_W - EFFECT_INSET, rowY, MONSTER_EFFECT_AMOUNT_W, Component.translatable("screen.moonspire.value_number", effects.get(i).amount()));
             box.setValue(Integer.toString(effects.get(i).amount()));
             monsterEffectAmountBoxes.add(box);
@@ -1042,6 +1042,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         drawWrappedLimited(graphics, Component.translatable("debug.moonspire.monster_actions"), layout.formX(), monsterActionsY(layout), layout.formW(), layout.bottom(), 0xFFC9C2DD);
         drawButtonLike(graphics, layout.formX(), layout.fieldBoxY(2), 112, 18, Component.translatable("debug.moonspire.open_deck"));
         drawTrimmed(graphics, Component.translatable("debug.moonspire.monster_deck_count", selectedMonsterEffective().deckCardIds().size()), layout.formX() + 120, layout.fieldBoxY(2) + 5, Math.max(1, layout.formW() - 120), 0xFFE3C48C);
+        drawButtonLike(graphics, layout.formX(), layout.fieldBoxY(3), 112, 18, Component.translatable("debug.moonspire.open_rewards"));
+        drawTrimmed(graphics, Component.translatable("debug.moonspire.monster_reward_count", selectedMonsterEffective().rewardCardIds().size()), layout.formX() + 120, layout.fieldBoxY(3) + 5, Math.max(1, layout.formW() - 120), 0xFFE3C48C);
         List<MonsterRow> monsters = filteredMonsters();
         GridLayout grid = layout.textListGrid(monsters.size());
         listScrollOffset = clampScroll(listScrollOffset, grid);
@@ -1122,7 +1124,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.speed"), layout.formX() + statW + GAP, layout.fieldLabelY(1), statW);
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.energy"), layout.formX() + (statW + GAP) * 2, layout.fieldLabelY(1), statW);
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.monster_deck"), layout.formX(), layout.fieldLabelY(2), layout.formW());
-            drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.initial_effects"), layout.formX(), layout.fieldLabelY(3), layout.formW());
+            drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.monster_rewards"), layout.formX(), layout.fieldLabelY(3), layout.formW());
+            drawFieldLabel(graphics, Component.translatable("debug.moonspire.field.initial_effects"), layout.formX(), layout.fieldLabelY(4), layout.formW());
             drawFieldLabel(graphics, Component.translatable("debug.moonspire.search"), layout.listX(), layout.searchLabelY(), layout.listW());
         }
     }
@@ -1316,7 +1319,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private boolean clickMonsterForm(Layout layout, double mouseX, double mouseY) {
         if (insideRect(mouseX, mouseY, layout.formX(), layout.fieldBoxY(2), 112, 18)) {
-            openMonsterDeckScreen();
+            openMonsterDeckScreen(false);
+            return true;
+        }
+        if (insideRect(mouseX, mouseY, layout.formX(), layout.fieldBoxY(3), 112, 18)) {
+            openMonsterDeckScreen(true);
             return true;
         }
         List<DeveloperMonsterInitialEffect> effects = selectedMonsterEffective().initialEffects();
@@ -1482,7 +1489,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                     speed == defaults.speed() ? 0 : speed,
                     initialEffects,
                     new ArrayList<>(previous.deckCardIds()),
-                    previous.hasDeckOverride());
+                    previous.hasDeckOverride(),
+                    new ArrayList<>(previous.rewardCardIds()),
+                    previous.hasRewardOverride());
             replaceMonster(previousId, next);
             selectedMonsterId = id;
         }
@@ -1865,14 +1874,19 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         MonsterDefaults defaults = monsterDefaults(id);
         List<String> defaultDeck = defaultMonsterDeckCardIds(id);
         boolean hasDeckOverride = currentDefinition.map(DeveloperMonsterDefinition::hasDeckOverride).orElse(false);
+        boolean hasRewardOverride = currentDefinition.map(DeveloperMonsterDefinition::hasRewardOverride).orElse(false);
+        List<String> effectiveDeck = hasDeckOverride || !MonsterDeckProfile.hasDefaultDeck(monsterEntityType(id)) ? current.deckCardIds() : defaultDeck;
+        List<String> rewardPool = hasRewardOverride ? current.rewardCardIds() : uniqueCardIds(effectiveDeck);
         return new DeveloperMonsterDefinition(
                 current.entityTypeId(),
                 current.hasHealthOverride() ? current.maxHealth() : defaults.health(),
                 current.hasEnergyOverride() ? current.energy() : defaults.energy(),
                 current.hasSpeedOverride() ? current.speed() : defaults.speed(),
                 current.initialEffects(),
-                hasDeckOverride || !MonsterDeckProfile.hasDefaultDeck(monsterEntityType(id)) ? current.deckCardIds() : defaultDeck,
-                hasDeckOverride);
+                effectiveDeck,
+                hasDeckOverride,
+                rewardPool,
+                hasRewardOverride);
     }
 
     private void replaceCard(DeveloperCardDefinition previous, DeveloperCardDefinition next) {
@@ -1918,6 +1932,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         for (int i = 0; i < data.monsters.size(); i++) {
             DeveloperMonsterDefinition monster = data.monsters.get(i);
             List<String> deck = new ArrayList<>(monster.deckCardIds());
+            List<String> rewards = new ArrayList<>(monster.rewardCardIds());
             boolean changed = false;
             for (int j = 0; j < deck.size(); j++) {
                 if (previousId.equals(MoonSpireCardRegistry.registeredDeveloperId(deck.get(j)))) {
@@ -1925,6 +1940,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                     changed = true;
                 }
             }
+            for (int j = 0; j < rewards.size(); j++) {
+                if (previousId.equals(MoonSpireCardRegistry.registeredDeveloperId(rewards.get(j)))) {
+                    rewards.set(j, nextId);
+                    changed = true;
+                }
+            }
+            rewards = uniqueCardIds(rewards);
             if (changed) {
                 data.monsters.set(i, new DeveloperMonsterDefinition(
                         monster.entityTypeId(),
@@ -1933,7 +1955,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         monster.speed(),
                         monster.initialEffects(),
                         deck,
-                        monster.hasDeckOverride()));
+                        monster.hasDeckOverride(),
+                        rewards,
+                        monster.hasRewardOverride()));
             }
         }
     }
@@ -1961,7 +1985,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private boolean hasMonsterOverride(DeveloperMonsterDefinition monster) {
-        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || monster.hasInitialEffectOverride() || monster.hasDeckOverride();
+        return monster.hasHealthOverride() || monster.hasEnergyOverride() || monster.hasSpeedOverride() || monster.hasInitialEffectOverride() || monster.hasDeckOverride() || monster.hasRewardOverride();
     }
 
     private MonsterDefaults monsterDefaults(String entityTypeId) {
@@ -1987,6 +2011,21 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private List<String> defaultMonsterDeckCardIds(String entityTypeId) {
         return MonsterDeckProfile.defaultDeckCardIds(monsterEntityType(entityTypeId));
+    }
+
+    private List<String> defaultMonsterRewardCardIds(String entityTypeId) {
+        return uniqueCardIds(defaultMonsterDeckCardIds(entityTypeId));
+    }
+
+    private List<String> uniqueCardIds(List<String> cardIds) {
+        List<String> unique = new ArrayList<>();
+        for (String cardId : cardIds == null ? List.<String>of() : cardIds) {
+            String registeredId = MoonSpireCardRegistry.registeredDeveloperId(cardId);
+            if (!registeredId.isBlank() && !unique.contains(registeredId)) {
+                unique.add(registeredId);
+            }
+        }
+        return unique;
     }
 
     private EntityType<?> monsterEntityType(String entityTypeId) {
@@ -2243,7 +2282,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                     monster.speed(),
                     monster.initialEffects(),
                     deck,
-                    monster.hasDeckOverride()));
+                    monster.hasDeckOverride(),
+                    monster.rewardCardIds().stream()
+                            .filter(id -> !deletedId.equals(MoonSpireCardRegistry.registeredDeveloperId(id)))
+                            .toList(),
+                    monster.hasRewardOverride()));
         }
         data.monsters = new ArrayList<>(nextMonsters);
     }
@@ -2281,7 +2324,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 current.speed(),
                 effects,
                 new ArrayList<>(current.deckCardIds()),
-                current.hasDeckOverride()));
+                current.hasDeckOverride(),
+                new ArrayList<>(current.rewardCardIds()),
+                current.hasRewardOverride()));
         status = Component.translatable("debug.moonspire.monster_effects_updated");
         statusTicks = 120;
         effectScrollOffset = clampScroll(effectScrollOffset, monsterEffectEditorGrid(layout(), effects.size() + 1));
@@ -2403,7 +2448,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private PickerBounds monsterEffectPickerBounds(Layout layout, int effectCount) {
-        int y = Math.min(layout.fieldBoxY(3) + effectCount * 24 + 22, Math.max(layout.top(), layout.buttonY() - 104));
+        int y = Math.min(layout.fieldBoxY(4) + effectCount * 24 + 22, Math.max(layout.top(), layout.buttonY() - 104));
         int bottom = Math.max(y + 44, layout.buttonY() - 4);
         return new PickerBounds(layout.formX(), y, layout.formW(), Math.min(92, bottom - y));
     }
@@ -3015,8 +3060,47 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 current.speed(),
                 current.initialEffects(),
                 new ArrayList<>(deckCardIds),
-                true));
+                true,
+                new ArrayList<>(current.rewardCardIds()),
+                current.hasRewardOverride()));
         status = Component.translatable("debug.moonspire.monster_deck_updated");
+        statusTicks = 120;
+        refreshFields();
+    }
+
+    List<String> selectedMonsterRewardCardIds() {
+        applyFields();
+        return List.copyOf(selectedMonsterEffective().rewardCardIds());
+    }
+
+    List<String> defaultSelectedMonsterRewardCardIds() {
+        applyFields();
+        return uniqueCardIds(selectedMonsterEffective().deckCardIds());
+    }
+
+    void setSelectedMonsterRewardCardIds(List<String> rewardCardIds) {
+        applyFields();
+        setSelectedMonsterRewardCardIds(rewardCardIds, true);
+    }
+
+    void resetSelectedMonsterRewardCardIdsToDefault() {
+        applyFields();
+        setSelectedMonsterRewardCardIds(defaultSelectedMonsterRewardCardIds(), false);
+    }
+
+    private void setSelectedMonsterRewardCardIds(List<String> rewardCardIds, boolean override) {
+        DeveloperMonsterDefinition current = selectedMonsterOrDefault();
+        replaceMonster(current.entityTypeId(), new DeveloperMonsterDefinition(
+                current.entityTypeId(),
+                current.maxHealth(),
+                current.energy(),
+                current.speed(),
+                current.initialEffects(),
+                new ArrayList<>(current.deckCardIds()),
+                current.hasDeckOverride(),
+                override ? uniqueCardIds(rewardCardIds) : new ArrayList<>(),
+                override));
+        status = Component.translatable("debug.moonspire.monster_rewards_updated");
         statusTicks = 120;
         refreshFields();
     }
@@ -3163,7 +3247,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         Minecraft.getInstance().setScreen(new DeveloperFaceApplicationScreen(this));
     }
 
-    private void openMonsterDeckScreen() {
+    private void openMonsterDeckScreen(boolean rewardMode) {
         applyFields();
         itemPickerOpen = false;
         effectPickerOpen = false;
@@ -3171,7 +3255,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         monsterEffectPickerOpen = false;
         targetPickerEffectIndex = -1;
         confirmDelete = false;
-        Minecraft.getInstance().setScreen(new DeveloperMonsterDeckScreen(this));
+        Minecraft.getInstance().setScreen(new DeveloperMonsterDeckScreen(this, rewardMode));
     }
 
     private boolean isConvertedSource(CardSourceType type) {
@@ -3641,7 +3725,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private GridLayout monsterEffectEditorGrid(Layout layout, int itemCount) {
         int viewX = layout.formX() + EFFECT_INSET;
-        int viewY = layout.fieldBoxY(3);
+        int viewY = layout.fieldBoxY(4);
         int viewW = Math.max(1, layout.formW() - EFFECT_INSET * 2 - SCROLLBAR_HIT_WIDTH);
         int viewH = Math.max(18, Math.min(88, layout.buttonY() - viewY - EFFECT_BOTTOM_PAD));
         int rowH = 24;
@@ -3714,7 +3798,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             monsterEffectAmountBoxes.clear();
             monsterEffectAmountBoxesMonsterId = selectedId;
             for (int i = 0; i < effects.size(); i++) {
-                int rowY = layout.fieldBoxY(3) + i * 24;
+                int rowY = layout.fieldBoxY(4) + i * 24;
                 EditBox box = addBox(layout.formX() + layout.formW() - MONSTER_EFFECT_AMOUNT_W - EFFECT_INSET, rowY, MONSTER_EFFECT_AMOUNT_W, Component.translatable("screen.moonspire.value_number", effects.get(i).amount()));
                 box.setValue(Integer.toString(effects.get(i).amount()));
                 monsterEffectAmountBoxes.add(box);

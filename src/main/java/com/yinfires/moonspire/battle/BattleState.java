@@ -86,6 +86,7 @@ public class BattleState {
     private final ServerPlayer leader;
     private final List<CombatantState> playerStates = new ArrayList<>();
     private final List<CombatantState> enemyStates = new ArrayList<>();
+    private final List<MonsterRewardPool> startingEnemyRewardPools = new ArrayList<>();
     private final Map<Integer, CombatantState> byEntityId = new HashMap<>();
     private final Map<UUID, CombatantState> byPlayerId = new HashMap<>();
     private final Map<Integer, EntityLock> locks = new HashMap<>();
@@ -141,9 +142,10 @@ public class BattleState {
         }
         for (LivingEntity enemy : enemies) {
             DeveloperMonsterDefinition monsterOverride = DeveloperDataManager.monsterOverride(enemy).orElse(null);
+            List<CardInstance> enemyStartCards = enemyCards.getOrDefault(enemy.getId(), List.of());
             CombatantState state = new CombatantState(
                     enemy,
-                    new BattleDeck(enemyCards.getOrDefault(enemy.getId(), List.of()), random),
+                    new BattleDeck(enemyStartCards, random),
                     monsterOverride != null && monsterOverride.hasEnergyOverride() ? monsterOverride.energy() : CardBalance.fixedEnergy(),
                     monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : Math.max(1.0F, enemy.getMaxHealth()),
                     monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : MonsterDeckProfile.defaultBaseSpeed(enemy));
@@ -152,6 +154,7 @@ public class BattleState {
             enemyStates.add(state);
             byEntityId.put(enemy.getId(), state);
             locks.put(enemy.getId(), EntityLock.capture(enemy));
+            startingEnemyRewardPools.add(new MonsterRewardPool(BuiltInRegistries.ENTITY_TYPE.getKey(enemy.getType()).toString(), MonsterDeckProfile.rewardPoolCardIds(enemy, enemyStartCards)));
             total = total.add(enemy.position());
             totalCount++;
         }
@@ -207,6 +210,14 @@ public class BattleState {
             entities.add(state.entity());
         }
         return entities;
+    }
+
+    public List<MonsterRewardPool> startingEnemyRewardPools() {
+        return List.copyOf(startingEnemyRewardPools);
+    }
+
+    public boolean playerVictory() {
+        return !alivePlayers().isEmpty() && aliveEnemies().isEmpty();
     }
 
     public Vec3 cameraCenter() {

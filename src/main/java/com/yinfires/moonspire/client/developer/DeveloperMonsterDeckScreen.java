@@ -43,11 +43,13 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
 
     private final DeveloperCenterScreen parent;
     private final List<String> deckCardIds;
+    private final boolean rewardMode;
     private final Set<String> pendingAddCardIds = new HashSet<>();
     private EditBox searchBox;
     private int selectedDeckIndex = -1;
     private double scrollOffset;
     private boolean addMode;
+    private boolean dirty;
     private boolean draggingScrollbar;
     private int scrollbarGrabOffset;
     private List<DeveloperCardDefinition> cachedAllCards;
@@ -56,9 +58,14 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     private List<DeveloperCardDefinition> cachedFilteredCards = List.of();
 
     DeveloperMonsterDeckScreen(DeveloperCenterScreen parent) {
+        this(parent, false);
+    }
+
+    DeveloperMonsterDeckScreen(DeveloperCenterScreen parent, boolean rewardMode) {
         super(Component.translatable("screen.moonspire.developer_monster_deck"));
         this.parent = parent;
-        this.deckCardIds = new ArrayList<>(parent.selectedMonsterDeckCardIds());
+        this.rewardMode = rewardMode;
+        this.deckCardIds = new ArrayList<>(rewardMode ? parent.selectedMonsterRewardCardIds() : parent.selectedMonsterDeckCardIds());
     }
 
     @Override
@@ -71,16 +78,21 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         searchBox.active = addMode;
         addRenderableWidget(searchBox);
 
-        ButtonLayout buttons = buttonLayout(addMode ? 2 : 5);
+        ButtonLayout buttons = buttonLayout(addMode ? 2 : rewardMode ? 4 : 5);
         if (addMode) {
             addRenderableWidget(new MoonSpireTextureButton(buttons.x(), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> confirmAdd()));
             addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(), buttons.w(), buttons.h(), Component.translatable("gui.cancel"), button -> cancelAdd()));
         } else {
             addRenderableWidget(new MoonSpireTextureButton(buttons.x(), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> openAddMode()));
             addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.delete"), button -> deleteSelected()));
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.copy"), button -> copySelected()));
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(4), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
+            if (rewardMode) {
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
+            } else {
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.copy"), button -> copySelected()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(4), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
+            }
         }
     }
 
@@ -88,8 +100,8 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
         Component header = addMode
-                ? Component.translatable("screen.moonspire.developer_monster_deck_add")
-                : Component.translatable("screen.moonspire.developer_monster_deck_for", parent.selectedMonsterId());
+                ? Component.translatable(rewardMode ? "screen.moonspire.developer_monster_rewards_add" : "screen.moonspire.developer_monster_deck_add")
+                : Component.translatable(rewardMode ? "screen.moonspire.developer_monster_rewards_for" : "screen.moonspire.developer_monster_deck_for", parent.selectedMonsterId());
         graphics.drawCenteredString(font, header, width / 2, TOP, 0xFFFFD166);
         GridLayout grid = grid(cardCount());
         scrollOffset = clampScroll(scrollOffset, grid);
@@ -177,13 +189,15 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         for (DeveloperCardDefinition card : filteredCards()) {
             String id = MoonSpireCardRegistry.registeredDeveloperId(card.id());
             if (pendingAddCardIds.contains(id)) {
-                deckCardIds.add(id);
+                addCardId(id);
             }
         }
         pendingAddCardIds.clear();
         addMode = false;
         scrollOffset = 0.0D;
-        parent.setSelectedMonsterDeckCardIds(deckCardIds);
+        if (dirty) {
+            applyToParent();
+        }
         init();
     }
 
@@ -198,29 +212,54 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         if (selectedDeckIndex >= 0 && selectedDeckIndex < deckCardIds.size()) {
             deckCardIds.remove(selectedDeckIndex);
             selectedDeckIndex = Math.min(selectedDeckIndex, deckCardIds.size() - 1);
-            parent.setSelectedMonsterDeckCardIds(deckCardIds);
+            dirty = true;
+            applyToParent();
         }
     }
 
     private void copySelected() {
-        if (selectedDeckIndex >= 0 && selectedDeckIndex < deckCardIds.size()) {
+        if (!rewardMode && selectedDeckIndex >= 0 && selectedDeckIndex < deckCardIds.size()) {
             deckCardIds.add(selectedDeckIndex + 1, deckCardIds.get(selectedDeckIndex));
             selectedDeckIndex++;
-            parent.setSelectedMonsterDeckCardIds(deckCardIds);
+            dirty = true;
+            applyToParent();
         }
     }
 
     private void resetDeck() {
         deckCardIds.clear();
-        deckCardIds.addAll(parent.savedSelectedMonsterDeckCardIds());
+        deckCardIds.addAll(rewardMode ? parent.defaultSelectedMonsterRewardCardIds() : parent.savedSelectedMonsterDeckCardIds());
         selectedDeckIndex = deckCardIds.isEmpty() ? -1 : Math.min(Math.max(0, selectedDeckIndex), deckCardIds.size() - 1);
         scrollOffset = 0.0D;
-        parent.setSelectedMonsterDeckCardIds(deckCardIds);
+        dirty = true;
+        if (rewardMode) {
+            parent.resetSelectedMonsterRewardCardIdsToDefault();
+            dirty = false;
+        } else {
+            applyToParent();
+        }
     }
 
     private void done() {
-        parent.setSelectedMonsterDeckCardIds(deckCardIds);
+        if (dirty) {
+            applyToParent();
+        }
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    private void applyToParent() {
+        if (rewardMode) {
+            parent.setSelectedMonsterRewardCardIds(deckCardIds);
+        } else {
+            parent.setSelectedMonsterDeckCardIds(deckCardIds);
+        }
+    }
+
+    private void addCardId(String id) {
+        if (!rewardMode || !deckCardIds.contains(id)) {
+            deckCardIds.add(id);
+            dirty = true;
+        }
     }
 
     private int cardCount() {
