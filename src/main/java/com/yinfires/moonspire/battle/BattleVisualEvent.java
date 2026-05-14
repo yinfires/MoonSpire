@@ -151,6 +151,7 @@ public record BattleVisualEvent(
         CHANNELING_TRIDENT_THROW,
         RIPTIDE_RUSH,
         GUARDIAN_BEAM,
-        VINDICATOR_AXE_SWING
+        VINDICATOR_AXE_SWING,
+        VEX_CHARGE_LUNGE
     }
 }

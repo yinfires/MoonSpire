@@ -336,6 +336,17 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_moonlit_glide", "card.moonspire.monster.moonlit_glide.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.BLOCK, 5, CardTarget.SELF),
                         new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_razor_rush", "card.moonspire.monster.razor_rush.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_flicker_cut", "card.moonspire.monster.flicker_cut.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:iron_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_phase_stab", "card.moonspire.monster.phase_stab.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:iron_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_evasive_flicker", "card.moonspire.monster.evasive_flicker.name", "", 1, 0, 4, List.of(
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:iron_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_frenzied_dive", "card.moonspire.monster.frenzied_dive.name", "", 2, 8, 0, List.of(
+                        new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:iron_sword", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_trident_throw", "card.moonspire.monster.trident_throw.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.REMOTE, 1),
                         new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),

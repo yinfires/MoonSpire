@@ -154,6 +154,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_dragging_talons",
             "builtin_monster_wingbeat_guard",
             "builtin_monster_moonlit_glide");
+    private static final List<String> VEX_DEFAULT_DECK = List.of(
+            "builtin_monster_razor_rush",
+            "builtin_monster_razor_rush",
+            "builtin_monster_razor_rush",
+            "builtin_monster_flicker_cut",
+            "builtin_monster_flicker_cut",
+            "builtin_monster_phase_stab",
+            "builtin_monster_phase_stab",
+            "builtin_monster_evasive_flicker",
+            "builtin_monster_evasive_flicker",
+            "builtin_monster_frenzied_dive");
     private static final List<String> DROWNED_DEFAULT_DECK = List.of(
             "builtin_monster_trident_throw",
             "builtin_monster_trident_throw",
@@ -278,6 +289,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.PHANTOM) {
             return cards(PHANTOM_DEFAULT_DECK);
         }
+        if (type == EntityType.VEX) {
+            return cards(VEX_DEFAULT_DECK);
+        }
         return fallback(monster);
     }
 
@@ -326,6 +340,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.PHANTOM) {
             return PHANTOM_DEFAULT_DECK;
+        }
+        if (type == EntityType.VEX) {
+            return VEX_DEFAULT_DECK;
         }
         return FALLBACK_DEFAULT_DECK;
     }

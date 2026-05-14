@@ -44,6 +44,9 @@ public final class ClientBattleState {
     private static final int VINDICATOR_AXE_APPROACH_TICKS = 8;
     private static final int VINDICATOR_AXE_STRIKE_TICKS = 1;
     private static final int VINDICATOR_AXE_RECOVER_TICKS = 6;
+    private static final int VEX_CHARGE_RAISE_TICKS = 8;
+    private static final int VEX_CHARGE_APPROACH_TICKS = 7;
+    private static final int VEX_CHARGE_HIT_PAUSE_TICKS = 6;
     static final int RIPTIDE_CHARGE_TICKS = 16;
     private static final int RIPTIDE_RUSH_TICKS = 10;
     private static final int RIPTIDE_HIT_PAUSE_TICKS = 6;
@@ -514,6 +517,11 @@ public final class ClientBattleState {
         return state != null && state.vindicatorAxeRaised();
     }
 
+    public static boolean visualVexCharging(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.vexCharging();
+    }
+
     public static int visualTicksUsingItem(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? 0 : state.ticksUsingItem();
@@ -806,7 +814,8 @@ public final class ClientBattleState {
     private static boolean usesMovementAnimation(BattleVisualEvent.AnimationType animationType) {
         return animationType == BattleVisualEvent.AnimationType.MELEE_LUNGE
                 || animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH
-                || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING;
+                || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
+                || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
     }
 
     public static final class GuardianBeamAnimation {
@@ -977,6 +986,8 @@ public final class ClientBattleState {
                         ? RIPTIDE_CHARGE_TICKS + RIPTIDE_RUSH_TICKS + RIPTIDE_HIT_PAUSE_TICKS
                         : nextType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
                         ? VINDICATOR_AXE_RAISE_TICKS + VINDICATOR_AXE_APPROACH_TICKS + VINDICATOR_AXE_STRIKE_TICKS + VINDICATOR_AXE_RECOVER_TICKS
+                        : nextType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
+                        ? VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS + VEX_CHARGE_HIT_PAUSE_TICKS
                         : MELEE_LUNGE_TICKS + MELEE_HIT_PAUSE_TICKS;
                 lungeTicks = Math.max(1, Math.max(minimumTicks, animationTicks));
                 lungeAge = 0;
@@ -1050,6 +1061,16 @@ public final class ClientBattleState {
                 age -= VINDICATOR_AXE_APPROACH_TICKS;
                 if (age <= VINDICATOR_AXE_STRIKE_TICKS) {
                     return lungeStrike;
+                }
+                return lungeStrike;
+            }
+            if (animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE) {
+                if (age <= VEX_CHARGE_RAISE_TICKS) {
+                    return lungeStart;
+                }
+                age -= VEX_CHARGE_RAISE_TICKS;
+                if (age <= VEX_CHARGE_APPROACH_TICKS) {
+                    return lungePosition(age / VEX_CHARGE_APPROACH_TICKS);
                 }
                 return lungeStrike;
             }
@@ -1144,6 +1165,12 @@ public final class ClientBattleState {
             return animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
                     && lungeTicks > 0
                     && lungeAge <= VINDICATOR_AXE_RAISE_TICKS + VINDICATOR_AXE_APPROACH_TICKS;
+        }
+
+        private boolean vexCharging() {
+            return animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
+                    && lungeTicks > 0
+                    && lungeAge <= VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS;
         }
 
         private void hurtFlash(Vec3 knockbackVelocity) {

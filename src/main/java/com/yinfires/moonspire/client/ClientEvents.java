@@ -51,6 +51,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.entity.monster.Pillager;
+import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -501,6 +502,8 @@ public final class ClientEvents {
                 drowned.setAggressive(true);
             } else if (entity instanceof Vindicator vindicator && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING) {
                 vindicator.setAggressive(ClientBattleState.visualVindicatorAxeRaised(entity.getId()));
+            } else if (entity instanceof Vex vex && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE) {
+                vex.setIsCharging(ClientBattleState.visualVexCharging(entity.getId()));
             }
             ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
             syncVanillaCrossbowPose(entity, mainHand);
@@ -624,6 +627,7 @@ public final class ClientEvents {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
                 state.restoreAggressive(entity);
                 state.restoreCrossbowCharging(entity);
+                state.restoreVexCharging(entity);
                 restoreVisualRiptideState(entity);
                 if (state.startedUsing && entity.isUsingItem()) {
                     clearVisualUseItemState(entity);
@@ -637,6 +641,7 @@ public final class ClientEvents {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
                 state.restoreAggressive(entity);
                 state.restoreCrossbowCharging(entity);
+                state.restoreVexCharging(entity);
                 if (state.startedUsing && entity.isUsingItem() && !ClientBattleState.visualUsingItem(entity.getId())) {
                     clearVisualUseItemState(entity);
                 }
@@ -759,8 +764,9 @@ public final class ClientEvents {
                 boolean playedCardVisual = event.playedCard() != null || !event.itemStack().isEmpty();
                 boolean meleeLungeHit = event.animationType() == BattleVisualEvent.AnimationType.MELEE_LUNGE && event.animationTicks() <= 0;
                 boolean vindicatorAxeHit = event.animationType() == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING && event.animationTicks() <= 0;
+                boolean vexChargeHit = event.animationType() == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
-                if ((playedCardVisual && shouldSwing || meleeLungeHit || vindicatorAxeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                if ((playedCardVisual && shouldSwing || meleeLungeHit || vindicatorAxeHit || vexChargeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (attacker instanceof LivingEntity livingAttacker) {
@@ -889,18 +895,21 @@ public final class ClientEvents {
         private final ItemStack originalMainHand;
         private final Boolean originalAggressive;
         private final Boolean originalCrossbowCharging;
+        private final Boolean originalVexCharging;
         private boolean startedUsing;
 
-        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive, Boolean originalCrossbowCharging) {
+        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive, Boolean originalCrossbowCharging, Boolean originalVexCharging) {
             this.originalMainHand = originalMainHand;
             this.originalAggressive = originalAggressive;
             this.originalCrossbowCharging = originalCrossbowCharging;
+            this.originalVexCharging = originalVexCharging;
         }
 
         private static TemporaryHandState capture(LivingEntity entity) {
             Boolean aggressive = entity instanceof net.minecraft.world.entity.Mob mob ? mob.isAggressive() : null;
             Boolean crossbowCharging = entity instanceof Pillager pillager ? pillager.isChargingCrossbow() : null;
-            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive, crossbowCharging);
+            Boolean vexCharging = entity instanceof Vex vex ? vex.isCharging() : null;
+            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive, crossbowCharging, vexCharging);
         }
 
         private void restoreAggressive(LivingEntity entity) {
@@ -912,6 +921,12 @@ public final class ClientEvents {
         private void restoreCrossbowCharging(LivingEntity entity) {
             if (originalCrossbowCharging != null && entity instanceof Pillager pillager) {
                 pillager.setChargingCrossbow(originalCrossbowCharging);
+            }
+        }
+
+        private void restoreVexCharging(LivingEntity entity) {
+            if (originalVexCharging != null && entity instanceof Vex vex) {
+                vex.setIsCharging(originalVexCharging);
             }
         }
     }

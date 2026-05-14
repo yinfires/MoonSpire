@@ -61,6 +61,9 @@ public class BattleState {
     private static final int VINDICATOR_AXE_APPROACH_TICKS = 8;
     private static final int VINDICATOR_AXE_STRIKE_TICKS = 1;
     private static final int VINDICATOR_AXE_RECOVER_TICKS = 6;
+    private static final int VEX_CHARGE_RAISE_TICKS = 8;
+    private static final int VEX_CHARGE_APPROACH_TICKS = 7;
+    private static final int VEX_CHARGE_HIT_PAUSE_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
@@ -1957,6 +1960,26 @@ public class BattleState {
                 || "builtin_monster_executioners_blow".equals(batch.card().cardId());
     }
 
+    private boolean isVexChargeAttack(PendingCardBatch batch) {
+        if (batch == null || batch.card() == null || batch.user() == null || batch.user().entity().getType() != EntityType.VEX) {
+            return false;
+        }
+        return "builtin_monster_razor_rush".equals(batch.card().cardId())
+                || "builtin_monster_flicker_cut".equals(batch.card().cardId())
+                || "builtin_monster_phase_stab".equals(batch.card().cardId())
+                || "builtin_monster_frenzied_dive".equals(batch.card().cardId());
+    }
+
+    private LungeStyle lungeStyle(PendingCardBatch batch) {
+        if (isVindicatorAxeAttack(batch)) {
+            return LungeStyle.VINDICATOR_AXE;
+        }
+        if (isVexChargeAttack(batch)) {
+            return LungeStyle.VEX_CHARGE;
+        }
+        return LungeStyle.NORMAL;
+    }
+
     private PendingEffect bleedEffectForAttack(CombatantState user) {
         int bleed = user.effectAmount(BattleEffectType.BLEED);
         if (bleed <= 0) {
@@ -2110,11 +2133,8 @@ public class BattleState {
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
-        LungeAnimation animation = new LungeAnimation(batch, animated.target(), isVindicatorAxeAttack(batch));
-        BattleVisualEvent.AnimationType animationType = animation.vindicatorAxeSwing()
-                ? BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
-                : BattleVisualEvent.AnimationType.MELEE_LUNGE;
-        emitVisual(batch.user().entity(), animated.target().entity(), visualStack(batch), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, animationType, animation.visualTicks(), animation.start(), animation.strike());
+        LungeAnimation animation = new LungeAnimation(batch, animated.target(), lungeStyle(batch));
+        emitVisual(batch.user().entity(), animated.target().entity(), visualStack(batch), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, animation.animationType(), animation.visualTicks(), animation.start(), animation.strike());
         pendingAnimation = animation;
         return true;
     }
@@ -2418,6 +2438,9 @@ public class BattleState {
         if (batch.card() != null && isVindicatorAxeCard(batch.card())) {
             return new ItemStack(Items.IRON_AXE);
         }
+        if (batch.card() != null && isVexCard(batch.card())) {
+            return new ItemStack(Items.IRON_SWORD);
+        }
         if (batch.card() != null && "builtin_monster_bow_strike".equals(batch.card().cardId())) {
             return new ItemStack(Items.BOW);
         }
@@ -2433,6 +2456,17 @@ public class BattleState {
                 || "builtin_monster_executioners_blow".equals(card.cardId())
                 || "builtin_monster_raised_axe_guard".equals(card.cardId())
                 || "builtin_monster_fanatic_might".equals(card.cardId());
+    }
+
+    private static boolean isVexCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_razor_rush".equals(card.cardId())
+                || "builtin_monster_flicker_cut".equals(card.cardId())
+                || "builtin_monster_phase_stab".equals(card.cardId())
+                || "builtin_monster_evasive_flicker".equals(card.cardId())
+                || "builtin_monster_frenzied_dive".equals(card.cardId());
     }
 
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
@@ -3587,20 +3621,20 @@ public class BattleState {
         private final Vec3 start;
         private final Vec3 strike;
         private final boolean pounce;
-        private final boolean vindicatorAxeSwing;
+        private final LungeStyle style;
         private final boolean noPhysicsBeforeAnimation;
         private int ticks;
         private Phase phase = Phase.LUNGE;
         private boolean effectsApplied;
 
-        private LungeAnimation(PendingCardBatch batch, CombatantState target, boolean vindicatorAxeSwing) {
+        private LungeAnimation(PendingCardBatch batch, CombatantState target, LungeStyle style) {
             this.batch = batch;
             this.target = target;
             this.actor = batch.user().entity();
             this.start = actor.position();
             this.pounce = batch.card() != null && "builtin_monster_pounce".equals(batch.card().cardId());
-            this.vindicatorAxeSwing = vindicatorAxeSwing;
-            this.phase = vindicatorAxeSwing ? Phase.RAISE_AXE : Phase.LUNGE;
+            this.style = style == null ? LungeStyle.NORMAL : style;
+            this.phase = this.style.hasPrepare() ? Phase.PREPARE : Phase.LUNGE;
             this.noPhysicsBeforeAnimation = actor.noPhysics;
             Vec3 targetPos = target.entity().position();
             Vec3 direction = targetPos.subtract(start);
@@ -3630,10 +3664,10 @@ public class BattleState {
                 return true;
             }
             finishPendingFacing(batch);
-            if (phase == Phase.RAISE_AXE) {
+            if (phase == Phase.PREPARE) {
                 ticks++;
                 moveActor(start);
-                if (ticks >= VINDICATOR_AXE_RAISE_TICKS) {
+                if (ticks >= style.prepareTicks()) {
                     ticks = 0;
                     phase = Phase.LUNGE;
                 }
@@ -3644,16 +3678,16 @@ public class BattleState {
                 moveActor(lungePosition(ticks / (double) lungeTicks()));
                 if (ticks >= lungeTicks()) {
                     ticks = 0;
-                    phase = vindicatorAxeSwing ? Phase.AXE_STRIKE : Phase.HIT_PAUSE;
+                    phase = style.hasStrike() ? Phase.STRIKE : Phase.HIT_PAUSE;
                     moveActor(strike);
                     return false;
                 }
                 return false;
             }
-            if (phase == Phase.AXE_STRIKE) {
+            if (phase == Phase.STRIKE) {
                 ticks++;
                 moveActor(strike);
-                if (ticks >= VINDICATOR_AXE_STRIKE_TICKS) {
+                if (ticks >= style.strikeTicks()) {
                     phase = Phase.HIT_PAUSE;
                     return false;
                 }
@@ -3679,7 +3713,7 @@ public class BattleState {
 
         @Override
         public boolean readyToApplyEffects() {
-            return phase == (vindicatorAxeSwing ? Phase.AXE_STRIKE : Phase.HIT_PAUSE) && !effectsApplied;
+            return phase == (style.hasStrike() ? Phase.STRIKE : Phase.HIT_PAUSE) && !effectsApplied;
         }
 
         @Override
@@ -3700,29 +3734,24 @@ public class BattleState {
             return strike;
         }
 
-        private boolean vindicatorAxeSwing() {
-            return vindicatorAxeSwing;
-        }
-
         private int visualTicks() {
-            if (!vindicatorAxeSwing) {
-                return MELEE_LUNGE_TICKS;
-            }
-            return VINDICATOR_AXE_RAISE_TICKS + VINDICATOR_AXE_APPROACH_TICKS + VINDICATOR_AXE_STRIKE_TICKS + VINDICATOR_AXE_RECOVER_TICKS;
+            return style.visualTicks();
         }
 
         private BattleVisualEvent.AnimationType hitAnimationType() {
-            return vindicatorAxeSwing
-                    ? BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
-                    : BattleVisualEvent.AnimationType.MELEE_LUNGE;
+            return style.animationType();
+        }
+
+        private BattleVisualEvent.AnimationType animationType() {
+            return style.animationType();
         }
 
         private int lungeTicks() {
-            return vindicatorAxeSwing ? VINDICATOR_AXE_APPROACH_TICKS : MELEE_LUNGE_TICKS;
+            return style.approachTicks();
         }
 
         private int hitPauseTicks() {
-            return vindicatorAxeSwing ? VINDICATOR_AXE_RECOVER_TICKS : MELEE_HIT_PAUSE_TICKS;
+            return style.recoverTicks();
         }
 
         private Vec3 lungePosition(double progress) {
@@ -3772,10 +3801,64 @@ public class BattleState {
         }
 
         private enum Phase {
-            RAISE_AXE,
+            PREPARE,
             LUNGE,
-            AXE_STRIKE,
+            STRIKE,
             HIT_PAUSE
+        }
+    }
+
+    private enum LungeStyle {
+        NORMAL,
+        VINDICATOR_AXE,
+        VEX_CHARGE;
+
+        private boolean hasPrepare() {
+            return this == VINDICATOR_AXE || this == VEX_CHARGE;
+        }
+
+        private int prepareTicks() {
+            return switch (this) {
+                case VINDICATOR_AXE -> VINDICATOR_AXE_RAISE_TICKS;
+                case VEX_CHARGE -> VEX_CHARGE_RAISE_TICKS;
+                case NORMAL -> 0;
+            };
+        }
+
+        private int approachTicks() {
+            return switch (this) {
+                case VINDICATOR_AXE -> VINDICATOR_AXE_APPROACH_TICKS;
+                case VEX_CHARGE -> VEX_CHARGE_APPROACH_TICKS;
+                case NORMAL -> MELEE_LUNGE_TICKS;
+            };
+        }
+
+        private boolean hasStrike() {
+            return this == VINDICATOR_AXE;
+        }
+
+        private int strikeTicks() {
+            return this == VINDICATOR_AXE ? VINDICATOR_AXE_STRIKE_TICKS : 0;
+        }
+
+        private int recoverTicks() {
+            return switch (this) {
+                case VINDICATOR_AXE -> VINDICATOR_AXE_RECOVER_TICKS;
+                case VEX_CHARGE -> VEX_CHARGE_HIT_PAUSE_TICKS;
+                case NORMAL -> MELEE_HIT_PAUSE_TICKS;
+            };
+        }
+
+        private int visualTicks() {
+            return prepareTicks() + approachTicks() + strikeTicks() + recoverTicks();
+        }
+
+        private BattleVisualEvent.AnimationType animationType() {
+            return switch (this) {
+                case VINDICATOR_AXE -> BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING;
+                case VEX_CHARGE -> BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
+                case NORMAL -> BattleVisualEvent.AnimationType.MELEE_LUNGE;
+            };
         }
     }
 
