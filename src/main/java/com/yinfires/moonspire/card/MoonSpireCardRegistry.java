@@ -324,6 +324,18 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_powder_shell", "card.moonspire.monster.powder_shell.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.BLOCK, 7, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:gunpowder", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_raking_dive", "card.moonspire.monster.raking_dive.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_dragging_talons", "card.moonspire.monster.dragging_talons.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 7, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_wingbeat_guard", "card.moonspire.monster.wingbeat_guard.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 3, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_moonlit_glide", "card.moonspire.monster.moonlit_glide.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 5, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_trident_throw", "card.moonspire.monster.trident_throw.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.REMOTE, 1),
                         new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),

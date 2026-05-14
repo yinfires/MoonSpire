@@ -481,6 +481,10 @@ public record CardInstance(
             case "card.moonspire.monster.light_fuse.name" -> "builtin_monster_light_fuse";
             case "card.moonspire.monster.hissing_advance.name" -> "builtin_monster_hissing_advance";
             case "card.moonspire.monster.powder_shell.name" -> "builtin_monster_powder_shell";
+            case "card.moonspire.monster.raking_dive.name" -> "builtin_monster_raking_dive";
+            case "card.moonspire.monster.dragging_talons.name" -> "builtin_monster_dragging_talons";
+            case "card.moonspire.monster.wingbeat_guard.name" -> "builtin_monster_wingbeat_guard";
+            case "card.moonspire.monster.moonlit_glide.name" -> "builtin_monster_moonlit_glide";
             case "card.moonspire.monster.guardian_beam.name" -> "builtin_monster_guardian_beam";
             case "card.moonspire.monster.tidal_gaze.name" -> "builtin_monster_tidal_gaze";
             case "card.moonspire.monster.spiked_carapace.name" -> "builtin_monster_spiked_carapace";
