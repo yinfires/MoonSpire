@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.client.compat.jei;
 
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.client.CardPreviewAnimation;
 import com.yinfires.moonspire.client.CardRenderHelper;
 import com.yinfires.moonspire.registry.ModItems;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
@@ -32,9 +33,11 @@ public final class CardForgeRecipeCategory implements IRecipeCategory<CardForgeJ
     private static final int CARD_Y = 38;
     private static final int CARD_PREVIEW_X = 104;
     private static final int CARD_PREVIEW_Y = 14;
+    private static final float CARD_PREVIEW_SCALE = CardRenderHelper.CARD_WIDTH / (float) CardRenderHelper.SMALL_CARD_WIDTH;
 
     private final IDrawable icon;
     private final IDrawable arrow;
+    private final CardPreviewAnimation previewAnimation = new CardPreviewAnimation();
 
     public CardForgeRecipeCategory(IGuiHelper guiHelper) {
         this.icon = guiHelper.createDrawableItemStack(new ItemStack(ModItems.CARD_FORGE.get()));
@@ -83,17 +86,36 @@ public final class CardForgeRecipeCategory implements IRecipeCategory<CardForgeJ
         arrow.draw(guiGraphics, ARROW_X, ARROW_Y);
         try (CardRenderHelper.CardRenderContext ignored = CardRenderHelper.openFrameContext()) {
             String contentKey = CardRenderHelper.contentKey(recipe.card());
+            if (previewAnimation.key() != null && !previewAnimation.matches(contentKey)) {
+                previewAnimation.clear();
+            }
             boolean previewHovered = cardPreviewHovered(mouseX, mouseY);
-            if (!previewHovered) {
+            if (previewHovered) {
+                previewAnimation.setOpenTarget(contentKey,
+                        CARD_X + CardRenderHelper.SMALL_CARD_WIDTH / 2.0F,
+                        CARD_Y + CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F,
+                        CARD_PREVIEW_X + CardRenderHelper.CARD_WIDTH / 2.0F,
+                        CARD_PREVIEW_Y + Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * CARD_PREVIEW_SCALE) / 2.0F,
+                        1.0F,
+                        CARD_PREVIEW_SCALE,
+                        CardRenderHelper.SMALL_CARD_WIDTH,
+                        CardRenderHelper.SMALL_CARD_HEIGHT);
+                previewAnimation.advance();
+            } else {
+                previewAnimation.setClosingTarget();
+                previewAnimation.advance();
+                if (previewAnimation.finishedClosing()) {
+                    previewAnimation.clear();
+                }
+            }
+            boolean previewAnimatingThisCard = previewAnimation.visible() && previewAnimation.matches(contentKey);
+            if (!previewAnimatingThisCard) {
                 CardRenderHelper.renderSmallCard(guiGraphics, font, recipe.card(), CARD_X, CARD_Y, false, false, CardRenderHelper.CardValues.original(recipe.card()), false, true, contentKey);
             } else {
-                guiGraphics.pose().pushPose();
-                guiGraphics.pose().translate(0.0F, 0.0F, 120.0F);
-                try {
-                    CardRenderHelper.renderCard(guiGraphics, font, recipe.card(), CARD_PREVIEW_X, CARD_PREVIEW_Y, false, false, contentKey);
-                    CardRenderHelper.renderKeywordTipsBeside(guiGraphics, font, recipe.card(), CARD_PREVIEW_X, CARD_PREVIEW_Y, WIDTH, HEIGHT);
-                } finally {
-                    guiGraphics.pose().popPose();
+                renderAnimatedPreview(guiGraphics, font, recipe, contentKey);
+                if (previewAnimation.progress() > 0.86F) {
+                    CardPreviewAnimation.Bounds bounds = previewAnimation.bounds();
+                    CardRenderHelper.renderKeywordTipsBeside(guiGraphics, font, recipe.card(), bounds.x(), bounds.y(), bounds.width(), bounds.height(), WIDTH, HEIGHT);
                 }
             }
         }
@@ -113,6 +135,19 @@ public final class CardForgeRecipeCategory implements IRecipeCategory<CardForgeJ
 
     private static boolean cardPreviewHovered(double mouseX, double mouseY) {
         return inBounds(mouseX, mouseY, CARD_X, CARD_Y, CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
+    }
+
+    private void renderAnimatedPreview(GuiGraphics guiGraphics, Font font, CardForgeJeiRecipe recipe, String contentKey) {
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(0.0F, 0.0F, 120.0F);
+        try {
+            CardPreviewAnimation.RenderBounds bounds = previewAnimation.renderBounds();
+            guiGraphics.pose().translate(bounds.x(), bounds.y(), 0.0F);
+            guiGraphics.pose().scale(previewAnimation.scale(), previewAnimation.scale(), 1.0F);
+            CardRenderHelper.renderSmallCard(guiGraphics, font, recipe.card(), 0, 0, false, false, CardRenderHelper.CardValues.original(recipe.card()), false, true, contentKey);
+        } finally {
+            guiGraphics.pose().popPose();
+        }
     }
 
     private static boolean inBounds(double mouseX, double mouseY, int x, int y, int width, int height) {

@@ -69,7 +69,7 @@ public class CardForgeScreen extends NoBlurScreen {
         graphics.disableScissor();
         renderScrollbar(graphics, layout);
         if (hoveredIndex >= 0 && hoveredIndex < entries.size()) {
-            renderCardPreview(graphics, entries.get(hoveredIndex).card(), layout);
+            renderCardPreview(graphics, entries.get(hoveredIndex), layout);
         }
         renderWidgets(graphics, mouseX, mouseY, partialTick);
     }
@@ -204,9 +204,17 @@ public class CardForgeScreen extends NoBlurScreen {
         graphics.fill(x + SLOT_WIDTH - 2, y + 1, x + SLOT_WIDTH - 1, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
     }
 
-    private void renderCardPreview(GuiGraphics graphics, CardInstance card, ForgeLayout layout) {
-        CardRenderHelper.renderCard(graphics, font, card, layout.previewX(), layout.previewY(), false, CardRenderHelper.CardValues.original(card), false, false);
-        CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, layout.previewX(), layout.previewY(), width, height);
+    private void renderCardPreview(GuiGraphics graphics, ForgeSlotEntry entry, ForgeLayout layout) {
+        CardInstance card = entry.card();
+        String contentKey = CardRenderHelper.contentKey(card);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 120.0F);
+        try {
+            CardRenderHelper.renderCard(graphics, font, card, layout.previewX(), layout.previewY(), false, CardRenderHelper.CardValues.original(card), false, false, contentKey);
+            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, layout.previewX(), layout.previewY(), CardRenderHelper.CARD_WIDTH, CardRenderHelper.CARD_HEIGHT, width, height);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     private boolean scrollbarAt(ForgeLayout layout, double mouseX, double mouseY) {

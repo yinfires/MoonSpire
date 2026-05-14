@@ -34,6 +34,7 @@ public class CardRewardScreen extends NoBlurScreen {
     private boolean draggingScrollbar;
     private double scrollbarGrabOffset;
     private int hoveredIndex = -1;
+    private final CardPreviewAnimation previewAnimation = new CardPreviewAnimation();
 
     CardRewardScreen(UUID rewardId, List<OpenCardRewardScreenPayload.RewardPage> pages) {
         super(Component.translatable("screen.moonspire.card_reward"));
@@ -65,12 +66,11 @@ public class CardRewardScreen extends NoBlurScreen {
             Layout layout = layout(page.cards().size());
             constrainScroll(layout);
             hoveredIndex = cardIndexAt(layout, mouseX, mouseY);
+            updatePreviewAnimation(page, layout, hoveredIndex);
             renderCards(graphics, page, layout, hoveredIndex);
             renderScrollbar(graphics, layout);
             renderWidgets(graphics, mouseX, mouseY, partialTick);
-            if (hoveredIndex >= 0 && hoveredIndex < page.cards().size()) {
-                renderPreview(graphics, page.cards().get(hoveredIndex), cardBounds(layout, hoveredIndex));
-            }
+            renderPreview(graphics, page);
         } finally {
             graphics.pose().popPose();
         }
@@ -140,6 +140,7 @@ public class CardRewardScreen extends NoBlurScreen {
         pageIndex++;
         scrollOffset = 0.0D;
         hoveredIndex = -1;
+        previewAnimation.clear();
         draggingScrollbar = false;
         if (pageIndex >= pages.size()) {
             onClose();
@@ -161,11 +162,12 @@ public class CardRewardScreen extends NoBlurScreen {
         graphics.enableScissor(layout.viewX(), layout.viewY(), layout.viewX() + layout.viewW(), layout.viewY() + layout.viewH());
         try {
             for (int i = firstVisibleIndex(layout); i < Math.min(page.cards().size(), lastVisibleIndex(layout)); i++) {
-                if (i == hovered) {
+                CardBounds bounds = cardBounds(layout, i);
+                CardInstance card = page.cards().get(i);
+                if (previewAnimation.visible() && previewAnimation.matches(card.id())) {
                     continue;
                 }
-                CardBounds bounds = cardBounds(layout, i);
-                renderCardAt(graphics, page.cards().get(i), bounds, CARD_SCALE);
+                renderCardAt(graphics, card, bounds, CARD_SCALE);
             }
         } finally {
             graphics.disableScissor();
@@ -173,6 +175,23 @@ public class CardRewardScreen extends NoBlurScreen {
     }
 
     private void renderPreview(GuiGraphics graphics, CardInstance card, CardBounds bounds) {
+        updatePreviewAnimation(card, bounds);
+        renderPreview(graphics, currentPage());
+    }
+
+    private void updatePreviewAnimation(OpenCardRewardScreenPayload.RewardPage page, Layout layout, int hoveredIndex) {
+        if (hoveredIndex >= 0 && hoveredIndex < page.cards().size()) {
+            updatePreviewAnimation(page.cards().get(hoveredIndex), cardBounds(layout, hoveredIndex));
+            return;
+        }
+        previewAnimation.setClosingTarget();
+        previewAnimation.advance();
+        if (previewAnimation.finishedClosing()) {
+            previewAnimation.clear();
+        }
+    }
+
+    private void updatePreviewAnimation(CardInstance card, CardBounds bounds) {
         float centerX = bounds.x() + cardW() / 2.0F;
         float centerY = bounds.y() + cardH() / 2.0F;
         int previewW = Math.round(CardRenderHelper.CARD_WIDTH * PREVIEW_SCALE);
@@ -181,12 +200,47 @@ public class CardRewardScreen extends NoBlurScreen {
         int previewY = Math.round(centerY - previewH / 2.0F);
         previewX = Math.max(8, Math.min(width - previewW - 8, previewX));
         previewY = Math.max(TOP_TITLE_Y + font.lineHeight + 8, Math.min(height - BOTTOM_RESERVE - previewH, previewY));
+        previewAnimation.setOpenTarget(card.id(), centerX, centerY, previewX + previewW / 2.0F, previewY + previewH / 2.0F, CARD_SCALE, PREVIEW_SCALE);
+        previewAnimation.advance();
+    }
+
+    private void renderPreview(GuiGraphics graphics, OpenCardRewardScreenPayload.RewardPage page) {
+        CardInstance card = previewAnimationCard(page);
+        if (card == null) {
+            previewAnimation.clear();
+            return;
+        }
+        if (!previewAnimation.visible()) {
+            return;
+        }
+        renderAnimatedPreview(graphics, card, previewAnimation);
+        if (previewAnimation.progress() > 0.86F) {
+            CardPreviewAnimation.Bounds bounds = previewAnimation.bounds();
+            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, bounds.x(), bounds.y(), bounds.width(), bounds.height(), width, height);
+        }
+    }
+
+    private CardInstance previewAnimationCard(OpenCardRewardScreenPayload.RewardPage page) {
+        Object key = previewAnimation.key();
+        if (key == null || page == null) {
+            return null;
+        }
+        for (CardInstance card : page.cards()) {
+            if (previewAnimation.matches(card.id())) {
+                return card;
+            }
+        }
+        return null;
+    }
+
+    private void renderAnimatedPreview(GuiGraphics graphics, CardInstance card, CardPreviewAnimation animation) {
         graphics.pose().pushPose();
-        graphics.pose().translate(previewX, previewY, 130.0F);
-        graphics.pose().scale(PREVIEW_SCALE, PREVIEW_SCALE, 1.0F);
+        graphics.pose().translate(0.0F, 0.0F, 130.0F);
+        CardPreviewAnimation.RenderBounds bounds = animation.renderBounds();
+        graphics.pose().translate(bounds.x(), bounds.y(), 0.0F);
+        graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
         CardRenderHelper.renderCard(graphics, font, card, 0, 0, false, false, CardRenderHelper.warmupContentKey(card));
         graphics.pose().popPose();
-        CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, previewX, previewY, previewW, previewH, width, height);
     }
 
     private void renderCardAt(GuiGraphics graphics, CardInstance card, CardBounds bounds, float scale) {

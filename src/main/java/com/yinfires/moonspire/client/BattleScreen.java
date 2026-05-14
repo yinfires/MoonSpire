@@ -99,7 +99,7 @@ public class BattleScreen extends NoBlurScreen {
     private static final int CARD_RENDER_DATA_CACHE_LIMIT = 512;
     private final Map<UUID, HandCardAnimation> handAnimations = new HashMap<>();
     private final List<FlyingCardAnimation> flyingCards = new ArrayList<>();
-    private final PreviewCardAnimation monsterIntentPreview = new PreviewCardAnimation();
+    private final CardPreviewAnimation monsterIntentPreview = new CardPreviewAnimation();
     private final PileHoverAnimation drawPileHover = new PileHoverAnimation();
     private final PileHoverAnimation discardPileHover = new PileHoverAnimation();
     private final PileHoverAnimation exhaustPileHover = new PileHoverAnimation();
@@ -724,44 +724,64 @@ public class BattleScreen extends NoBlurScreen {
             hoveredMonsterIntentIndex = -1;
             hoveredMonsterIntentEntityId = -1;
         }
+        updateMonsterIntentPreview(intentCards, hoveredIndex, x, y, spacing);
         for (int i = 0; i < intentCards.size(); i++) {
-            if (i == hoveredIndex) {
+            CardInstance card = intentCards.get(i);
+            if (monsterIntentPreview.visible() && monsterIntentPreview.matches(card.id())) {
                 continue;
             }
-            CardInstance card = intentCards.get(i);
             CardRenderHelper.renderSmallCard(graphics, font, card, x + i * spacing, y, false, false, cardValues(snapshot, card, intentAttacker(snapshot, intentEntityId), true), false);
         }
+        CardInstance previewCard = monsterIntentPreviewCard(intentCards);
+        if (previewCard == null) {
+            monsterIntentPreview.clear();
+        } else if (monsterIntentPreview.visible()) {
+            renderAnimatedIntentPreview(graphics, snapshot, previewCard, intentEntityId, monsterIntentPreview);
+            if (monsterIntentPreview.progress() > 0.86F) {
+                CardPreviewAnimation.Bounds bounds = monsterIntentPreview.bounds();
+                CardRenderHelper.renderKeywordTipsBeside(graphics, font, previewCard, bounds.x(), bounds.y(), bounds.width(), bounds.height(), width, height);
+            }
+        }
+    }
+
+    private void updateMonsterIntentPreview(List<CardInstance> intentCards, int hoveredIndex, int x, int y, int spacing) {
         if (hoveredIndex >= 0) {
             int hoveredX = x + hoveredIndex * spacing;
             IntentPreviewBounds preview = intentPreviewBoundsForSmallCard(hoveredX, y);
             CardInstance card = intentCards.get(hoveredIndex);
             monsterIntentPreview.setOpenTarget(card.id(), hoveredX + CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, y + CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F,
-                    preview.centerX(), preview.centerY(), CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH, HAND_PREVIEW_SCALE);
+                    preview.centerX(), preview.centerY(), 1.0F, preview.scale(), CardRenderHelper.SMALL_CARD_WIDTH, CardRenderHelper.SMALL_CARD_HEIGHT);
             monsterIntentPreview.advance(currentFrameTicks);
-            renderAnimatedIntentPreview(graphics, snapshot, card, intentEntityId, monsterIntentPreview);
-            if (monsterIntentPreview.progress() > 0.86F) {
-                CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), width, height);
-            }
-        } else {
-            monsterIntentPreview.setClosingTarget();
-            monsterIntentPreview.advance(currentFrameTicks);
-            CardInstance closingCard = monsterIntentPreview.card(intentCards);
-            if (closingCard != null && monsterIntentPreview.visible()) {
-                renderAnimatedIntentPreview(graphics, snapshot, closingCard, intentEntityId, monsterIntentPreview);
-            } else {
-                monsterIntentPreview.clear();
-            }
+            return;
+        }
+        monsterIntentPreview.setClosingTarget();
+        monsterIntentPreview.advance(currentFrameTicks);
+        if (monsterIntentPreview.finishedClosing()) {
+            monsterIntentPreview.clear();
         }
     }
 
-    private void renderAnimatedIntentPreview(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, int attackerEntityId, PreviewCardAnimation animation) {
+    private void renderAnimatedIntentPreview(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, int attackerEntityId, CardPreviewAnimation animation) {
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 120.0F);
-        graphics.pose().translate(animation.centerX(), animation.centerY(), 0.0F);
+        CardPreviewAnimation.RenderBounds bounds = animation.renderBounds();
+        graphics.pose().translate(bounds.x(), bounds.y(), 0.0F);
         graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
-        graphics.pose().translate(-CardRenderHelper.CARD_WIDTH / 2.0F, -CardRenderHelper.CARD_HEIGHT / 2.0F, 0.0F);
-        renderCardBody(graphics, snapshot, card, false, cardValues(snapshot, card, intentAttacker(snapshot, attackerEntityId), true));
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, false, cardValues(snapshot, card, intentAttacker(snapshot, attackerEntityId), true), false);
         graphics.pose().popPose();
+    }
+
+    private CardInstance monsterIntentPreviewCard(List<CardInstance> intentCards) {
+        Object key = monsterIntentPreview.key();
+        if (key == null) {
+            return null;
+        }
+        for (CardInstance card : intentCards) {
+            if (monsterIntentPreview.matches(card.id())) {
+                return card;
+            }
+        }
+        return null;
     }
 
     private int currentIntentEntityId(BattleSnapshot snapshot) {
@@ -1494,16 +1514,16 @@ public class BattleScreen extends NoBlurScreen {
         float progress = smoothStep(animation.hover(partialTick));
         CardPreviewBounds preview = previewBounds(baseBounds);
         float baseScale = animation.scale(partialTick);
-        float previewScale = HAND_PREVIEW_SCALE;
+        float previewScale = handPreviewScale();
         float centerX = lerp(animation.x(partialTick), preview.centerX(), progress);
         float centerY = lerp(animation.y(partialTick), preview.centerY(), progress);
-        float scale = lerp(baseScale * (CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH), previewScale, progress);
+        float scale = lerp(baseScale, previewScale, progress);
         float angle = lerp(animation.angle(partialTick), 0.0F, progress);
-        renderDetailedPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
-        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, true, renderData);
-        renderDetailedPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
+        renderSmallPreviewPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
+        renderScaledSmallCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, true, renderData);
+        renderSmallPreviewPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, scale, 0.0F);
         if (progress > 0.88F) {
-            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), width, height);
+            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, preview.x(), preview.y(), preview.width(), preview.height(), width, height);
         }
         recordPerf(PerfBucket.HOVER_PREVIEW, start);
     }
@@ -1807,13 +1827,13 @@ public class BattleScreen extends NoBlurScreen {
 
     private void renderHandSelectionHoveredCard(GuiGraphics graphics, BattleSnapshot snapshot, int handIndex, CardInstance card, float partialTick) {
         boolean unaffordable = card.cost() > snapshot.player().energyLeft();
-        float detailedScale = HAND_PREVIEW_SCALE;
+        float previewScale = handSelectionPreviewScale();
         CardPreviewBounds bounds = handSelectionPreviewBounds(snapshot, handIndex, partialTick);
         float centerX = bounds.centerX();
         float centerY = bounds.centerY();
-        renderDetailedPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, detailedScale, 0.0F);
-        renderScaledDetailedCard(graphics, snapshot, card, centerX, centerY, detailedScale, 0.0F, unaffordable, true);
-        renderDetailedPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, detailedScale, 0.0F);
+        renderSmallPreviewPlayableGlow(graphics, playable(card, snapshot), centerX, centerY, previewScale, 0.0F);
+        renderScaledSmallCard(graphics, snapshot, card, centerX, centerY, previewScale, 0.0F, unaffordable, true);
+        renderSmallPreviewPlayableOutline(graphics, playable(card, snapshot), centerX, centerY, previewScale, 0.0F);
         CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, bounds.x(), bounds.y(), bounds.width(), bounds.height(), width, height);
     }
 
@@ -1826,6 +1846,20 @@ public class BattleScreen extends NoBlurScreen {
 
     private float clampPreviewCenterY(float centerY, float scale) {
         float halfH = CardRenderHelper.CARD_HEIGHT * scale / 2.0F;
+        float minY = halfH + 48.0F;
+        float maxY = height - halfH - 8.0F;
+        return minY <= maxY ? clamp(centerY, minY, maxY) : height / 2.0F;
+    }
+
+    private float clampSmallPreviewCenterX(float centerX, float scale) {
+        float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F;
+        float minX = halfW + 8.0F;
+        float maxX = width - halfW - 8.0F;
+        return minX <= maxX ? clamp(centerX, minX, maxX) : width / 2.0F;
+    }
+
+    private float clampSmallPreviewCenterY(float centerY, float scale) {
+        float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F;
         float minY = halfH + 48.0F;
         float maxY = height - halfH - 8.0F;
         return minY <= maxY ? clamp(centerY, minY, maxY) : height / 2.0F;
@@ -2279,6 +2313,28 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
+    private void renderScaledSmallCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips) {
+        renderScaledSmallCard(graphics, snapshot, card, centerX, centerY, scale, angle, unaffordable, suppressTips, cardRenderData(snapshot, card, true));
+    }
+
+    private void renderScaledSmallCard(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, float centerX, float centerY, float scale, float angle, boolean unaffordable, boolean suppressTips, CardRenderData renderData) {
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 120.0F);
+        graphics.pose().translate(centerX, centerY, 0.0F);
+        graphics.pose().mulPose(Axis.ZP.rotationDegrees(angle));
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.pose().translate(-CardRenderHelper.SMALL_CARD_WIDTH / 2.0F, -CardRenderHelper.SMALL_CARD_HEIGHT / 2.0F, 0.0F);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, unaffordable, renderData.values(), false, true, renderData.contentKey());
+        graphics.pose().popPose();
+        if (!suppressTips && scale >= handPreviewScale() * 0.95F) {
+            int x = Math.round(centerX - CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F);
+            int y = Math.round(centerY - CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F);
+            int w = Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale);
+            int h = Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * scale);
+            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, x, y, w, h, width, height);
+        }
+    }
+
     private void renderCardBody(GuiGraphics graphics, BattleSnapshot snapshot, CardInstance card, boolean unaffordable) {
         renderCardBody(graphics, snapshot, card, unaffordable, null);
     }
@@ -2624,6 +2680,42 @@ public class BattleScreen extends NoBlurScreen {
         int y = Math.round(centerY - CardRenderHelper.CARD_HEIGHT * scale / 2.0F);
         int w = Math.round(CardRenderHelper.CARD_WIDTH * scale);
         int h = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        if (playable) {
+            graphics.renderOutline(x - 1, y - 1, w + 2, h + 2, 0xDDA8F7FF);
+        }
+        if (pulse > 0.02F) {
+            int alpha = Math.round(230.0F * pulse);
+            int spread = Math.round(3.0F + 10.0F * (1.0F - pulse));
+            graphics.renderOutline(x - spread, y - spread, w + spread * 2, h + spread * 2, (alpha << 24) | 0x00E6FFFF);
+        }
+    }
+
+    private void renderSmallPreviewPlayableGlow(GuiGraphics graphics, boolean playable, float centerX, float centerY, float scale, float pulse) {
+        if (!playable && pulse <= 0.02F) {
+            return;
+        }
+        float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F;
+        float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F;
+        if (playable) {
+            graphics.fill(Math.round(centerX - halfW - 4.0F), Math.round(centerY - halfH - 4.0F),
+                    Math.round(centerX + halfW + 4.0F), Math.round(centerY + halfH + 4.0F), 0x44A8F7FF);
+        }
+        if (pulse > 0.02F) {
+            int alpha = Math.round(140.0F * pulse);
+            float spread = 7.0F + 12.0F * (1.0F - pulse);
+            graphics.fill(Math.round(centerX - halfW - spread), Math.round(centerY - halfH - spread),
+                    Math.round(centerX + halfW + spread), Math.round(centerY + halfH + spread), (alpha << 24) | 0x00D7FFFF);
+        }
+    }
+
+    private void renderSmallPreviewPlayableOutline(GuiGraphics graphics, boolean playable, float centerX, float centerY, float scale, float pulse) {
+        if (!playable && pulse <= 0.02F) {
+            return;
+        }
+        int x = Math.round(centerX - CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F);
+        int y = Math.round(centerY - CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F);
+        int w = Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale);
+        int h = Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * scale);
         if (playable) {
             graphics.renderOutline(x - 1, y - 1, w + 2, h + 2, 0xDDA8F7FF);
         }
@@ -3107,12 +3199,12 @@ public class BattleScreen extends NoBlurScreen {
         }
         float progress = smoothStep(animation.hover(partialTick));
         CardPreviewBounds preview = previewBounds(baseBounds);
-        float baseScale = animation.scale(partialTick) * (CardRenderHelper.SMALL_CARD_WIDTH / (float) CardRenderHelper.CARD_WIDTH);
-        float scale = lerp(baseScale, HAND_PREVIEW_SCALE, progress);
+        float baseScale = animation.scale(partialTick);
+        float scale = lerp(baseScale, handPreviewScale(), progress);
         float centerX = lerp(animation.x(partialTick), preview.centerX(), progress);
         float centerY = lerp(animation.y(partialTick), preview.centerY(), progress);
-        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * scale);
-        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+        int previewW = Math.round(CardRenderHelper.SMALL_CARD_WIDTH * scale);
+        int previewH = Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * scale);
         int x = Math.round(centerX - previewW / 2.0F);
         int y = Math.round(centerY - previewH / 2.0F);
         return new CardPreviewBounds(x, y, previewW, previewH);
@@ -3134,8 +3226,8 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardPreviewBounds previewBounds(HandCardBounds cardBounds) {
-        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * HAND_PREVIEW_SCALE);
-        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * HAND_PREVIEW_SCALE);
+        int previewW = handPreviewWidth();
+        int previewH = handPreviewHeight();
         int x = Math.round(cardBounds.centerX() - previewW / 2.0F);
         x = Math.max(8, Math.min(width - previewW - 8, x));
         int bottom = Math.round(layout().resolve("hand", width, height).bottom() - 16.0F);
@@ -3145,11 +3237,11 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardPreviewBounds handSelectionPreviewBounds(BattleSnapshot snapshot, int handIndex, float partialTick) {
-        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * HAND_PREVIEW_SCALE);
-        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * HAND_PREVIEW_SCALE);
+        int previewW = handPreviewWidth();
+        int previewH = handPreviewHeight();
         HandCardBounds base = handSelectionStableBounds(snapshot, handIndex);
-        float centerX = clampPreviewCenterX(base.centerX(), HAND_PREVIEW_SCALE);
-        float centerY = clampPreviewCenterY(base.centerY(), HAND_PREVIEW_SCALE);
+        float centerX = clampSmallPreviewCenterX(base.centerX(), handSelectionPreviewScale());
+        float centerY = clampSmallPreviewCenterY(base.centerY(), handSelectionPreviewScale());
         int x = Math.round(centerX - previewW / 2.0F);
         int y = Math.round(centerY - previewH / 2.0F);
         return new CardPreviewBounds(x, y, previewW, previewH);
@@ -3174,6 +3266,22 @@ public class BattleScreen extends NoBlurScreen {
             return new HandCardBounds(animation.currentX(), animation.currentY(), 0.0F, animation.currentScale());
         }
         return new HandCardBounds(width / 2.0F, height / 2.0F, 0.0F, HAND_SELECTION_CARD_SCALE);
+    }
+
+    private float handPreviewScale() {
+        return handPreviewWidth() / (float) CardRenderHelper.SMALL_CARD_WIDTH;
+    }
+
+    private float handSelectionPreviewScale() {
+        return handPreviewScale();
+    }
+
+    private int handPreviewWidth() {
+        return Math.round(CardRenderHelper.CARD_WIDTH * HAND_PREVIEW_SCALE);
+    }
+
+    private int handPreviewHeight() {
+        return Math.round(CardRenderHelper.SMALL_CARD_HEIGHT * handPreviewScale());
     }
 
     private int combatantEntryUnderMouse(double mouseX, double mouseY, BattleSnapshot snapshot) {
@@ -3313,7 +3421,8 @@ public class BattleScreen extends NoBlurScreen {
         int previewY = Math.round(cardY + (CardRenderHelper.SMALL_CARD_HEIGHT - previewH) / 2.0F);
         previewX = Math.max(8, Math.min(width - previewW - 8, previewX));
         previewY = Math.max(8, Math.min(height - previewH - 8, previewY));
-        return new IntentPreviewBounds(previewX, previewY, previewW, previewH);
+        float previewScale = previewW / (float) CardRenderHelper.SMALL_CARD_WIDTH;
+        return new IntentPreviewBounds(previewX, previewY, previewW, previewH, previewScale);
     }
 
     private boolean drawPileAt(double mouseX, double mouseY) {
@@ -3982,10 +4091,11 @@ public class BattleScreen extends NoBlurScreen {
         if (!selected) {
             return handCardScreenBounds(animation, partialTick, false);
         }
-        float centerX = clampPreviewCenterX(animation.x(partialTick), HAND_PREVIEW_SCALE);
-        float centerY = clampPreviewCenterY(animation.y(partialTick), HAND_PREVIEW_SCALE);
-        float halfW = CardRenderHelper.CARD_WIDTH * HAND_PREVIEW_SCALE / 2.0F;
-        float halfH = CardRenderHelper.CARD_HEIGHT * HAND_PREVIEW_SCALE / 2.0F;
+        float scale = handSelectionPreviewScale();
+        float centerX = clampSmallPreviewCenterX(animation.x(partialTick), scale);
+        float centerY = clampSmallPreviewCenterY(animation.y(partialTick), scale);
+        float halfW = CardRenderHelper.SMALL_CARD_WIDTH * scale / 2.0F;
+        float halfH = CardRenderHelper.SMALL_CARD_HEIGHT * scale / 2.0F;
         return new HandCardScreenBounds(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH);
     }
 
@@ -4484,7 +4594,7 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
-    private record IntentPreviewBounds(int x, int y, int width, int height) {
+    private record IntentPreviewBounds(int x, int y, int width, int height, float scale) {
         private float centerX() {
             return x + width / 2.0F;
         }
@@ -4496,104 +4606,6 @@ public class BattleScreen extends NoBlurScreen {
         private boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX <= x + width
                     && mouseY >= y && mouseY <= y + height;
-        }
-    }
-
-    private static final class PreviewCardAnimation {
-        private UUID cardId;
-        private float baseCenterX;
-        private float baseCenterY;
-        private float baseScale;
-        private float centerX;
-        private float centerY;
-        private float scale;
-        private float progress;
-        private float targetCenterX;
-        private float targetCenterY;
-        private float targetScale;
-
-        private void setOpenTarget(UUID cardId, float fromX, float fromY, float toX, float toY, float fromScale, float toScale) {
-            if (!cardId.equals(this.cardId)) {
-                this.cardId = cardId;
-                this.baseCenterX = fromX;
-                this.baseCenterY = fromY;
-                this.baseScale = fromScale;
-                this.centerX = fromX;
-                this.centerY = fromY;
-                this.scale = fromScale;
-                this.progress = 0.0F;
-            }
-            this.baseCenterX = fromX;
-            this.baseCenterY = fromY;
-            this.baseScale = fromScale;
-            this.targetCenterX = toX;
-            this.targetCenterY = toY;
-            this.targetScale = toScale;
-        }
-
-        private void setClosingTarget() {
-            if (cardId == null) {
-                return;
-            }
-            targetCenterX = baseCenterX;
-            targetCenterY = baseCenterY;
-            targetScale = baseScale;
-        }
-
-        private void advance(float deltaTicks) {
-            float amount = frameAmount(0.52F, deltaTicks);
-            centerX = approach(centerX, targetCenterX, amount);
-            centerY = approach(centerY, targetCenterY, amount);
-            scale = approach(scale, targetScale, amount);
-            progress = approach(progress, targetScale <= baseScale + 0.01F ? 0.0F : 1.0F, amount);
-        }
-
-        private void clear() {
-            cardId = null;
-            progress = 0.0F;
-        }
-
-        private CardInstance card(List<CardInstance> cards) {
-            if (cardId == null) {
-                return null;
-            }
-            for (CardInstance card : cards) {
-                if (card.id().equals(cardId)) {
-                    return card;
-                }
-            }
-            return null;
-        }
-
-        private float centerX() {
-            return centerX;
-        }
-
-        private float centerY() {
-            return centerY;
-        }
-
-        private float scale() {
-            return scale;
-        }
-
-        private float progress() {
-            return progress;
-        }
-
-        private boolean visible() {
-            return cardId != null && (progress > 0.02F || Math.abs(scale - baseScale) > 0.015F || Math.abs(centerX - baseCenterX) > 0.5F || Math.abs(centerY - baseCenterY) > 0.5F);
-        }
-
-        private static float approach(float current, float target, float amount) {
-            if (Math.abs(target - current) < 0.01F) {
-                return target;
-            }
-            return current + (target - current) * amount;
-        }
-
-        private static float frameAmount(float perTickAmount, float deltaTicks) {
-            return 1.0F - (float) Math.pow(1.0F - perTickAmount, Math.max(0.0F, deltaTicks));
         }
     }
 
