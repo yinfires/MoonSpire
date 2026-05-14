@@ -50,6 +50,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Drowned;
+import net.minecraft.world.entity.monster.Pillager;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -502,6 +503,7 @@ public final class ClientEvents {
                 vindicator.setAggressive(ClientBattleState.visualVindicatorAxeRaised(entity.getId()));
             }
             ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
+            syncVanillaCrossbowPose(entity, mainHand);
             if (ClientBattleState.visualUsingItem(entity.getId()) && !useDrownedTridentPose(entity)) {
                 if (!entity.isUsingItem()) {
                     entity.startUsingItem(InteractionHand.MAIN_HAND);
@@ -511,6 +513,18 @@ public final class ClientEvents {
             } else if (!ClientBattleState.visualUsingItem(entity.getId()) && state.startedUsing && entity.isUsingItem()) {
                 clearVisualUseItemState(entity);
             }
+        }
+
+        private static void syncVanillaCrossbowPose(LivingEntity entity, ItemStack stack) {
+            if (!(entity instanceof Pillager pillager)
+                    || ClientBattleState.visualAnimationType(entity.getId()) != BattleVisualEvent.AnimationType.CROSSBOW_LOAD
+                    || stack == null
+                    || !stack.is(Items.CROSSBOW)) {
+                return;
+            }
+            boolean loading = ClientBattleState.visualUsingItem(entity.getId());
+            pillager.setChargingCrossbow(loading);
+            pillager.setAggressive(true);
         }
 
         private static boolean useDrownedTridentPose(LivingEntity entity) {
@@ -609,6 +623,7 @@ public final class ClientEvents {
             if (state != null) {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
                 state.restoreAggressive(entity);
+                state.restoreCrossbowCharging(entity);
                 restoreVisualRiptideState(entity);
                 if (state.startedUsing && entity.isUsingItem()) {
                     clearVisualUseItemState(entity);
@@ -621,6 +636,7 @@ public final class ClientEvents {
             if (state != null) {
                 entity.setItemSlot(EquipmentSlot.MAINHAND, state.originalMainHand);
                 state.restoreAggressive(entity);
+                state.restoreCrossbowCharging(entity);
                 if (state.startedUsing && entity.isUsingItem() && !ClientBattleState.visualUsingItem(entity.getId())) {
                     clearVisualUseItemState(entity);
                 }
@@ -872,21 +888,30 @@ public final class ClientEvents {
     private static final class TemporaryHandState {
         private final ItemStack originalMainHand;
         private final Boolean originalAggressive;
+        private final Boolean originalCrossbowCharging;
         private boolean startedUsing;
 
-        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive) {
+        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive, Boolean originalCrossbowCharging) {
             this.originalMainHand = originalMainHand;
             this.originalAggressive = originalAggressive;
+            this.originalCrossbowCharging = originalCrossbowCharging;
         }
 
         private static TemporaryHandState capture(LivingEntity entity) {
             Boolean aggressive = entity instanceof net.minecraft.world.entity.Mob mob ? mob.isAggressive() : null;
-            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive);
+            Boolean crossbowCharging = entity instanceof Pillager pillager ? pillager.isChargingCrossbow() : null;
+            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive, crossbowCharging);
         }
 
         private void restoreAggressive(LivingEntity entity) {
             if (originalAggressive != null && entity instanceof net.minecraft.world.entity.Mob mob) {
                 mob.setAggressive(originalAggressive);
+            }
+        }
+
+        private void restoreCrossbowCharging(LivingEntity entity) {
+            if (originalCrossbowCharging != null && entity instanceof Pillager pillager) {
+                pillager.setChargingCrossbow(originalCrossbowCharging);
             }
         }
     }

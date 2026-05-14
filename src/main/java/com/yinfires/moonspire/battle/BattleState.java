@@ -185,7 +185,7 @@ public class BattleState {
     }
 
     private static void applyDefaultInitialEffects(CombatantState state) {
-        if (state != null && MonsterDeckProfile.isSkeletonFamily(state.entity().getType())) {
+        if (state != null && MonsterDeckProfile.hasAbundantArrowsByDefault(state.entity().getType())) {
             state.addEffect(BattleEffectType.ABUNDANT_ARROWS, 1);
         }
     }

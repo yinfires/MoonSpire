@@ -297,6 +297,12 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.REMOTE, 1),
                         new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY),
                         new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:bow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_drop_the_hanging_blade", "card.moonspire.monster.drop_the_hanging_blade.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.CONSUME_ARROW, 10, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:crossbow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_grazing_cut", "card.moonspire.monster.grazing_cut.name", "", 1, 3, 0, List.of(
+                        new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_reload_cover", "card.moonspire.monster.reload_cover.name", "", 1, 0, 4, List.of(), CardSourceType.MONSTER, "", "minecraft:crossbow", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_hungry_lunge", "card.moonspire.monster.hungry_lunge.name", "", 2, 8, 0, List.of(
                         new CardEffect(CardEffectKind.HUNGER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

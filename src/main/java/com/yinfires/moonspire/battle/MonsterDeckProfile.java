@@ -97,6 +97,22 @@ public final class MonsterDeckProfile {
             "item_minecraft_arrow",
             "item_minecraft_arrow",
             "item_minecraft_arrow");
+    private static final List<String> PILLAGER_DEFAULT_DECK = List.of(
+            "builtin_monster_drop_the_hanging_blade",
+            "builtin_monster_drop_the_hanging_blade",
+            "builtin_monster_drop_the_hanging_blade",
+            "builtin_monster_drop_the_hanging_blade",
+            "builtin_monster_grazing_cut",
+            "builtin_monster_grazing_cut",
+            "builtin_monster_grazing_cut",
+            "builtin_monster_reload_cover",
+            "builtin_monster_reload_cover",
+            "builtin_monster_reload_cover",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow");
     private static final List<String> SPIDER_DEFAULT_DECK = List.of(
             "builtin_monster_pounce",
             "builtin_monster_skitter",
@@ -236,6 +252,9 @@ public final class MonsterDeckProfile {
         if (isSkeletonFamily(type)) {
             return cards(SKELETON_DEFAULT_DECK);
         }
+        if (type == EntityType.PILLAGER) {
+            return cards(PILLAGER_DEFAULT_DECK);
+        }
         if (type == EntityType.CAVE_SPIDER) {
             return cards(CAVE_SPIDER_DEFAULT_DECK);
         }
@@ -279,6 +298,9 @@ public final class MonsterDeckProfile {
         if (isSkeletonFamily(type)) {
             return SKELETON_DEFAULT_DECK;
         }
+        if (type == EntityType.PILLAGER) {
+            return PILLAGER_DEFAULT_DECK;
+        }
         if (type == EntityType.CAVE_SPIDER) {
             return CAVE_SPIDER_DEFAULT_DECK;
         }
@@ -296,6 +318,10 @@ public final class MonsterDeckProfile {
                 || type == EntityType.STRAY
                 || type == EntityType.BOGGED
                 || type == EntityType.WITHER_SKELETON;
+    }
+
+    public static boolean hasAbundantArrowsByDefault(EntityType<?> type) {
+        return isSkeletonFamily(type) || type == EntityType.PILLAGER;
     }
 
     public static int defaultBaseSpeed(LivingEntity entity) {
