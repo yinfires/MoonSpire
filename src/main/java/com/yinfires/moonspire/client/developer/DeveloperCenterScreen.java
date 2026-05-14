@@ -1803,6 +1803,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.TIDAL_EROSION, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.PARALYSIS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.PARALYSIS, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.HUNGER && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.HUNGER, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.THORNS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.THORNS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.FUSE && effect.amount() > 0) {
@@ -2307,6 +2309,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.WITHER,
                         DeveloperCardEffect.Kind.TIDAL_EROSION,
                         DeveloperCardEffect.Kind.PARALYSIS,
+                        DeveloperCardEffect.Kind.HUNGER,
                         DeveloperCardEffect.Kind.THORNS,
                         DeveloperCardEffect.Kind.FUSE,
                         DeveloperCardEffect.Kind.WEAKNESS,

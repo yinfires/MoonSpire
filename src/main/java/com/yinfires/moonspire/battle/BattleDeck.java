@@ -14,7 +14,9 @@ public class BattleDeck {
     private final List<CardInstance> discardPile = new ArrayList<>();
     private final List<CardInstance> exhaustPile = new ArrayList<>();
     private final List<CardInstance> hand = new ArrayList<>();
+    private final List<UUID> lastStartTurnDrawn = new ArrayList<>();
     private boolean firstTurn = true;
+    private int lastStartTurnDrawReduction;
     private long version;
 
     public BattleDeck(List<CardInstance> cards, RandomSource random) {
@@ -44,9 +46,27 @@ public class BattleDeck {
     }
 
     public void startTurn(RandomSource random) {
+        startTurn(random, 0);
+    }
+
+    public void startTurn(RandomSource random, int drawReduction) {
+        int reduction = Math.max(0, drawReduction);
+        lastStartTurnDrawn.clear();
+        lastStartTurnDrawReduction = reduction;
         int innateInHand = firstTurn ? moveInnateCardsToOpeningHand() : 0;
         firstTurn = false;
-        draw(Math.max(0, CardBalance.STARTING_HAND_SIZE - innateInHand), random);
+        for (CardInstance card : draw(Math.max(0, CardBalance.STARTING_HAND_SIZE - innateInHand - reduction), random)) {
+            lastStartTurnDrawn.add(card.id());
+        }
+    }
+
+    public void applyAdditionalStartTurnDrawReduction(int drawReduction) {
+        int reduction = Math.max(0, drawReduction);
+        int additionalReduction = Math.max(0, reduction - lastStartTurnDrawReduction);
+        if (additionalReduction > 0) {
+            returnLastStartTurnDrawsToDrawPile(additionalReduction);
+        }
+        lastStartTurnDrawReduction = Math.max(lastStartTurnDrawReduction, reduction);
     }
 
     public void discardHand() {
@@ -78,16 +98,18 @@ public class BattleDeck {
         markChanged();
     }
 
-    public void draw(int count, RandomSource random) {
+    public List<CardInstance> draw(int count, RandomSource random) {
+        List<CardInstance> drawnCards = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             if (drawPile.isEmpty()) {
                 if (discardPile.isEmpty()) {
-                    return;
+                    return drawnCards;
                 }
                 drawPile.addAll(discardPile);
                 discardPile.clear();
             }
             CardInstance drawn = drawRandom(drawPile, random);
+            drawnCards.add(drawn);
             if (hand.size() >= CardBalance.MAX_HAND_SIZE) {
                 discardPile.add(drawn);
             } else {
@@ -95,6 +117,35 @@ public class BattleDeck {
             }
             markChanged();
         }
+        return drawnCards;
+    }
+
+    private void returnLastStartTurnDrawsToDrawPile(int count) {
+        int returned = 0;
+        for (int i = lastStartTurnDrawn.size() - 1; i >= 0 && returned < count; i--) {
+            UUID id = lastStartTurnDrawn.remove(i);
+            CardInstance card = removeCardById(hand, id);
+            if (card == null) {
+                card = removeCardById(discardPile, id);
+            }
+            if (card != null) {
+                drawPile.add(card);
+                returned++;
+            }
+        }
+        if (returned > 0) {
+            markChanged();
+        }
+    }
+
+    private static CardInstance removeCardById(List<CardInstance> cards, UUID id) {
+        for (int i = cards.size() - 1; i >= 0; i--) {
+            CardInstance card = cards.get(i);
+            if (card.id().equals(id)) {
+                return cards.remove(i);
+            }
+        }
+        return null;
     }
 
     public CardInstance peekHand(int index) {

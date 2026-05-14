@@ -108,6 +108,7 @@ public class BattleState {
     private boolean syncDirty = true;
     private long snapshotSequence;
     private int finishDelayTicks;
+    private boolean enemyHandsPredrawnForCurrentTurn;
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
     private final List<PendingCardStep> pendingCardSteps = new ArrayList<>();
@@ -695,14 +696,15 @@ public class BattleState {
                 }
                 state.resetEnergy();
                 state.setEndedTurn(false);
-                state.deck().startTurn(leader.getRandom());
+                state.deck().startTurn(leader.getRandom(), consumeHungerDrawReduction(state));
             }
         }
         for (CombatantState state : enemyStates) {
             if (!state.fakeDead()) {
-                state.deck().startTurn(leader.getRandom());
+                state.deck().startTurn(leader.getRandom(), hungerDrawReduction(state));
             }
         }
+        enemyHandsPredrawnForCurrentTurn = true;
         selectedTargets.clear();
     }
 
@@ -718,9 +720,11 @@ public class BattleState {
                 if (state.fakeDead()) {
                     continue;
                 }
+                consumeHungerDrawReduction(state, true);
                 state.resetEnergy();
             }
         }
+        enemyHandsPredrawnForCurrentTurn = false;
         enemyTurnOrder = enemyActionOrder();
         currentEnemyIndex = 0;
         selectedTargets.clear();
@@ -871,6 +875,9 @@ public class BattleState {
                 score += scoreConsumeArrow(card, hand, effect, self, players, selectedEnemy, paralyzedAttack);
                 continue;
             }
+            if (isConsumeArrowAttachedEffect(card, effect) && firstArrowInHand(card, hand) == null) {
+                continue;
+            }
             if (effect.kind().isHandSelection()) {
                 score += scoreHandSelection(effect, self);
                 continue;
@@ -914,6 +921,8 @@ public class BattleState {
                 }
                 if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
                     score += scoreConsumeArrowTarget(card, hand, effect, self, target, paralyzedAttack);
+                } else if (isConsumeArrowAttachedEffect(card, effect) && firstArrowInHand(card, hand) == null) {
+                    continue;
                 } else {
                     score += effectTargetPriority(card, effect.kind(), adjustedAttackDamageAmount(effect, paralyzedAttack), Math.max(1, effect.count()), self, target);
                 }
@@ -1030,6 +1039,7 @@ public class BattleState {
             case WITHER -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WITHER, 3.1D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case TIDAL_EROSION -> scoreNegativeStatus(totalAmount, target, BattleEffectType.TIDAL_EROSION, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
             case PARALYSIS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.PARALYSIS, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
+            case HUNGER -> scoreNegativeStatus(totalAmount, target, BattleEffectType.HUNGER, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case THORNS -> scorePositiveStatus(totalAmount, target, BattleEffectType.THORNS, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case FUSE -> scorePositiveStatus(totalAmount, target, BattleEffectType.FUSE, 8.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case WEAKNESS -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
@@ -1206,6 +1216,9 @@ public class BattleState {
         if (kind == CardEffectKind.PARALYSIS) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.PARALYSIS, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
         }
+        if (kind == CardEffectKind.HUNGER) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.HUNGER, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
         if (kind == CardEffectKind.THORNS) {
             return scorePositiveStatus(amount * count, target, BattleEffectType.THORNS, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
         }
@@ -1229,6 +1242,7 @@ public class BattleState {
                 || kind == CardEffectKind.WITHER
                 || kind == CardEffectKind.TIDAL_EROSION
                 || kind == CardEffectKind.PARALYSIS
+                || kind == CardEffectKind.HUNGER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS;
     }
@@ -1288,6 +1302,9 @@ public class BattleState {
                                 applyMonsterAiEffect(card, arrowEffect, self, selectedTarget);
                             }
                         }
+                        for (CardEffect attachedEffect : consumeArrowAttachedEffects(card)) {
+                            applyMonsterAiEffect(card, attachedEffect, self, selectedTarget);
+                        }
                     }
                 }
                 if (arrow != null) {
@@ -1296,6 +1313,9 @@ public class BattleState {
                 continue;
             }
             if (!effect.kind().isResolvedEffect()) {
+                continue;
+            }
+            if (isConsumeArrowAttachedEffect(card, effect)) {
                 continue;
             }
             CardEffect simulationEffect = adjustedMonsterAiEffect(effect, paralyzedAttack);
@@ -1334,6 +1354,7 @@ public class BattleState {
             case WITHER -> target.addEffect(BattleEffectType.WITHER, amount);
             case TIDAL_EROSION -> target.addEffect(BattleEffectType.TIDAL_EROSION, amount);
             case PARALYSIS -> target.addEffect(BattleEffectType.PARALYSIS, amount);
+            case HUNGER -> target.addEffect(BattleEffectType.HUNGER, amount);
             case THORNS -> target.addEffect(BattleEffectType.THORNS, amount);
             case FUSE -> target.addEffect(BattleEffectType.FUSE, amount);
             case WEAKNESS -> target.addEffect(BattleEffectType.WEAKNESS, amount);
@@ -1379,6 +1400,9 @@ public class BattleState {
                     currentEffects = new ArrayList<>();
                 }
                 addConsumeArrowStep(user, selectedTarget, card, effect, paralyzedAttack);
+                continue;
+            }
+            if (isConsumeArrowAttachedEffect(card, effect)) {
                 continue;
             }
             if (effect.kind().isHandSelection()) {
@@ -1465,8 +1489,31 @@ public class BattleState {
         if (arrowIds.isEmpty()) {
             return;
         }
-        ArrowResolution resolution = new ArrowResolution(user, selectedTarget, card, adjustedAttackDamageAmount(effect, paralyzedAttack));
+        ArrowResolution resolution = new ArrowResolution(user, selectedTarget, card, adjustedAttackDamageAmount(effect, paralyzedAttack), consumeArrowAttachedEffects(card));
         pendingCardSteps.add(new PendingHandSelectionStep(PendingHandSelectionSnapshot.Action.CONSUME_ARROW, 1, user, arrowIds, resolution));
+    }
+
+    private List<CardEffect> consumeArrowAttachedEffects(CardInstance card) {
+        if (!hasConsumeArrowAttachedEffects(card)) {
+            return List.of();
+        }
+        return card.effects().stream()
+                .filter(effect -> isConsumeArrowAttachedEffect(card, effect))
+                .toList();
+    }
+
+    private boolean hasConsumeArrowAttachedEffects(CardInstance card) {
+        return card != null
+                && ("builtin_monster_poisoned_shot".equals(card.cardId())
+                || "builtin_monster_slowing_shot".equals(card.cardId()));
+    }
+
+    private boolean isConsumeArrowAttachedEffect(CardInstance card, CardEffect effect) {
+        if (!hasConsumeArrowAttachedEffects(card) || effect == null) {
+            return false;
+        }
+        return effect.target() == CardTarget.SINGLE_ENEMY
+                && (effect.kind() == CardEffectKind.POISON || effect.kind() == CardEffectKind.SLOWNESS);
     }
 
     private boolean triggersAttackUse(CardInstance card, CombatantState user) {
@@ -1823,7 +1870,7 @@ public class BattleState {
             return true;
         }
         LungeAnimation animation = new LungeAnimation(batch, animated.target());
-        emitVisual(batch.user().entity(), animated.target().entity(), batch.stack(), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS, animation.start(), animation.strike());
+        emitVisual(batch.user().entity(), animated.target().entity(), visualStack(batch), ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.MELEE_LUNGE, MELEE_LUNGE_TICKS, animation.start(), animation.strike());
         pendingAnimation = animation;
         return true;
     }
@@ -1942,6 +1989,7 @@ public class BattleState {
                 effects.add(arrowEffect);
             }
         }
+        effects.addAll(resolution.attachedEffects());
         addEffectSteps(resolution.user(), resolution.selectedTarget(), resolution.card(), effects, projectileStackForArrow(arrow));
     }
 
@@ -2038,6 +2086,9 @@ public class BattleState {
             } else if (effect.kind() == CardEffectKind.PARALYSIS) {
                 effect.target().addEffect(BattleEffectType.PARALYSIS, effect.amount());
                 effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.HUNGER) {
+                applyHunger(effect.target(), effect.amount());
+                effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.THORNS) {
                 effect.target().addEffect(BattleEffectType.THORNS, effect.amount());
                 effectOnlyTargets.add(effect.target());
@@ -2119,6 +2170,13 @@ public class BattleState {
         return suppressCardVisual ? ItemStack.EMPTY : batch.stack();
     }
 
+    private static ItemStack visualStack(PendingCardBatch batch) {
+        if (batch.card() != null && "builtin_monster_bow_strike".equals(batch.card().cardId())) {
+            return new ItemStack(Items.BOW);
+        }
+        return batch.stack();
+    }
+
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
         return new BattleDamageResult(
                 first.blockedDamage() + second.blockedDamage(),
@@ -2137,6 +2195,36 @@ public class BattleState {
             BattleDamageResult result = state.applyEffectDamage(poison, null);
             emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
             state.reduceEffect(BattleEffectType.POISON, 1);
+        }
+    }
+
+    private int hungerDrawReduction(CombatantState state) {
+        return state != null && state.effectAmount(BattleEffectType.HUNGER) > 0 ? 1 : 0;
+    }
+
+    private int consumeHungerDrawReduction(CombatantState state) {
+        return consumeHungerDrawReduction(state, false);
+    }
+
+    private int consumeHungerDrawReduction(CombatantState state, boolean adjustPredrawnHand) {
+        int reduction = hungerDrawReduction(state);
+        if (reduction > 0) {
+            if (adjustPredrawnHand) {
+                state.deck().applyAdditionalStartTurnDrawReduction(reduction);
+            }
+            state.reduceEffect(BattleEffectType.HUNGER, 1);
+        }
+        return reduction;
+    }
+
+    private void applyHunger(CombatantState target, int amount) {
+        if (target == null || amount <= 0) {
+            return;
+        }
+        boolean lackedHunger = target.effectAmount(BattleEffectType.HUNGER) <= 0;
+        target.addEffect(BattleEffectType.HUNGER, amount);
+        if (enemyHandsPredrawnForCurrentTurn && phase == BattlePhase.PLAYER_TURN && enemyStates.contains(target) && lackedHunger) {
+            target.deck().applyAdditionalStartTurnDrawReduction(1);
         }
     }
 
@@ -2925,7 +3013,10 @@ public class BattleState {
         }
     }
 
-    private record ArrowResolution(CombatantState user, CombatantState selectedTarget, CardInstance card, int amount) {
+    private record ArrowResolution(CombatantState user, CombatantState selectedTarget, CardInstance card, int amount, List<CardEffect> attachedEffects) {
+        private ArrowResolution {
+            attachedEffects = List.copyOf(attachedEffects == null ? List.of() : attachedEffects);
+        }
     }
 
     private record PendingHandSelection(CombatantState user, PendingHandSelectionSnapshot.Action action, int requiredCount, List<UUID> candidateIds, ArrowResolution arrowResolution) {

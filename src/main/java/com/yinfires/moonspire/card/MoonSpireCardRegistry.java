@@ -280,6 +280,16 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_shoot", "card.moonspire.monster.shoot.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.REMOTE, 1),
                         new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:bow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_poisoned_shot", "card.moonspire.monster.poisoned_shot.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.POISON, 3, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:bow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_slowing_shot", "card.moonspire.monster.slowing_shot.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:bow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_hungry_lunge", "card.moonspire.monster.hungry_lunge.name", "", 2, 8, 0, List.of(
+                        new CardEffect(CardEffectKind.HUNGER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

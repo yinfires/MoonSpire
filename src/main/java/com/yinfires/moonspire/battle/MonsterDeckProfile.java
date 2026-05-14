@@ -25,6 +25,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_claw",
             "builtin_monster_rotten_guard",
             "builtin_monster_undead_power");
+    private static final List<String> HUSK_DEFAULT_DECK = List.of(
+            "builtin_monster_claw",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_hungry_lunge",
+            "builtin_monster_hungry_lunge",
+            "builtin_monster_claw",
+            "builtin_monster_claw",
+            "builtin_monster_claw",
+            "builtin_monster_rotten_guard",
+            "builtin_monster_undead_power");
     private static final List<String> SKELETON_DEFAULT_DECK = List.of(
             "builtin_monster_bow_strike",
             "builtin_monster_sidestep",
@@ -32,6 +43,38 @@ public final class MonsterDeckProfile {
             "builtin_monster_shoot",
             "builtin_monster_shoot",
             "builtin_monster_shoot",
+            "builtin_monster_bow_strike",
+            "builtin_monster_bow_strike",
+            "builtin_monster_sidestep",
+            "builtin_monster_sidestep",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow");
+    private static final List<String> STRAY_DEFAULT_DECK = List.of(
+            "builtin_monster_bow_strike",
+            "builtin_monster_sidestep",
+            "builtin_monster_slowing_shot",
+            "builtin_monster_slowing_shot",
+            "builtin_monster_slowing_shot",
+            "builtin_monster_slowing_shot",
+            "builtin_monster_bow_strike",
+            "builtin_monster_bow_strike",
+            "builtin_monster_sidestep",
+            "builtin_monster_sidestep",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow");
+    private static final List<String> BOGGED_DEFAULT_DECK = List.of(
+            "builtin_monster_bow_strike",
+            "builtin_monster_sidestep",
+            "builtin_monster_poisoned_shot",
+            "builtin_monster_poisoned_shot",
+            "builtin_monster_poisoned_shot",
+            "builtin_monster_poisoned_shot",
             "builtin_monster_bow_strike",
             "builtin_monster_bow_strike",
             "builtin_monster_sidestep",
@@ -154,8 +197,17 @@ public final class MonsterDeckProfile {
         if (type == EntityType.DROWNED) {
             return cards(DROWNED_DEFAULT_DECK);
         }
+        if (type == EntityType.HUSK) {
+            return cards(HUSK_DEFAULT_DECK);
+        }
         if (isZombieFamily(type)) {
             return cards(ZOMBIE_DEFAULT_DECK);
+        }
+        if (type == EntityType.STRAY) {
+            return cards(STRAY_DEFAULT_DECK);
+        }
+        if (type == EntityType.BOGGED) {
+            return cards(BOGGED_DEFAULT_DECK);
         }
         if (isSkeletonFamily(type)) {
             return cards(SKELETON_DEFAULT_DECK);
@@ -185,8 +237,17 @@ public final class MonsterDeckProfile {
         if (type == EntityType.DROWNED) {
             return DROWNED_DEFAULT_DECK;
         }
+        if (type == EntityType.HUSK) {
+            return HUSK_DEFAULT_DECK;
+        }
         if (isZombieFamily(type)) {
             return ZOMBIE_DEFAULT_DECK;
+        }
+        if (type == EntityType.STRAY) {
+            return STRAY_DEFAULT_DECK;
+        }
+        if (type == EntityType.BOGGED) {
+            return BOGGED_DEFAULT_DECK;
         }
         if (isSkeletonFamily(type)) {
             return SKELETON_DEFAULT_DECK;

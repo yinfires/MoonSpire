@@ -113,6 +113,7 @@ public record DeveloperCardDefinition(
             case WITHER -> CardEffectKind.WITHER;
             case TIDAL_EROSION -> CardEffectKind.TIDAL_EROSION;
             case PARALYSIS -> CardEffectKind.PARALYSIS;
+            case HUNGER -> CardEffectKind.HUNGER;
             case THORNS -> CardEffectKind.THORNS;
             case FUSE -> CardEffectKind.FUSE;
             case WEAKNESS -> CardEffectKind.WEAKNESS;

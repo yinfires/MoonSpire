@@ -2493,6 +2493,7 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.WITHER
                 || kind == CardEffectKind.TIDAL_EROSION
                 || kind == CardEffectKind.PARALYSIS
+                || kind == CardEffectKind.HUNGER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
                 || kind == CardEffectKind.GLOWING;

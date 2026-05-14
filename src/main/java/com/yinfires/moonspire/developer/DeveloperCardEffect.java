@@ -88,6 +88,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         WITHER,
         TIDAL_EROSION,
         PARALYSIS,
+        HUNGER,
         THORNS,
         FUSE,
         WEAKNESS,

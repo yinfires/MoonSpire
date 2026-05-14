@@ -21,6 +21,7 @@ public enum CardEffectKind {
     WITHER(CardTarget.SINGLE_ENEMY),
     TIDAL_EROSION(CardTarget.SINGLE_ENEMY),
     PARALYSIS(CardTarget.SINGLE_ENEMY),
+    HUNGER(CardTarget.SINGLE_ENEMY),
     THORNS(CardTarget.SELF),
     WEAKNESS(CardTarget.SINGLE_ENEMY),
     SLOWNESS(CardTarget.SINGLE_ENEMY),

@@ -45,6 +45,7 @@ Moon Spire 的自定义界面底图都放在：
 | `effects/fuse.png` | 引信效果图标 | 复制自原版打火石 `assets/minecraft/textures/item/flint_and_steel.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.FUSE` 通过 `iconTexturePath` 绑定贴图；引信层数显示在图标右下角，tooltip 显示回合结束倒计时、当前自爆伤害和烧伤立即触发规则 |
 | `effects/tidal_erosion.png` | 潮蚀效果图标 | 复制自原版海晶沙砾/海晶碎片 `assets/minecraft/textures/item/prismarine_crystals.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.TIDAL_EROSION` 通过 `iconTexturePath` 绑定贴图；潮蚀层数显示在图标右下角，tooltip 显示获得格挡时先抵消格挡、按实际抵消值消耗层数和回合结束衰减规则 |
 | `effects/paralysis.png` | 麻痹效果图标 | 复制自原版铜锭 `assets/minecraft/textures/item/copper_ingot.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.PARALYSIS` 通过 `iconTexturePath` 绑定贴图；麻痹层数显示在图标右下角，tooltip 显示接下来攻击牌基础伤害减少 5 点和打出攻击牌时消耗层数规则 |
+| `effects/hunger.png` | 饥饿效果图标 | 复制自原版饥饿 `assets/minecraft/textures/mob_effect/hunger.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.HUNGER` 通过 `iconTexturePath` 绑定贴图；饥饿层数显示在图标右下角，tooltip 显示回合开始时少抽 1 张牌并减少 1 层 |
 | `effects/thorns.png` | 荆棘效果图标 | 复制自原版河豚物品 `assets/minecraft/textures/item/pufferfish.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.THORNS` 通过 `iconTexturePath` 绑定贴图；荆棘层数显示在图标右下角，tooltip 显示受到攻击伤害时对攻击者造成反伤 |
 | `animations/block_gain.png` | 获得格挡时的世界动画图标 | 普通 18x18 贴图，按获得者实体包围盒计算统一边长并等比缩放为覆盖身体的 billboard | 由 `BattleVisualEvent.gainedBlock` 触发，`ClientBattleState` 维护动画时间；`BattleWorldOverlay` 使用和战斗状态图标一致的全局可透视渲染，落点固定锚定在实体身体中心而不是头顶条，淡入后原地停留并淡出，保持原始比例，避免与持续状态图标目录混淆 |
 | `cards/card_base.png` | 默认卡面底图 | 普通贴图拉伸 | 默认卡面仍使用 `default` id，排布坐标来自 `card_faces.json` 的 `default` 条目，当前底图已替换为用户提供的 `new` 图样 |
@@ -297,8 +298,8 @@ Moon Spire 的自定义界面底图都放在：
 
 ## 本次战斗状态资源补充
 
-- 新增战斗状态图标均位于 `src/main/resources/assets/moonspire/textures/gui/effects/`，并由 `BattleEffectType.iconTexturePath` 绑定：`strength.png` 复制自原版力量效果，`regeneration.png` 复制自原版生命恢复效果，`haste.png` 复制自原版迅捷/速度效果，`poison.png` 复制自原版中毒效果，`weakness.png` 复制自原版虚弱效果，`slowness.png` 复制自原版缓慢效果，`glowing.png` 复制自原版发光效果，`wither.png` 复制自原版凋零效果，`abundant_arrows.png` 复制自原版箭物品贴图，`fuse.png` 复制自原版打火石物品贴图，`tidal_erosion.png` 复制自原版海晶沙砾/海晶碎片物品贴图，`paralysis.png` 复制自原版铜锭物品贴图，`thorns.png` 复制自原版河豚物品贴图，`burn.png` 来源为 `D:\图片\素材\烧伤.png`。
-- 力量、再生、迅捷、中毒、烧伤、凋零、虚弱、缓慢、发光、引信、潮蚀、麻痹、荆棘和已有流血、守护一样，在战斗条目和世界头顶状态栏中使用图标右下角显示层数；力量为负数时层数字体必须显示为红色，tooltip 使用负力量专用文案显示“造成的伤害减少 X 点”。
+- 新增战斗状态图标均位于 `src/main/resources/assets/moonspire/textures/gui/effects/`，并由 `BattleEffectType.iconTexturePath` 绑定：`strength.png` 复制自原版力量效果，`regeneration.png` 复制自原版生命恢复效果，`haste.png` 复制自原版迅捷/速度效果，`poison.png` 复制自原版中毒效果，`weakness.png` 复制自原版虚弱效果，`slowness.png` 复制自原版缓慢效果，`glowing.png` 复制自原版发光效果，`wither.png` 复制自原版凋零效果，`abundant_arrows.png` 复制自原版箭物品贴图，`fuse.png` 复制自原版打火石物品贴图，`tidal_erosion.png` 复制自原版海晶沙砾/海晶碎片物品贴图，`paralysis.png` 复制自原版铜锭物品贴图，`hunger.png` 复制自原版饥饿效果，`thorns.png` 复制自原版河豚物品贴图，`burn.png` 来源为 `D:\图片\素材\烧伤.png`。
+- 力量、再生、迅捷、中毒、烧伤、凋零、虚弱、缓慢、发光、引信、潮蚀、麻痹、饥饿、荆棘和已有流血、守护一样，在战斗条目和世界头顶状态栏中使用图标右下角显示层数；力量为负数时层数字体必须显示为红色，tooltip 使用负力量专用文案显示“造成的伤害减少 X 点”。
 - 治疗表现通过 `BattleVisualEvent.healedHealth` 同步，不使用攻击挥手动画；客户端在目标头顶显示绿色 `+X` 飘字。中毒、烧伤和再生这类由状态自动触发的视觉事件不携带卡牌或物品图标，因此只播放数值、受击或治疗反馈，不让拥有者做出出牌挥手动作。
 - 新增效果会出现在卡牌描述、关键词提示、状态 tooltip、怪物意图汇总、开发者中心效果选择列表和战斗条目预览中；所有可见文字都来自 `zh_cn.json` / `en_us.json` 翻译键。
 

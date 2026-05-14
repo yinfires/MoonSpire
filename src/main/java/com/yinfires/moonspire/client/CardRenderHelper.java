@@ -659,6 +659,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "tidal_erosion", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.tidal_erosion.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.PARALYSIS) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "paralysis", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.paralysis.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.HUNGER) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "hunger", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.hunger.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.THORNS) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "thorns", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.thorns.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.FUSE) {
@@ -918,6 +920,8 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.tidal_erosion.name"), Component.translatable("effect.moonspire.tidal_erosion.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.PARALYSIS && renderedTips.add("paralysis")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.paralysis.name"), Component.translatable("effect.moonspire.paralysis.description", effect.amount()), x, tipY);
+            } else if (effect.kind() == CardEffectKind.HUNGER && renderedTips.add("hunger")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.hunger.name"), Component.translatable("effect.moonspire.hunger.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.THORNS && renderedTips.add("thorns")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.thorns.name"), Component.translatable("effect.moonspire.thorns.description", effect.amount()), x, tipY);
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
@@ -1025,6 +1029,8 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.tidal_erosion.name"), Component.translatable("effect.moonspire.tidal_erosion.description")) + 4;
             } else if (effect.kind() == CardEffectKind.PARALYSIS && renderedTips.add("paralysis")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.paralysis.name"), Component.translatable("effect.moonspire.paralysis.description", effect.amount())) + 4;
+            } else if (effect.kind() == CardEffectKind.HUNGER && renderedTips.add("hunger")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.hunger.name"), Component.translatable("effect.moonspire.hunger.description")) + 4;
             } else if (effect.kind() == CardEffectKind.THORNS && renderedTips.add("thorns")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.thorns.name"), Component.translatable("effect.moonspire.thorns.description", effect.amount())) + 4;
             } else if (effect.kind() == CardEffectKind.FUSE && renderedTips.add("fuse")) {
