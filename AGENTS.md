@@ -18,6 +18,8 @@
 - Prefer a small complete patch once enough context is known, then compile or run the narrowest useful verification.
 - If exploration takes more than a couple of tool calls, give a short status update before continuing.
 - Do not wait until every detail is understood before making low-risk layout, documentation, or narrowly scoped changes.
+- When preparing a release changelog, first check the current version in project metadata such as `gradle.properties`, then review the recent commits since the previous release; version bumps are often only hinted at by those commits rather than a dedicated release commit.
+- Release changelog entries do not use a `Release Summary` / `发布摘要` section; start directly with concrete categories such as Added, Changed, Fixed, Gameplay, or their Chinese counterparts.
 - When investigating battle confirmation or synchronization delays, do not stop at client-side modal visibility or local animations. Check the authoritative server chain and sync cadence first: payload handler thread, `BattleManager` mutation, `BattleState` pending flags, snapshot size/frequency, and stale snapshot ordering. Large `BattleSnapshot` payloads must not be sent every tick while a pending player choice is idle; repeated old pending snapshots can queue ahead of the confirmation result and look like delayed server resolution.
 
 ## Lessons From Recent UI Fixes

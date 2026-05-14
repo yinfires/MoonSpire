@@ -11,7 +11,7 @@ Each release should include:
 - Version, release date, Minecraft version, loader, and release type.
 - A Chinese changelog first.
 - An English changelog with the same categories and matching meaning.
-- Categories in this order when applicable: `Release Summary`, `Added`, `Changed`, `Fixed`, `Gameplay`, `Cards And Decks`, `UI And Feedback`, `Developer And Modpack Tools`, `Technical`, `Compatibility`, `Known Notes`, `Future Plans`.
+- Categories in this order when applicable: `Added`, `Changed`, `Fixed`, `Gameplay`, `Cards And Decks`, `UI And Feedback`, `Developer And Modpack Tools`, `Technical`, `Compatibility`, `Known Notes`, `Future Plans`.
 - If a category has no meaningful entry for a release, omit that category for that release instead of leaving an empty section.
 
 每个版本应包含：
@@ -19,10 +19,169 @@ Each release should include:
 - 版本号、发布日期、Minecraft 版本、加载器和发布类型。
 - 先写中文更新日志。
 - 再写英文更新日志，分类和含义应与中文对应。
-- 分类建议按以下顺序使用：`发布摘要`、`新增内容`、`调整内容`、`修复内容`、`玩法系统`、`卡牌与牌组`、`界面与反馈`、`开发者与整合包工具`、`技术实现`、`兼容性`、`已知说明`、`后续计划`。
+- 分类建议按以下顺序使用：`新增内容`、`调整内容`、`修复内容`、`玩法系统`、`卡牌与牌组`、`界面与反馈`、`开发者与整合包工具`、`技术实现`、`兼容性`、`已知说明`、`后续计划`。
 - 如果某个版本没有对应内容，应省略该分类，不要保留空标题。
 
 ---
+
+## 1.0.1 - 2026-05-14
+
+- Minecraft: 1.21.1
+- Mod Loader: NeoForge 21.1.228
+- License: Apache-2.0
+- Release Type: Content and stability update
+
+### 中文更新日志
+
+#### 新增内容
+
+- 新增 JEI 联动展示。安装 JEI 时，制卡台转换会显示为 JEI 分类，玩家可以查看装备、弓弩、箭和光灵箭等物品会生成的卡牌。
+- 新增弓、弩、箭和光灵箭的专用转换牌，弓弩牌会消耗箭牌并在世界中播放蓄力、装填和飞行表现后结算。
+- 新增多种战斗状态与状态图标，包括备箭充足、引信、发光、凋零、潮蚀、麻痹和荆棘。
+- 新增更多怪物专属牌组和内置怪物牌，覆盖僵尸、骷髅、蜘蛛、洞穴蜘蛛、苦力怕、溺尸、守卫者和远古守卫者等敌人。
+
+#### 调整内容
+
+- 强化怪物出牌 AI，让怪物能更好地评估伤害、防御、状态施加和自爆等效果。
+- 统一普通近战攻击、远程弓弩、骷髅拉弓、三叉戟投掷、激流冲刺和苦力怕自爆等世界战斗动画的表现路径。
+- 优化卡组、牌堆、怪物卡组和开发者列表的缓存与可见区域渲染，减少打开列表、滚动和悬停卡牌时的卡顿。
+- 调整卡牌效果描述与关键词提示，默认目标不再显示多余“目标”文字，效果描述中的关键词也会高亮并显示对应说明。
+
+#### 修复内容
+
+- 修复卡牌效果搜索栏无法正常使用的问题。
+- 修复战斗中视角被中间方块或战斗锁定状态卡住的问题。
+- 修复死亡、假死亡和外部死亡保护交互导致的延迟、残留显示或永久假死问题。
+- 修复卡牌描述、卡图、世界头顶文字和基础 HUD 内容在模态遮罩上方穿透显示的问题。
+- 修复弓弩动画手持物品闪烁、姿态残留、重复挥手和命中结算时机不稳定的问题。
+- 修复多人战斗中结束回合、出牌等待、手牌选择确认和旧快照乱序到达可能造成的输入或结算延迟。
+- 修复删除或缺失开发者自定义卡后，旧卡牌、旧 id 或无效怪物卡组覆盖在重进后复活的问题。
+
+#### 玩法系统
+
+- 手牌上限固定为 10 张；抽牌超过上限时，额外抽到的牌会直接进入弃牌堆。
+- 多怪物战斗中，当前选中或指向哪只怪物，就显示哪只怪物自己的意图和预览数值。
+- 右键查看参战单位牌组时，会显示被查看单位当前真实战斗牌库，并包含正在使用或结算中的牌。
+- 直接伤害命中会显示更稳定的冲刺、停顿、受击方向和击退表现；效果伤害仍只显示伤害数字、音效和受击反馈，不会触发出牌挥手。
+
+#### 卡牌与牌组
+
+- 弓转换为远程消耗箭造成伤害的卡牌；弩转换为更高伤害、保留并在保留时降费的远程卡牌；箭和光灵箭转换为可被消耗的箭牌。
+- 苦力怕牌组加入点燃引信、嘶嘶逼近和火药外壳，并通过引信状态触发无世界破坏的自爆结算。
+- 溺尸获得三叉戟投掷、引雷投掷、激流冲刺和鹦鹉螺壳牌组；守卫者和远古守卫者获得潮蚀、麻痹、荆棘和光束相关牌组。
+- 怪物默认牌组允许重复牌；无效的非空覆盖被清理后，有默认牌组的怪物会回退到代码内置牌组。
+
+#### 状态与关键词
+
+- 凋零会降低战斗内生命上限，最低降至 1，回合结束时衰减；生命上限恢复后不会自动恢复生命。
+- 潮蚀会在目标获得格挡时先抵消格挡；麻痹会削弱目标后续攻击牌的基础伤害；荆棘会在受到攻击伤害时反伤攻击者。
+- 备箭充足会在回合开始时生成箭牌；引信会在回合结束时倒计时，归零后触发自爆；烧伤可以引爆带有引信的目标。
+- 远程、消耗箭、箭、给予发光和保留时减少耗费接入卡牌描述、关键词提示、怪物意图和战斗结算。
+
+#### 界面与反馈
+
+- 卡组、抽牌堆、弃牌堆、消耗堆和实体牌库查看使用更稳定的连续滚动、可拖动滚动条和可见区域缓存。
+- 放大卡牌和关键词提示会更稳定地跟随原卡位置，不再被强行拉回屏幕中心，也不会在原小卡与放大卡之间来回闪烁。
+- 开发者中心、卡面应用选择器和卡牌网格的搜索、滚动、确认弹窗、遮罩层和底层输入阻断更加一致。
+- 战斗世界头顶反馈会跟随实体真实或视觉移动，凋零后的有效生命上限、状态层数和伤害预览会与实际结算保持一致。
+
+#### 开发者与整合包工具
+
+- 开发者中心怪物页新增初始状态编辑，可为怪物配置凋零、荆棘等战斗开始时自动应用的状态。
+- 卡牌效果编辑器支持获得引信、给予凋零、给予潮蚀、给予麻痹和获得荆棘。
+- 卡面页新增删除、重置和应用流程；卡面应用选择器支持搜索、批量选择、应用和完成。
+- 保存开发者数据后，服务器会把最新卡牌、卡面和怪物数据同步给在线玩家，非管理员只刷新本地缓存而不会自动打开开发者中心。
+- 开发者数据加载、保存和删除流程会清理无效卡牌引用、旧怪物卡组覆盖和已删除的自定义卡，避免旧内容复活。
+
+#### 技术实现
+
+- 战斗快照增加序号并让客户端忽略倒序旧快照，减少手牌选择、结束回合和出牌确认后的旧状态回弹。
+- 大型战斗牌库内容改为按需请求和按实体、牌堆版本缓存，避免常规快照携带过多牌库数据。
+- 世界战斗动画复用更多原版持物、使用物品、骷髅拉弓和激流旋转状态，同时在动画结束、退出战斗或换世界时清理临时状态。
+- 新增访问转换配置用于客户端战斗视觉临时读取和写入原版使用物品、激流旋转等字段；这些字段只用于表现，不参与权威伤害或碰撞结算。
+
+#### 兼容性
+
+- 本版本继续面向 Minecraft 1.21.1。
+- 本版本继续面向 NeoForge 21.1.228。
+- 本版本需要 Java 21。
+- JEI 为可选联动；未安装 JEI 时，核心制卡台和卡牌战斗流程不受影响。
+
+### English Changelog
+
+#### Added
+
+- Added JEI integration display. When JEI is installed, Card Forge conversions appear as a JEI category showing the cards produced by equipment, bows, crossbows, arrows, spectral arrows, and other supported items.
+- Added dedicated converted cards for bows, crossbows, arrows, and spectral arrows. Bow and crossbow cards consume arrow cards and resolve after draw/loading and projectile travel visuals.
+- Added more battle statuses and status icons, including Abundant Arrows, Fuse, Glowing, Wither, Tidal Erosion, Paralysis, and Thorns.
+- Added more monster-specific decks and built-in monster cards for enemies such as zombies, skeletons, spiders, cave spiders, creepers, drowned, guardians, and elder guardians.
+
+#### Changed
+
+- Improved monster card AI so monsters can better evaluate damage, defense, status application, and self-destruct effects.
+- Unified the presentation path for normal melee attacks, bow/crossbow shots, skeleton bow draw, trident throws, riptide rushes, and creeper-style self-destructs.
+- Optimized caching and visible-area rendering for decks, piles, monster decks, and developer lists to reduce stutter while opening lists, scrolling, and hovering cards.
+- Adjusted card effect descriptions and keyword tips so default targets no longer show unnecessary target wording, and keywords inside effect text also highlight and show details.
+
+#### Fixed
+
+- Fixed the card-effect search box not working correctly.
+- Fixed the battle camera or battle lock getting stuck around blocks in the middle of combat.
+- Fixed delayed death, fake-death cleanup, and interactions with outside death protection that could leave stale displays or permanent fake-death state.
+- Fixed card descriptions, card art, overhead world text, and base HUD text rendering through modal overlays.
+- Fixed bow/crossbow held-item flicker, lingering poses, duplicate swings, and unstable hit-resolution timing.
+- Fixed multiplayer end-turn, card-use waiting, hand-selection confirmation, and stale snapshot ordering cases that could delay input or resolution.
+- Fixed deleted or missing developer custom cards, old card IDs, and invalid monster-deck overrides coming back after reload.
+
+#### Gameplay
+
+- The hand limit is now fixed at 10 cards. Cards drawn above the limit go directly to the discard pile.
+- In multi-monster battles, the selected or aimed monster now determines the displayed intent and preview values.
+- Right-clicking a combatant deck now shows that unit's current real battle deck, including cards currently being used or resolved.
+- Direct damage now has more stable lunge, hit pause, hurt direction, and knockback feedback; effect damage only shows damage numbers, sound, and hurt feedback, without triggering card-play swings.
+
+#### Cards And Decks
+
+- Bows convert into ranged cards that consume arrows for damage; crossbows convert into higher-damage retained ranged cards that reduce cost while retained; arrows and spectral arrows convert into consumable arrow cards.
+- Creeper decks now include Light Fuse, Hissing Approach, and Gunpowder Shell, using Fuse to trigger a self-destruct that does not break world blocks.
+- Drowned now have Trident Throw, Channeling Throw, Riptide Rush, and Nautilus Shell decks; guardians and elder guardians now use Tidal Erosion, Paralysis, Thorns, and beam-related decks.
+- Default monster decks now allow duplicate cards. When an invalid non-empty override is cleaned up, monsters with built-in defaults fall back to their code-defined decks.
+
+#### Statuses And Keywords
+
+- Wither reduces battle max health down to a minimum of 1 and decays at end of turn; restoring the max health does not automatically heal the unit.
+- Tidal Erosion reduces future Block gain, Paralysis lowers the base damage of later attack cards, and Thorns reflects damage back to attackers when attack damage is taken.
+- Abundant Arrows creates arrow cards at start of turn. Fuse counts down at end of turn and triggers self-destruct at zero. Burn can detonate a target that has Fuse.
+- Ranged, Consume Arrow, Arrow, Glowing, and Retain Reduce Cost now participate in card descriptions, keyword tips, monster intents, and battle resolution.
+
+#### UI And Feedback
+
+- Deck, draw pile, discard pile, exhaust pile, and entity deck views now use more stable smooth scrolling, draggable scrollbars, and visible-range caching.
+- Enlarged cards and keyword tips now stay anchored to the original card more reliably, no longer snap toward the screen center, and avoid flickering between the small and enlarged card.
+- Developer Center screens, the card-face application selector, and card grids now handle search, scrolling, confirmation modals, overlays, and blocked base input more consistently.
+- Overhead battle feedback follows real or visual entity movement, and Wither-adjusted max health, status stacks, and damage previews better match actual resolution.
+
+#### Developer And Modpack Tools
+
+- Added initial effect editing to the Developer Center monster page, allowing monsters to start battles with statuses such as Wither or Thorns.
+- Added support in the card-effect editor for Gain Fuse, Apply Wither, Apply Tidal Erosion, Apply Paralysis, and Gain Thorns.
+- Added delete, reset, and apply flows to the card-face page; the card-face application selector supports search, batch selection, apply, and done actions.
+- Saving developer data now syncs the latest card, card-face, and monster data to online players. Non-admin players refresh local caches without automatically opening the Developer Center.
+- Developer data loading, saving, and deletion now clean invalid card references, old monster-deck overrides, and deleted custom cards to prevent stale content from returning.
+
+#### Technical
+
+- Battle snapshots now carry sequence numbers, and clients ignore older out-of-order snapshots to reduce rollback after hand selection, end turn, and card-use confirmations.
+- Large battle deck contents are now requested on demand and cached by entity and pile version, reducing the amount of deck data carried in routine snapshots.
+- World battle animations reuse more vanilla held-item, item-use, skeleton bow-draw, and riptide spin state, while cleaning temporary visual state after animations, battle exit, logout, or world change.
+- Added access transformer entries for temporary client-side battle visuals that read or write vanilla item-use and riptide fields. These fields are presentation-only and do not drive authoritative damage or collision.
+
+#### Compatibility
+
+- This release still targets Minecraft 1.21.1.
+- This release still targets NeoForge 21.1.228.
+- This release requires Java 21.
+- JEI support is optional. Without JEI, the core Card Forge and card-battle flow are unchanged.
 
 ## 1.0.0 - 2026-05-10
 
@@ -32,12 +191,6 @@ Each release should include:
 - Release Type: Initial public release
 
 ### 中文更新日志
-
-#### 发布摘要
-
-月尖塔 1.0.0 是模组的首个正式发布版本。该版本为 Minecraft 1.21.1 引入一套牌组构筑式回合制卡牌战斗系统，并围绕挑战生物、管理牌堆、打出装备转化卡牌、观察敌人意图和编辑卡牌内容建立完整的基础框架。
-
-本版本的重点不是单个战斗技能，而是一整套可持续扩展的玩法底座：玩家拥有自己的卡牌数据，怪物拥有战斗牌组，战斗会在专门的 UI 和世界头顶反馈中展示，制卡台负责把装备转化为卡牌，开发者中心则用于后续调试、整合包配置和内容扩展。
 
 #### 新增内容
 
@@ -189,12 +342,6 @@ Each release should include:
 - 建立真正的月尖塔挑战区域，提供独特生物、卡牌和机制。
 
 ### English Changelog
-
-#### Release Summary
-
-Moon Spire 1.0.0 is the first official release of the mod. It introduces a deck-building, turn-based card combat system for Minecraft 1.21.1 and establishes the core framework for challenging creatures, managing card piles, playing equipment-derived cards, reading enemy intents, and editing card content.
-
-This release is not centered on one isolated combat skill. Instead, it provides a full foundation that can keep expanding: players have persistent card data, monsters have battle decks, combat is presented through dedicated screens and overhead world feedback, the Card Forge turns equipment into cards, and the Developer Center supports future debugging, modpack configuration, and content expansion.
 
 #### Added
 
