@@ -52,6 +52,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.entity.monster.Pillager;
+import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
@@ -96,6 +97,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
+    private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
     private static final List<ScheduledSelfDestructExplosion> SCHEDULED_SELF_DESTRUCT_EXPLOSIONS = new ArrayList<>();
@@ -199,6 +201,7 @@ public final class ClientEvents {
                 tickScheduledBattleSounds(minecraft);
                 tickScheduledSelfDestructExplosions(minecraft);
                 syncVisualRiptideStates(minecraft);
+                syncVisualRavagerHeadRams(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
             }
@@ -589,6 +592,42 @@ public final class ClientEvents {
             }
         }
 
+        private static void syncVisualRavagerHeadRams(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_RAVAGER_HEAD_RAMS.clear();
+                return;
+            }
+            Set<Integer> activeRavagers = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualRavagerHeadRam(minecraft.level.getEntity(combatant.entityId()), activeRavagers);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualRavagerHeadRam(minecraft.level.getEntity(combatant.entityId()), activeRavagers);
+            }
+            for (int entityId : VISUAL_RAVAGER_HEAD_RAMS.toArray(Integer[]::new)) {
+                if (!activeRavagers.contains(entityId)) {
+                    if (minecraft.level.getEntity(entityId) instanceof Ravager ravager) {
+                        ravager.attackTick = 0;
+                    }
+                    VISUAL_RAVAGER_HEAD_RAMS.remove(entityId);
+                }
+            }
+        }
+
+        private static void syncVisualRavagerHeadRam(Entity entity, Set<Integer> activeRavagers) {
+            if (!(entity instanceof Ravager ravager)) {
+                return;
+            }
+            int attackTick = ClientBattleState.visualRavagerAttackTick(ravager.getId());
+            if (attackTick > 0) {
+                ravager.attackTick = attackTick;
+                activeRavagers.add(ravager.getId());
+                VISUAL_RAVAGER_HEAD_RAMS.add(ravager.getId());
+            } else if (VISUAL_RAVAGER_HEAD_RAMS.remove(ravager.getId())) {
+                ravager.attackTick = 0;
+            }
+        }
+
         private static void syncVisualUseItemState(LivingEntity entity, ItemStack mainHand) {
             int duration = Math.max(1, mainHand.getUseDuration(entity));
             int usedTicks = Math.max(0, ClientBattleState.visualTicksUsingItem(entity.getId()));
@@ -717,6 +756,11 @@ public final class ClientEvents {
                         restoreVisualRiptideState(living);
                     }
                 }
+                for (int entityId : VISUAL_RAVAGER_HEAD_RAMS.toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof Ravager ravager) {
+                        ravager.attackTick = 0;
+                    }
+                }
                 for (var combatant : ClientBattleState.snapshot().players()) {
                     clearEntityHandAnimation(minecraft.level.getEntity(combatant.entityId()), stopUsingItems);
                 }
@@ -729,6 +773,7 @@ public final class ClientEvents {
             VISUAL_MAIN_HANDS.clear();
             TEMP_ARM_POSES.clear();
             VISUAL_RIPTIDE_STATES.clear();
+            VISUAL_RAVAGER_HEAD_RAMS.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
             SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();

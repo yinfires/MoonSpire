@@ -209,6 +209,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_elder_thorn_crown",
             "builtin_monster_deep_sea_pressure",
             "builtin_monster_deep_sea_pressure");
+    private static final List<String> RAVAGER_DEFAULT_DECK = List.of(
+            "builtin_monster_goring_headbutt",
+            "builtin_monster_goring_headbutt",
+            "builtin_monster_goring_headbutt",
+            "builtin_monster_crushing_charge",
+            "builtin_monster_crushing_charge",
+            "builtin_monster_trampling_pressure",
+            "builtin_monster_thick_hide",
+            "builtin_monster_thick_hide",
+            "builtin_monster_thick_hide",
+            "builtin_monster_terrifying_roar");
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
             "builtin_monster_strike",
             "builtin_monster_guard",
@@ -260,6 +271,9 @@ public final class MonsterDeckProfile {
         EntityType<?> type = monster.getType();
         if (type == EntityType.ELDER_GUARDIAN) {
             return cards(ELDER_GUARDIAN_DEFAULT_DECK);
+        }
+        if (type == EntityType.RAVAGER) {
+            return cards(RAVAGER_DEFAULT_DECK);
         }
         if (type == EntityType.GUARDIAN) {
             return cards(GUARDIAN_DEFAULT_DECK);
@@ -315,6 +329,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.ELDER_GUARDIAN) {
             return ELDER_GUARDIAN_DEFAULT_DECK;
+        }
+        if (type == EntityType.RAVAGER) {
+            return RAVAGER_DEFAULT_DECK;
         }
         if (type == EntityType.GUARDIAN) {
             return GUARDIAN_DEFAULT_DECK;

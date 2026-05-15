@@ -74,6 +74,10 @@ public class BattleState {
     private static final int VEX_CHARGE_RAISE_TICKS = 8;
     private static final int VEX_CHARGE_APPROACH_TICKS = 7;
     private static final int VEX_CHARGE_HIT_PAUSE_TICKS = 6;
+    private static final int RAVAGER_HEAD_RAM_RAISE_TICKS = 2;
+    private static final int RAVAGER_HEAD_RAM_APPROACH_TICKS = 8;
+    private static final int RAVAGER_HEAD_RAM_STRIKE_TICKS = 2;
+    private static final int RAVAGER_HEAD_RAM_RECOVER_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
@@ -2243,12 +2247,24 @@ public class BattleState {
                 || "builtin_monster_frenzied_dive".equals(batch.card().cardId());
     }
 
+    private boolean isRavagerHeadRamAttack(PendingCardBatch batch) {
+        if (batch == null || batch.card() == null || batch.user() == null || batch.user().entity().getType() != EntityType.RAVAGER) {
+            return false;
+        }
+        return "builtin_monster_goring_headbutt".equals(batch.card().cardId())
+                || "builtin_monster_crushing_charge".equals(batch.card().cardId())
+                || "builtin_monster_trampling_pressure".equals(batch.card().cardId());
+    }
+
     private LungeStyle lungeStyle(PendingCardBatch batch) {
         if (isVindicatorAxeAttack(batch)) {
             return LungeStyle.VINDICATOR_AXE;
         }
         if (isVexChargeAttack(batch)) {
             return LungeStyle.VEX_CHARGE;
+        }
+        if (isRavagerHeadRamAttack(batch)) {
+            return LungeStyle.RAVAGER_HEAD_RAM;
         }
         return LungeStyle.NORMAL;
     }
@@ -4388,16 +4404,18 @@ public class BattleState {
     private enum LungeStyle {
         NORMAL,
         VINDICATOR_AXE,
-        VEX_CHARGE;
+        VEX_CHARGE,
+        RAVAGER_HEAD_RAM;
 
         private boolean hasPrepare() {
-            return this == VINDICATOR_AXE || this == VEX_CHARGE;
+            return this == VINDICATOR_AXE || this == VEX_CHARGE || this == RAVAGER_HEAD_RAM;
         }
 
         private int prepareTicks() {
             return switch (this) {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_RAISE_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_RAISE_TICKS;
+                case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RAISE_TICKS;
                 case NORMAL -> 0;
             };
         }
@@ -4406,22 +4424,28 @@ public class BattleState {
             return switch (this) {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_APPROACH_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_APPROACH_TICKS;
+                case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_APPROACH_TICKS;
                 case NORMAL -> MELEE_LUNGE_TICKS;
             };
         }
 
         private boolean hasStrike() {
-            return this == VINDICATOR_AXE;
+            return this == VINDICATOR_AXE || this == RAVAGER_HEAD_RAM;
         }
 
         private int strikeTicks() {
-            return this == VINDICATOR_AXE ? VINDICATOR_AXE_STRIKE_TICKS : 0;
+            return switch (this) {
+                case VINDICATOR_AXE -> VINDICATOR_AXE_STRIKE_TICKS;
+                case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_STRIKE_TICKS;
+                case NORMAL, VEX_CHARGE -> 0;
+            };
         }
 
         private int recoverTicks() {
             return switch (this) {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_RECOVER_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_HIT_PAUSE_TICKS;
+                case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RECOVER_TICKS;
                 case NORMAL -> MELEE_HIT_PAUSE_TICKS;
             };
         }
@@ -4434,6 +4458,7 @@ public class BattleState {
             return switch (this) {
                 case VINDICATOR_AXE -> BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING;
                 case VEX_CHARGE -> BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
+                case RAVAGER_HEAD_RAM -> BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM;
                 case NORMAL -> BattleVisualEvent.AnimationType.MELEE_LUNGE;
             };
         }

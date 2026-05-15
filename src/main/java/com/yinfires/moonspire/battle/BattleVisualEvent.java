@@ -156,6 +156,7 @@ public record BattleVisualEvent(
         EVOKER_FANG_LINE,
         EVOKER_FANG_CIRCLE,
         EVOKER_SUMMON_VEX,
-        UNDYING_REVIVE
+        UNDYING_REVIVE,
+        RAVAGER_HEAD_RAM
     }
 }

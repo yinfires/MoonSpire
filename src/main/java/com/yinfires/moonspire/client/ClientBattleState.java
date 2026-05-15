@@ -47,6 +47,11 @@ public final class ClientBattleState {
     private static final int VEX_CHARGE_RAISE_TICKS = 8;
     private static final int VEX_CHARGE_APPROACH_TICKS = 7;
     private static final int VEX_CHARGE_HIT_PAUSE_TICKS = 6;
+    private static final int RAVAGER_HEAD_RAM_RAISE_TICKS = 2;
+    private static final int RAVAGER_HEAD_RAM_APPROACH_TICKS = 8;
+    private static final int RAVAGER_HEAD_RAM_STRIKE_TICKS = 2;
+    private static final int RAVAGER_HEAD_RAM_RECOVER_TICKS = 6;
+    private static final int RAVAGER_HEAD_ATTACK_TICKS = 10;
     static final int RIPTIDE_CHARGE_TICKS = 16;
     private static final int RIPTIDE_RUSH_TICKS = 10;
     private static final int RIPTIDE_HIT_PAUSE_TICKS = 6;
@@ -522,6 +527,11 @@ public final class ClientBattleState {
         return state != null && state.vexCharging();
     }
 
+    public static int visualRavagerAttackTick(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.ravagerAttackTick();
+    }
+
     public static boolean visualEvokerSpellcasting(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state != null && state.evokerSpellcasting();
@@ -825,7 +835,8 @@ public final class ClientBattleState {
         return animationType == BattleVisualEvent.AnimationType.MELEE_LUNGE
                 || animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH
                 || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
-                || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
+                || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
+                || animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM;
     }
 
     public static final class GuardianBeamAnimation {
@@ -1001,6 +1012,8 @@ public final class ClientBattleState {
                         ? VINDICATOR_AXE_RAISE_TICKS + VINDICATOR_AXE_APPROACH_TICKS + VINDICATOR_AXE_STRIKE_TICKS + VINDICATOR_AXE_RECOVER_TICKS
                         : nextType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
                         ? VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS + VEX_CHARGE_HIT_PAUSE_TICKS
+                        : nextType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
+                        ? RAVAGER_HEAD_RAM_RAISE_TICKS + RAVAGER_HEAD_RAM_APPROACH_TICKS + RAVAGER_HEAD_RAM_STRIKE_TICKS + RAVAGER_HEAD_RAM_RECOVER_TICKS
                         : MELEE_LUNGE_TICKS + MELEE_HIT_PAUSE_TICKS;
                 lungeTicks = Math.max(1, Math.max(minimumTicks, animationTicks));
                 lungeAge = 0;
@@ -1101,6 +1114,16 @@ public final class ClientBattleState {
                 }
                 return lungeStrike;
             }
+            if (animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM) {
+                if (age <= RAVAGER_HEAD_RAM_RAISE_TICKS) {
+                    return lungeStart;
+                }
+                age -= RAVAGER_HEAD_RAM_RAISE_TICKS;
+                if (age <= RAVAGER_HEAD_RAM_APPROACH_TICKS) {
+                    return lungePosition(age / RAVAGER_HEAD_RAM_APPROACH_TICKS);
+                }
+                return lungeStrike;
+            }
             if (age <= MELEE_LUNGE_TICKS) {
                 return lungePosition(age / MELEE_LUNGE_TICKS);
             }
@@ -1198,6 +1221,17 @@ public final class ClientBattleState {
             return animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
                     && lungeTicks > 0
                     && lungeAge <= VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS;
+        }
+
+        private int ravagerAttackTick() {
+            if (animationType != BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM || lungeTicks <= 0) {
+                return 0;
+            }
+            int attackAge = lungeAge - RAVAGER_HEAD_RAM_RAISE_TICKS;
+            if (attackAge < 0 || attackAge >= RAVAGER_HEAD_ATTACK_TICKS) {
+                return 0;
+            }
+            return Math.max(1, RAVAGER_HEAD_ATTACK_TICKS - attackAge);
         }
 
         private void hurtFlash(Vec3 knockbackVelocity) {

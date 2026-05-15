@@ -282,7 +282,7 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_totem_of_undying", "card.moonspire.monster.totem_of_undying.name", "", 3, 0, 0, List.of(
                         new CardEffect(CardEffectKind.UNDYING, 1, CardTarget.SELF),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:totem_of_undying", 0, 0, 1.0F, "default", ""),
-                new RegisteredCardDefinition("builtin_monster_ritual_ward", "card.moonspire.monster.ritual_ward.name", "", 1, 0, 0, List.of(
+                new RegisteredCardDefinition("builtin_monster_ritual_ward", "card.moonspire.monster.ritual_ward.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.BLOCK, 6, CardTarget.SELF),
                         new CardEffect(CardEffectKind.GUARD, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:totem_of_undying", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_axe_chop", "card.moonspire.monster.axe_chop.name", "", 1, 6, 0, List.of(
@@ -318,6 +318,19 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_reload_cover", "card.moonspire.monster.reload_cover.name", "", 1, 0, 4, List.of(), CardSourceType.MONSTER, "", "minecraft:crossbow", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_hungry_lunge", "card.moonspire.monster.hungry_lunge.name", "", 2, 8, 0, List.of(
                         new CardEffect(CardEffectKind.HUNGER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_goring_headbutt", "card.moonspire.monster.goring_headbutt.name", "", 1, 8, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ravager_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_crushing_charge", "card.moonspire.monster.crushing_charge.name", "", 2, 13, 0, List.of(
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ravager_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_trampling_pressure", "card.moonspire.monster.trampling_pressure.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:ravager_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_thick_hide", "card.moonspire.monster.thick_hide.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 9, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.GUARD, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:leather", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_terrifying_roar", "card.moonspire.monster.terrifying_roar.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 2, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:goat_horn", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
