@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
@@ -15,13 +16,15 @@ import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.alchemy.Potion;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 
 public final class MoonSpireCardRegistry {
     public static final String SELF_DESTRUCT_VIEW_CARD_ID = "custom_self_destruct";
@@ -56,6 +59,19 @@ public final class MoonSpireCardRegistry {
 
     public static Optional<CardInstance> cardInstance(String id) {
         return card(id).map(RegisteredCardDefinition::createInstance);
+    }
+
+    public static ItemStack builtinSourceStack(String id) {
+        return switch (normalizeId(id)) {
+            case "builtin_monster_poison_splash" -> potionStack(Items.SPLASH_POTION, Potions.POISON);
+            case "builtin_monster_weakness_splash" -> potionStack(Items.SPLASH_POTION, Potions.WEAKNESS);
+            case "builtin_monster_slowness_splash" -> potionStack(Items.SPLASH_POTION, Potions.SLOWNESS);
+            case "builtin_monster_harming_splash" -> potionStack(Items.SPLASH_POTION, Potions.HARMING);
+            case "builtin_monster_healing_splash" -> potionStack(Items.SPLASH_POTION, Potions.HEALING);
+            case "builtin_monster_healing_draught" -> potionStack(Items.POTION, Potions.HEALING);
+            case "builtin_monster_swiftness_draught" -> potionStack(Items.POTION, Potions.SWIFTNESS);
+            default -> ItemStack.EMPTY;
+        };
     }
 
     public static List<CardInstance> cardsByIds(List<String> ids) {
@@ -272,6 +288,25 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_undead_power", "card.moonspire.monster.undead_power.name", "", 3, 0, 0, List.of(
                         new CardEffect(CardEffectKind.STRENGTH, 2, CardTarget.SELF),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_poison_splash", "card.moonspire.monster.poison_splash.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.POISON, 4, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_weakness_splash", "card.moonspire.monster.weakness_splash.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.WEAKNESS, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_slowness_splash", "card.moonspire.monster.slowness_splash.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.SLOWNESS, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_harming_splash", "card.moonspire.monster.harming_splash.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 6, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_healing_draught", "card.moonspire.monster.healing_draught.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.HEAL, 7, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_swiftness_draught", "card.moonspire.monster.swiftness_draught.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.HASTE, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_healing_splash", "card.moonspire.monster.healing_splash.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.HEAL, 7, CardTarget.SINGLE_ALLY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_fang_line", "card.moonspire.monster.fang_line.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.EVOKER_FANG_LINE, 6, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:evoker_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_fang_circle", "card.moonspire.monster.fang_circle.name", "", 2, 0, 0, List.of(
@@ -425,6 +460,12 @@ public final class MoonSpireCardRegistry {
             return attackFromAttributes(stack) >= 4.0D ? CardSourceType.WEAPON : CardSourceType.TOOL;
         }
         return CardSourceType.UNKNOWN;
+    }
+
+    private static ItemStack potionStack(Item item, Holder<Potion> potion) {
+        ItemStack stack = new ItemStack(item);
+        stack.set(DataComponents.POTION_CONTENTS, PotionContents.EMPTY.withPotion(potion));
+        return stack;
     }
 
     private static int armorDefense(ItemStack stack) {

@@ -74,6 +74,10 @@ public record RegisteredCardDefinition(
     }
 
     private ItemStack artItemStack() {
+        ItemStack special = MoonSpireCardRegistry.builtinSourceStack(id);
+        if (!special.isEmpty()) {
+            return special;
+        }
         if (artItemId.isBlank()) {
             return ItemStack.EMPTY;
         }

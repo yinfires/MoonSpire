@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -39,13 +40,10 @@ import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
-import net.minecraft.world.entity.projectile.AbstractArrow;
-import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.projectile.EvokerFangs;
-import net.minecraft.world.entity.projectile.SpectralArrow;
-import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -82,6 +80,8 @@ public class BattleState {
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
     private static final int GUARDIAN_BEAM_TICKS = 80;
+    private static final int POTION_THROW_PREPARE_TICKS = 8;
+    private static final int POTION_DRINK_TICKS = 32;
     private static final int EVOKER_SPELL_WARMUP_TICKS = 20;
     private static final int EVOKER_FANG_CAST_TICKS = 40;
     private static final int EVOKER_SUMMON_CAST_TICKS = 40;
@@ -91,7 +91,6 @@ public class BattleState {
     private static final int MIN_PROJECTILE_TICKS = 5;
     private static final int MAX_PROJECTILE_TICKS = 18;
     private static final int IDLE_SYNC_HEARTBEAT_TICKS = 100;
-    private static final double PROJECTILE_BLOCK_DISTANCE = 0.7D;
     private static final double LUNGE_STOP_DISTANCE = 1.55D;
     private static final double POUNCE_CONTACT_MARGIN = 0.08D;
     private static final double POUNCE_JUMP_HEIGHT = 1.0D;
@@ -2228,6 +2227,27 @@ public class BattleState {
         return card != null && "builtin_monster_riptide_rush".equals(card.cardId());
     }
 
+    private boolean isPotionThrowCard(CardInstance card) {
+        ItemStack stack = potionVisualStack(card);
+        return !stack.isEmpty() && stack.is(Items.SPLASH_POTION);
+    }
+
+    private boolean isPotionDrinkCard(CardInstance card) {
+        ItemStack stack = potionVisualStack(card);
+        return !stack.isEmpty() && stack.is(Items.POTION);
+    }
+
+    private ItemStack potionVisualStack(CardInstance card) {
+        if (card == null) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = card.sourceStack();
+        if (!stack.isEmpty() && (stack.is(Items.POTION) || stack.is(Items.SPLASH_POTION))) {
+            return stack.copy();
+        }
+        return MoonSpireCardRegistry.builtinSourceStack(card.cardId());
+    }
+
     private boolean isVindicatorAxeAttack(PendingCardBatch batch) {
         if (batch == null || batch.card() == null || batch.user() == null || batch.user().entity().getType() != EntityType.VINDICATOR) {
             return false;
@@ -2403,6 +2423,22 @@ public class BattleState {
             pendingAnimation = new EvokerSpellAnimation(batch, batch.user(), BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX, EVOKER_SUMMON_CAST_TICKS);
             return true;
         }
+        if (isPotionDrinkCard(batch.card())) {
+            ItemStack visualStack = potionVisualStack(batch.card());
+            emitVisual(batch.user().entity(), batch.user().entity(), visualStack, ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.POTION_DRINK, POTION_DRINK_TICKS);
+            pendingAnimation = new PotionDrinkAnimation(batch, batch.user(), POTION_DRINK_TICKS);
+            return true;
+        }
+        PendingEffect potionAnimated = isPotionThrowCard(batch.card()) ? firstPotionAnimationEffect(batch) : null;
+        if (potionAnimated != null) {
+            ItemStack visualStack = potionVisualStack(batch.card());
+            LivingEntity actor = batch.user().entity();
+            LivingEntity target = potionAnimated.target().entity();
+            int animationTicks = POTION_THROW_PREPARE_TICKS + projectileFlightTicks(actor, target);
+            emitVisual(actor, target, visualStack, visualStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.POTION_THROW, animationTicks, potionStartPoint(actor, target), targetPoint(target));
+            pendingAnimation = new PotionProjectileAnimation(batch, potionAnimated.target(), visualStack, POTION_THROW_PREPARE_TICKS);
+            return true;
+        }
         PendingEffect animated = firstAnimatedEffect(batch);
         if (animated == null) {
             return false;
@@ -2432,7 +2468,10 @@ public class BattleState {
             ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
             ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
             int drawTicks = rangedPrepareTicks(batch.card());
-            emitVisual(batch.user().entity(), animated.target().entity(), visualStack, projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), drawTicks);
+            LivingEntity actor = batch.user().entity();
+            LivingEntity target = animated.target().entity();
+            int animationTicks = drawTicks + projectileFlightTicks(actor, target);
+            emitVisual(actor, target, visualStack, projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), animationTicks, projectileStartPoint(actor, target), targetPoint(target));
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
@@ -2445,6 +2484,15 @@ public class BattleState {
     private PendingEffect firstAnimatedEffect(PendingCardBatch batch) {
         for (PendingEffect effect : batch.effects()) {
             if (isDirectAttackEffect(effect.kind()) && !effect.effectDamage() && effect.target() != null && !effect.target().fakeDead()) {
+                return effect;
+            }
+        }
+        return null;
+    }
+
+    private PendingEffect firstPotionAnimationEffect(PendingCardBatch batch) {
+        for (PendingEffect effect : batch.effects()) {
+            if (effect.target() != null && !effect.target().fakeDead()) {
                 return effect;
             }
         }
@@ -4099,7 +4147,7 @@ public class BattleState {
         }
     }
 
-    private sealed interface BattleAnimation permits LungeAnimation, ProjectileAnimation, GuardianBeamAnimation, RiptideRushAnimation, EvokerSpellAnimation {
+    private sealed interface BattleAnimation permits LungeAnimation, ProjectileAnimation, PotionProjectileAnimation, PotionDrinkAnimation, GuardianBeamAnimation, RiptideRushAnimation, EvokerSpellAnimation {
         PendingCardBatch batch();
 
         boolean tick();
@@ -4471,7 +4519,6 @@ public class BattleState {
         private final int prepareTicks;
         private final int flightTicks;
         private final boolean channeling;
-        private AbstractArrow arrow;
         private int ticks;
         private boolean effectsApplied;
         private boolean lightningTriggered;
@@ -4494,7 +4541,6 @@ public class BattleState {
         public boolean tick() {
             LivingEntity actor = batch.user().entity();
             if (!actor.isAlive() || target.fakeDead()) {
-                discardArrow();
                 return true;
             }
             finishPendingFacing(batch);
@@ -4502,15 +4548,9 @@ public class BattleState {
                 ticks++;
                 return false;
             }
-            if (arrow == null) {
-                spawnArrow(actor, target.entity());
-            }
             ticks++;
-            guideArrow(target.entity());
-            if (ticks >= prepareTicks + flightTicks || arrowCloseToTarget(target.entity())) {
-                placeArrowAtTarget(target.entity());
+            if (ticks >= prepareTicks + flightTicks) {
                 triggerChannelingLightning(target.entity());
-                discardArrow();
                 return true;
             }
             return false;
@@ -4531,61 +4571,6 @@ public class BattleState {
             effectsApplied = true;
         }
 
-        private void spawnArrow(LivingEntity actor, LivingEntity targetEntity) {
-            Level level = actor.level();
-            ItemStack arrowStack = projectileStack.is(Items.TRIDENT) ? new ItemStack(Items.TRIDENT) : projectileStack.is(Items.SPECTRAL_ARROW) ? new ItemStack(Items.SPECTRAL_ARROW) : new ItemStack(Items.ARROW);
-            ItemStack weaponStack = batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack().copy();
-            arrow = arrowStack.is(Items.TRIDENT)
-                    ? new ThrownTrident(level, actor, arrowStack)
-                    : arrowStack.is(Items.SPECTRAL_ARROW)
-                    ? new SpectralArrow(level, actor, arrowStack, weaponStack)
-                    : new Arrow(level, actor, arrowStack, weaponStack);
-            Vec3 startPos = actor.getEyePosition().add(actor.getLookAngle().scale(0.6D));
-            arrow.setPos(startPos);
-            arrow.setOwner(actor);
-            arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
-            arrow.setBaseDamage(0.0D);
-            arrow.setNoGravity(true);
-            arrow.setNoPhysics(true);
-            arrow.noPhysics = true;
-            Vec3 direction = targetPoint(targetEntity).subtract(startPos).normalize();
-            arrow.shoot(direction.x, direction.y, direction.z, 2.4F, 0.0F);
-            level.addFreshEntity(arrow);
-        }
-
-        private void guideArrow(LivingEntity targetEntity) {
-            if (arrow == null || arrow.isRemoved()) {
-                return;
-            }
-            Vec3 targetPoint = targetPoint(targetEntity);
-            Vec3 delta = targetPoint.subtract(arrow.position());
-            double remainingTicks = Math.max(1.0D, prepareTicks + flightTicks - ticks + 1.0D);
-            Vec3 step = delta.scale(1.0D / remainingTicks);
-            arrow.setNoGravity(true);
-            arrow.setNoPhysics(true);
-            arrow.noPhysics = true;
-            arrow.setDeltaMovement(step);
-            arrow.setPos(arrow.position().add(step));
-            arrow.hasImpulse = true;
-        }
-
-        private boolean arrowCloseToTarget(LivingEntity targetEntity) {
-            return arrow == null || arrow.isRemoved() || arrow.position().distanceToSqr(targetPoint(targetEntity)) <= PROJECTILE_BLOCK_DISTANCE * PROJECTILE_BLOCK_DISTANCE;
-        }
-
-        private void placeArrowAtTarget(LivingEntity targetEntity) {
-            if (arrow != null && !arrow.isRemoved()) {
-                arrow.setPos(targetPoint(targetEntity));
-            }
-        }
-
-        private void discardArrow() {
-            if (arrow != null && !arrow.isRemoved()) {
-                arrow.discard();
-            }
-            arrow = null;
-        }
-
         private void triggerChannelingLightning(LivingEntity targetEntity) {
             if (!channeling || lightningTriggered || targetEntity == null) {
                 return;
@@ -4600,6 +4585,120 @@ public class BattleState {
             lightning.setVisualOnly(true);
             lightning.setDamage(0.0F);
             targetEntity.level().addFreshEntity(lightning);
+        }
+    }
+
+    private final class PotionProjectileAnimation implements BattleAnimation {
+        private final PendingCardBatch batch;
+        private final CombatantState target;
+        private final ItemStack projectileStack;
+        private final int prepareTicks;
+        private final int flightTicks;
+        private int ticks;
+        private boolean effectsApplied;
+        private boolean breakTriggered;
+
+        private PotionProjectileAnimation(PendingCardBatch batch, CombatantState target, ItemStack projectileStack, int prepareTicks) {
+            this.batch = batch;
+            this.target = target;
+            this.projectileStack = projectileStack.isEmpty() ? new ItemStack(Items.SPLASH_POTION) : projectileStack.copy();
+            this.prepareTicks = Math.max(0, prepareTicks);
+            this.flightTicks = projectileFlightTicks(batch.user().entity(), target.entity());
+        }
+
+        @Override
+        public PendingCardBatch batch() {
+            return batch;
+        }
+
+        @Override
+        public boolean tick() {
+            LivingEntity actor = batch.user().entity();
+            if (!actor.isAlive() || target.fakeDead()) {
+                return true;
+            }
+            finishPendingFacing(batch);
+            if (ticks < prepareTicks) {
+                ticks++;
+                return false;
+            }
+            ticks++;
+            if (ticks >= prepareTicks + flightTicks) {
+                triggerPotionBreak(target.entity());
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean movesEntity(LivingEntity entity) {
+            return false;
+        }
+
+        @Override
+        public boolean effectsApplied() {
+            return effectsApplied;
+        }
+
+        @Override
+        public void markEffectsApplied() {
+            effectsApplied = true;
+        }
+
+        private void triggerPotionBreak(LivingEntity targetEntity) {
+            if (breakTriggered || targetEntity == null || targetEntity.level().isClientSide) {
+                return;
+            }
+            breakTriggered = true;
+            PotionContents contents = projectileStack.getOrDefault(DataComponents.POTION_CONTENTS, PotionContents.EMPTY);
+            int eventId = contents.potion().isPresent() && contents.potion().get().value().hasInstantEffects() ? 2007 : 2002;
+            targetEntity.level().levelEvent(eventId, BlockPos.containing(targetPoint(targetEntity)), contents.getColor());
+        }
+    }
+
+    private final class PotionDrinkAnimation implements BattleAnimation {
+        private final PendingCardBatch batch;
+        private final CombatantState target;
+        private final LivingEntity actor;
+        private final int durationTicks;
+        private int ticks;
+        private boolean effectsApplied;
+
+        private PotionDrinkAnimation(PendingCardBatch batch, CombatantState target, int durationTicks) {
+            this.batch = batch;
+            this.target = target;
+            this.actor = batch.user().entity();
+            this.durationTicks = Math.max(1, durationTicks);
+        }
+
+        @Override
+        public PendingCardBatch batch() {
+            return batch;
+        }
+
+        @Override
+        public boolean tick() {
+            if (!actor.isAlive() || target == null || target.fakeDead()) {
+                return true;
+            }
+            finishPendingFacing(batch);
+            ticks++;
+            return ticks >= durationTicks;
+        }
+
+        @Override
+        public boolean movesEntity(LivingEntity entity) {
+            return false;
+        }
+
+        @Override
+        public boolean effectsApplied() {
+            return effectsApplied;
+        }
+
+        @Override
+        public void markEffectsApplied() {
+            effectsApplied = true;
         }
     }
 
@@ -4724,6 +4823,20 @@ public class BattleState {
     private int projectileFlightTicks(LivingEntity actor, LivingEntity target) {
         double distance = actor.getEyePosition().distanceTo(targetPoint(target));
         return Math.max(MIN_PROJECTILE_TICKS, Math.min(MAX_PROJECTILE_TICKS, (int) Math.ceil(distance / 1.6D)));
+    }
+
+    private Vec3 projectileStartPoint(LivingEntity actor, LivingEntity target) {
+        return projectileStartPoint(actor, target, 0.6D);
+    }
+
+    private Vec3 potionStartPoint(LivingEntity actor, LivingEntity target) {
+        return projectileStartPoint(actor, target, 0.45D);
+    }
+
+    private Vec3 projectileStartPoint(LivingEntity actor, LivingEntity target, double forwardOffset) {
+        Vec3 direction = targetPoint(target).subtract(actor.getEyePosition());
+        Vec3 normalized = direction.lengthSqr() > 0.0001D ? direction.normalize() : actor.getLookAngle();
+        return actor.getEyePosition().add(normalized.scale(forwardOffset));
     }
 
     private Vec3 targetPoint(LivingEntity entity) {

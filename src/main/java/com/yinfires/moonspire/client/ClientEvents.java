@@ -56,6 +56,7 @@ import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
+import net.minecraft.world.entity.monster.Witch;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -510,6 +511,9 @@ public final class ClientEvents {
                 vindicator.setAggressive(ClientBattleState.visualVindicatorAxeRaised(entity.getId()));
             } else if (entity instanceof Vex vex && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE) {
                 vex.setIsCharging(ClientBattleState.visualVexCharging(entity.getId()));
+            } else if (entity instanceof Witch witch && visualWitchDrinking(entity)) {
+                witch.setUsingItem(true);
+                state.startedWitchDrinking = true;
             }
             ItemStack mainHand = entity.getItemBySlot(EquipmentSlot.MAINHAND);
             syncVanillaCrossbowPose(entity, mainHand);
@@ -521,6 +525,10 @@ public final class ClientEvents {
                 state.startedUsing = true;
             } else if (!ClientBattleState.visualUsingItem(entity.getId()) && state.startedUsing && entity.isUsingItem()) {
                 clearVisualUseItemState(entity);
+            }
+            if (!visualWitchDrinking(entity) && state.startedWitchDrinking && entity instanceof Witch witch) {
+                witch.setUsingItem(false);
+                state.startedWitchDrinking = false;
             }
         }
 
@@ -538,6 +546,12 @@ public final class ClientEvents {
 
         private static boolean useDrownedTridentPose(LivingEntity entity) {
             return entity instanceof Drowned && ClientBattleState.visualDrownedTridentPose(entity.getId());
+        }
+
+        private static boolean visualWitchDrinking(LivingEntity entity) {
+            return entity instanceof Witch
+                    && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.POTION_DRINK
+                    && ClientBattleState.visualUsingItem(entity.getId());
         }
 
         private static void syncVisualRiptideStates(Minecraft minecraft) {
@@ -670,6 +684,7 @@ public final class ClientEvents {
                 state.restoreAggressive(entity);
                 state.restoreCrossbowCharging(entity);
                 state.restoreVexCharging(entity);
+                state.restoreWitchDrinking(entity);
                 restoreVisualRiptideState(entity);
                 if (state.startedUsing && entity.isUsingItem()) {
                     clearVisualUseItemState(entity);
@@ -684,6 +699,7 @@ public final class ClientEvents {
                 state.restoreAggressive(entity);
                 state.restoreCrossbowCharging(entity);
                 state.restoreVexCharging(entity);
+                state.restoreWitchDrinking(entity);
                 if (state.startedUsing && entity.isUsingItem() && !ClientBattleState.visualUsingItem(entity.getId())) {
                     clearVisualUseItemState(entity);
                 }
@@ -826,7 +842,8 @@ public final class ClientEvents {
                 boolean vindicatorAxeHit = event.animationType() == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING && event.animationTicks() <= 0;
                 boolean vexChargeHit = event.animationType() == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
-                if ((playedCardVisual && shouldSwing || meleeLungeHit || vindicatorAxeHit || vexChargeHit) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                boolean potionThrow = event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW;
+                if (((playedCardVisual && shouldSwing) || meleeLungeHit || vindicatorAxeHit || vexChargeHit || potionThrow) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (attacker instanceof LivingEntity livingAttacker) {
@@ -916,18 +933,23 @@ public final class ClientEvents {
         }
 
         private static void scheduleUseSounds(LivingEntity attacker, BattleVisualEvent event) {
+            int prepareTicks = ClientBattleState.projectilePrepareTicks(event);
             if (event.animationType() == BattleVisualEvent.AnimationType.BOW_DRAW) {
-                scheduleBattleSound(attacker, SoundEvents.ARROW_SHOOT, event.animationTicks(), 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.ARROW_SHOOT, prepareTicks, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.CROSSBOW_LOAD) {
                 scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_START.value(), 0, 0.5F, 1.0F);
-                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_MIDDLE.value(), Math.max(1, event.animationTicks() / 2), 0.5F, 1.0F);
-                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_END.value(), Math.max(1, event.animationTicks()), 0.5F, 1.0F);
-                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_SHOOT, Math.max(1, event.animationTicks() + 1), 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_MIDDLE.value(), Math.max(1, prepareTicks / 2), 0.5F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_LOADING_END.value(), Math.max(1, prepareTicks), 0.5F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.CROSSBOW_SHOOT, Math.max(1, prepareTicks + 1), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.TRIDENT_THROW) {
-                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, event.animationTicks()), 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, prepareTicks), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW) {
-                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, event.animationTicks()), 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, prepareTicks), 1.0F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_THUNDER.value(), Math.max(1, event.animationTicks() + 8), 1.2F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW) {
+                scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_THROW : SoundEvents.SPLASH_POTION_THROW, 0, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.POTION_DRINK) {
+                scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_DRINK : SoundEvents.GENERIC_DRINK, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
@@ -1005,20 +1027,24 @@ public final class ClientEvents {
         private final Boolean originalAggressive;
         private final Boolean originalCrossbowCharging;
         private final Boolean originalVexCharging;
+        private final Boolean originalWitchDrinking;
         private boolean startedUsing;
+        private boolean startedWitchDrinking;
 
-        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive, Boolean originalCrossbowCharging, Boolean originalVexCharging) {
+        private TemporaryHandState(ItemStack originalMainHand, Boolean originalAggressive, Boolean originalCrossbowCharging, Boolean originalVexCharging, Boolean originalWitchDrinking) {
             this.originalMainHand = originalMainHand;
             this.originalAggressive = originalAggressive;
             this.originalCrossbowCharging = originalCrossbowCharging;
             this.originalVexCharging = originalVexCharging;
+            this.originalWitchDrinking = originalWitchDrinking;
         }
 
         private static TemporaryHandState capture(LivingEntity entity) {
             Boolean aggressive = entity instanceof net.minecraft.world.entity.Mob mob ? mob.isAggressive() : null;
             Boolean crossbowCharging = entity instanceof Pillager pillager ? pillager.isChargingCrossbow() : null;
             Boolean vexCharging = entity instanceof Vex vex ? vex.isCharging() : null;
-            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive, crossbowCharging, vexCharging);
+            Boolean witchDrinking = entity instanceof Witch witch ? witch.isDrinkingPotion() : null;
+            return new TemporaryHandState(entity.getItemBySlot(EquipmentSlot.MAINHAND).copy(), aggressive, crossbowCharging, vexCharging, witchDrinking);
         }
 
         private void restoreAggressive(LivingEntity entity) {
@@ -1036,6 +1062,13 @@ public final class ClientEvents {
         private void restoreVexCharging(LivingEntity entity) {
             if (originalVexCharging != null && entity instanceof Vex vex) {
                 vex.setIsCharging(originalVexCharging);
+            }
+        }
+
+        private void restoreWitchDrinking(LivingEntity entity) {
+            if (originalWitchDrinking != null && entity instanceof Witch witch) {
+                witch.setUsingItem(originalWitchDrinking);
+                startedWitchDrinking = false;
             }
         }
     }

@@ -157,6 +157,8 @@ public record BattleVisualEvent(
         EVOKER_FANG_CIRCLE,
         EVOKER_SUMMON_VEX,
         UNDYING_REVIVE,
-        RAVAGER_HEAD_RAM
+        RAVAGER_HEAD_RAM,
+        POTION_THROW,
+        POTION_DRINK
     }
 }

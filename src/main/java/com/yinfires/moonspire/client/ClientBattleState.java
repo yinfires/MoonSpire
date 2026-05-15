@@ -30,6 +30,7 @@ import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ChargedProjectiles;
@@ -62,6 +63,8 @@ public final class ClientBattleState {
     private static final double LUNGE_REACH = 10.0D;
     private static final int KNOCKBACK_RELEASE_TICKS = 24;
     private static final int KNOCKBACK_SETTLE_TICKS = 4;
+    static final int POTION_THROW_PREPARE_TICKS = 8;
+    private static final int PROJECTILE_DEFAULT_PREPARE_TICKS = 20;
     private static final double KNOCKBACK_HORIZONTAL_DRAG = 0.82D;
     private static final double KNOCKBACK_VERTICAL_DRAG = 0.98D;
     private static final double KNOCKBACK_GRAVITY = 0.08D;
@@ -99,6 +102,7 @@ public final class ClientBattleState {
     private static final List<DamageNumber> damageNumbers = new ArrayList<>();
     private static final List<BlockGainAnimation> blockGainAnimations = new ArrayList<>();
     private static final List<GuardianBeamAnimation> guardianBeamAnimations = new ArrayList<>();
+    private static final List<ProjectileVisual> projectileVisuals = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
     private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
@@ -155,6 +159,7 @@ public final class ClientBattleState {
             damageNumbers.clear();
             blockGainAnimations.clear();
             guardianBeamAnimations.clear();
+            projectileVisuals.clear();
             pendingVisualEvents.clear();
             clearVisualStates();
             clearFakeDeathStarts();
@@ -424,6 +429,10 @@ public final class ClientBattleState {
         return guardianBeamAnimations;
     }
 
+    public static List<ProjectileVisual> projectileVisuals() {
+        return projectileVisuals;
+    }
+
     public static List<BattleVisualEvent> consumeVisualEvents() {
         List<BattleVisualEvent> events = new ArrayList<>();
         Iterator<ScheduledVisualEvent> iterator = pendingVisualEvents.iterator();
@@ -444,6 +453,9 @@ public final class ClientBattleState {
             }
             if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
                 guardianBeamAnimations.add(new GuardianBeamAnimation(event.attackerId(), event.targetId(), Math.max(1, event.animationTicks())));
+            }
+            if (isProjectileVisualEvent(event)) {
+                projectileVisuals.add(ProjectileVisual.from(event));
             }
             updatePlayedCardDisplay(snapshot, event);
             events.add(event);
@@ -606,6 +618,7 @@ public final class ClientBattleState {
     public static void clearVisualStates() {
         visualStates.clear();
         guardianBeamAnimations.clear();
+        projectileVisuals.clear();
     }
 
     public static int fakeDeathRenderTicks(int entityId) {
@@ -650,6 +663,14 @@ public final class ClientBattleState {
             animation.tick(snapshot);
             if (animation.done()) {
                 beamIterator.remove();
+            }
+        }
+        Iterator<ProjectileVisual> projectileIterator = projectileVisuals.iterator();
+        while (projectileIterator.hasNext()) {
+            ProjectileVisual visual = projectileIterator.next();
+            visual.tick();
+            if (visual.done()) {
+                projectileIterator.remove();
             }
         }
         Iterator<VisualState> visualIterator = visualStates.values().iterator();
@@ -796,6 +817,42 @@ public final class ClientBattleState {
         return DEFAULT_RIPTIDE_CENTER_Y_OFFSET;
     }
 
+    private static boolean isProjectileVisualEvent(BattleVisualEvent event) {
+        if (event == null || event.animationTicks() <= 0 || event.animationStart() == null || event.animationStrike() == null) {
+            return false;
+        }
+        return event.animationType() == BattleVisualEvent.AnimationType.BOW_DRAW
+                || event.animationType() == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
+                || event.animationType() == BattleVisualEvent.AnimationType.TRIDENT_THROW
+                || event.animationType() == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
+                || event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW;
+    }
+
+    public static int projectilePrepareTicks(BattleVisualEvent event) {
+        if (event == null) {
+            return PROJECTILE_DEFAULT_PREPARE_TICKS;
+        }
+        return projectilePrepareTicks(event.animationType(), event.animationTicks());
+    }
+
+    private static int projectilePrepareTicks(BattleVisualEvent.AnimationType animationType, int animationTicks) {
+        int prepareTicks = switch (animationType) {
+            case POTION_THROW -> POTION_THROW_PREPARE_TICKS;
+            case CROSSBOW_LOAD -> 25;
+            case TRIDENT_THROW, CHANNELING_TRIDENT_THROW -> 18;
+            default -> PROJECTILE_DEFAULT_PREPARE_TICKS;
+        };
+        return Math.max(0, Math.min(Math.max(0, animationTicks), prepareTicks));
+    }
+
+    private static boolean isProjectileAnimation(BattleVisualEvent.AnimationType animationType) {
+        return animationType == BattleVisualEvent.AnimationType.BOW_DRAW
+                || animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
+                || animationType == BattleVisualEvent.AnimationType.TRIDENT_THROW
+                || animationType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
+                || animationType == BattleVisualEvent.AnimationType.POTION_THROW;
+    }
+
     private static Vec3 lungeStart(BattleVisualEvent event) {
         if (event == null || !usesMovementAnimation(event.animationType()) || event.animationTicks() <= 0) {
             return null;
@@ -915,6 +972,108 @@ public final class ClientBattleState {
                         0.0D,
                         0.0D);
             }
+        }
+    }
+
+    public static final class ProjectileVisual {
+        private final int attackerId;
+        private final int targetId;
+        private final ItemStack stack;
+        private final BattleVisualEvent.AnimationType animationType;
+        private final Vec3 start;
+        private final Vec3 strike;
+        private final int prepareTicks;
+        private final int totalTicks;
+        private int age;
+
+        private ProjectileVisual(BattleVisualEvent event) {
+            this.attackerId = event.attackerId();
+            this.targetId = event.targetId();
+            this.animationType = event.animationType();
+            this.start = event.animationStart();
+            this.strike = event.animationStrike();
+            this.prepareTicks = Math.max(0, Math.min(event.animationTicks(), projectilePrepareTicks(event)));
+            this.totalTicks = Math.max(1, event.animationTicks());
+            this.stack = projectileStackForVisual(event);
+        }
+
+        private static ProjectileVisual from(BattleVisualEvent event) {
+            return new ProjectileVisual(event);
+        }
+
+        public int attackerId() {
+            return attackerId;
+        }
+
+        public int targetId() {
+            return targetId;
+        }
+
+        public ItemStack stack() {
+            return stack;
+        }
+
+        public BattleVisualEvent.AnimationType animationType() {
+            return animationType;
+        }
+
+        public int age() {
+            return age;
+        }
+
+        public Vec3 position(float partialTick) {
+            int flightTicks = Math.max(1, totalTicks - prepareTicks);
+            double flightAge = Math.max(0.0D, Math.min(flightTicks, age + Math.max(0.0F, partialTick) - prepareTicks));
+            double progress = flightAge / flightTicks;
+            return start.lerp(strike, progress);
+        }
+
+        public Vec3 direction() {
+            Vec3 direction = strike.subtract(start);
+            return direction.lengthSqr() > 0.0001D ? direction.normalize() : new Vec3(0.0D, 0.0D, 1.0D);
+        }
+
+        public boolean visible(float partialTick) {
+            return age + Math.max(0.0F, partialTick) >= prepareTicks && age <= totalTicks;
+        }
+
+        private void tick() {
+            age++;
+        }
+
+        private boolean done() {
+            return age > totalTicks;
+        }
+
+        private static ItemStack projectileStackForVisual(BattleVisualEvent event) {
+            ItemStack stack = event.projectileStack() == null || event.projectileStack().isEmpty()
+                    ? event.itemStack()
+                    : event.projectileStack();
+            if (stack == null || stack.isEmpty()) {
+                return defaultProjectileStack(event.animationType());
+            }
+            if (event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW) {
+                return visualOnlyPotionStack(stack);
+            }
+            return stack.copy();
+        }
+
+        private static ItemStack defaultProjectileStack(BattleVisualEvent.AnimationType animationType) {
+            if (animationType == BattleVisualEvent.AnimationType.TRIDENT_THROW
+                    || animationType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW) {
+                return new ItemStack(Items.TRIDENT);
+            }
+            if (animationType == BattleVisualEvent.AnimationType.POTION_THROW) {
+                return new ItemStack(Items.SPLASH_POTION);
+            }
+            return new ItemStack(Items.ARROW);
+        }
+
+        private static ItemStack visualOnlyPotionStack(ItemStack original) {
+            ItemStack stack = original.copy();
+            PotionContents contents = stack.getOrDefault(DataComponents.POTION_CONTENTS, PotionContents.EMPTY);
+            stack.set(DataComponents.POTION_CONTENTS, new PotionContents(java.util.Optional.empty(), java.util.Optional.of(contents.getColor()), List.of()));
+            return stack;
         }
     }
 
@@ -1043,13 +1202,15 @@ public final class ClientBattleState {
             }
             if (stack != null && !stack.isEmpty()) {
                 itemStack = stack.copy();
-                itemTicks = Math.max(18, animationTicks + 8);
+                int handTicks = isProjectileAnimation(nextType) ? projectilePrepareTicks(nextType, animationTicks) : animationTicks;
+                itemTicks = Math.max(18, handTicks + 8);
                 this.animationType = nextType;
                 if (nextType == BattleVisualEvent.AnimationType.BOW_DRAW
                         || nextType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
                         || nextType == BattleVisualEvent.AnimationType.TRIDENT_THROW
-                        || nextType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW) {
-                    usingTicks = Math.max(usingTicks, Math.max(1, animationTicks));
+                        || nextType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
+                        || nextType == BattleVisualEvent.AnimationType.POTION_DRINK) {
+                    usingTicks = Math.max(usingTicks, Math.max(1, handTicks));
                     usingAge = 0;
                 } else if (nextType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
                     usingTicks = Math.max(usingTicks, RIPTIDE_CHARGE_TICKS);

@@ -38,6 +38,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_claw",
             "builtin_monster_rotten_guard",
             "builtin_monster_undead_power");
+    private static final List<String> WITCH_DEFAULT_DECK = List.of(
+            "builtin_monster_poison_splash",
+            "builtin_monster_poison_splash",
+            "builtin_monster_weakness_splash",
+            "builtin_monster_slowness_splash",
+            "builtin_monster_harming_splash",
+            "builtin_monster_harming_splash",
+            "builtin_monster_healing_draught",
+            "builtin_monster_healing_draught",
+            "builtin_monster_swiftness_draught",
+            "builtin_monster_healing_splash");
     private static final List<String> VINDICATOR_DEFAULT_DECK = List.of(
             "builtin_monster_axe_chop",
             "builtin_monster_axe_chop",
@@ -281,6 +292,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.DROWNED) {
             return cards(DROWNED_DEFAULT_DECK);
         }
+        if (type == EntityType.WITCH) {
+            return cards(WITCH_DEFAULT_DECK);
+        }
         if (type == EntityType.HUSK) {
             return cards(HUSK_DEFAULT_DECK);
         }
@@ -338,6 +352,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.DROWNED) {
             return DROWNED_DEFAULT_DECK;
+        }
+        if (type == EntityType.WITCH) {
+            return WITCH_DEFAULT_DECK;
         }
         if (type == EntityType.HUSK) {
             return HUSK_DEFAULT_DECK;

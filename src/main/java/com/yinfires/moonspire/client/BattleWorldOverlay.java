@@ -26,6 +26,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.SpectralArrow;
+import net.minecraft.world.entity.projectile.ThrownPotion;
+import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -35,6 +42,7 @@ public final class BattleWorldOverlay {
     private static final float WORLD_TEXT_Z = 0.18F;
     private static final ResourceLocation GUARDIAN_BEAM_TEXTURE = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/guardian_beam.png");
     private static final RenderType GUARDIAN_BEAM_RENDER_TYPE = RenderType.entityCutoutNoCull(GUARDIAN_BEAM_TEXTURE);
+    private static final RenderOnlyProjectileEntities PROJECTILE_ENTITIES = new RenderOnlyProjectileEntities();
 
     private BattleWorldOverlay() {
     }
@@ -48,6 +56,7 @@ public final class BattleWorldOverlay {
         if (minecraft.level == null) {
             return;
         }
+        renderProjectileVisuals(minecraft, poseStack, camera, bufferSource, partialTick);
         for (BattleCombatantSnapshot combatant : snapshot.players()) {
             if (combatant.fakeDead()) {
                 continue;
@@ -132,6 +141,37 @@ public final class BattleWorldOverlay {
                 continue;
             }
             renderGuardianBeam(poseStack, consumer, livingAttacker, target, cameraPos, beam, partialTick);
+        }
+    }
+
+    private static void renderProjectileVisuals(Minecraft minecraft, PoseStack poseStack, Camera camera, MultiBufferSource.BufferSource bufferSource, float partialTick) {
+        if (minecraft.level == null) {
+            return;
+        }
+        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
+        Vec3 cameraPos = camera.getPosition();
+        for (ClientBattleState.ProjectileVisual visual : ClientBattleState.projectileVisuals()) {
+            if (!visual.visible(partialTick)) {
+                continue;
+            }
+            Entity projectile = PROJECTILE_ENTITIES.entityFor(minecraft, visual);
+            if (projectile == null) {
+                continue;
+            }
+            Vec3 position = visual.position(partialTick);
+            Vec3 direction = visual.direction();
+            float yaw = (float) (Mth.atan2(direction.x, direction.z) * Mth.RAD_TO_DEG);
+            float pitch = (float) (Mth.atan2(direction.y, Math.sqrt(direction.x * direction.x + direction.z * direction.z)) * Mth.RAD_TO_DEG);
+            projectile.setPos(position);
+            projectile.xOld = position.x;
+            projectile.yOld = position.y;
+            projectile.zOld = position.z;
+            projectile.tickCount = Math.max(3, visual.age());
+            projectile.setYRot(yaw);
+            projectile.yRotO = yaw;
+            projectile.setXRot(pitch);
+            projectile.xRotO = pitch;
+            dispatcher.render(projectile, position.x - cameraPos.x, position.y - cameraPos.y, position.z - cameraPos.z, yaw, partialTick, poseStack, bufferSource, LightTexture.FULL_BRIGHT);
         }
     }
 
@@ -425,5 +465,66 @@ public final class BattleWorldOverlay {
         }
         VertexConsumer consumer = bufferSource.getBuffer(RenderType.text(texture));
         MoonSpireUiTextures.drawWorldBillboard(matrix, consumer, x, y, width, height, 0.02F, packedLight, 0.0F, 0.0F, 1.0F, 1.0F);
+    }
+
+    private static final class RenderOnlyProjectileEntities {
+        private Arrow arrow;
+        private SpectralArrow spectralArrow;
+        private ThrownTrident trident;
+        private ThrownPotion potion;
+        private int nextVisualId = -1000000;
+
+        private Entity entityFor(Minecraft minecraft, ClientBattleState.ProjectileVisual visual) {
+            if (minecraft.level == null) {
+                return null;
+            }
+            ItemStack stack = visual.stack();
+            if (visual.animationType() == com.yinfires.moonspire.battle.BattleVisualEvent.AnimationType.POTION_THROW || stack.is(Items.SPLASH_POTION)) {
+                if (potion == null || potion.level() != minecraft.level) {
+                    potion = new ThrownPotion(minecraft.level, 0.0D, 0.0D, 0.0D);
+                    initializeVisualEntity(potion);
+                }
+                potion.setItem(stack);
+                return potion;
+            }
+            if (stack.is(Items.TRIDENT)) {
+                if (trident == null || trident.level() != minecraft.level) {
+                    trident = new ThrownTrident(minecraft.level, 0.0D, 0.0D, 0.0D, stack.copy());
+                    initializeVisualEntity(trident);
+                }
+                return trident;
+            }
+            if (stack.is(Items.SPECTRAL_ARROW)) {
+                if (spectralArrow == null || spectralArrow.level() != minecraft.level) {
+                    spectralArrow = new SpectralArrow(minecraft.level, 0.0D, 0.0D, 0.0D, stack.copy(), null);
+                    initializeVisualEntity(spectralArrow);
+                }
+                prepareArrow(spectralArrow);
+                return spectralArrow;
+            }
+            if (arrow == null || arrow.level() != minecraft.level) {
+                arrow = new Arrow(minecraft.level, 0.0D, 0.0D, 0.0D, stack.copy(), null);
+                initializeVisualEntity(arrow);
+            }
+            prepareArrow(arrow);
+            return arrow;
+        }
+
+        private void initializeVisualEntity(Entity entity) {
+            entity.setId(nextVisualId--);
+            entity.setNoGravity(true);
+            entity.setDeltaMovement(Vec3.ZERO);
+            entity.tickCount = 1;
+            entity.setSilent(true);
+            entity.setInvisible(false);
+            entity.setInvulnerable(true);
+            entity.setSharedFlagOnFire(false);
+        }
+
+        private void prepareArrow(AbstractArrow arrow) {
+            arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
+            arrow.setBaseDamage(0.0D);
+            arrow.setNoGravity(true);
+        }
     }
 }

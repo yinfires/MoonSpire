@@ -105,6 +105,9 @@
 - 玩法描述：劫掠兽默认使用 10 张精英压迫型牌组：3 张“顶角头槌”、2 张“碾压冲锋”、1 张“践踏压迫”、3 张“厚皮防御”和 1 张“骇人咆哮”。顶角头槌为 1 费，造成 8 点攻击伤害并给予目标 1 层虚弱；碾压冲锋为 2 费，造成 13 点攻击伤害并给予目标 1 层缓慢；践踏压迫为 1 费，对全体敌方造成 5 点伤害；厚皮防御为 1 费，消耗，获得 9 点格挡与 1 层守护；骇人咆哮为 2 费，给予全体敌方 2 层虚弱与 1 层缓慢。劫掠兽自己使用顶角头槌、碾压冲锋或践踏压迫时，会在战斗冲刺视觉中保留原版头部伸缩攻击动作；玩家或其它单位获得并使用这些牌时仍按普通近战冲刺表现。
   - 代码实现：`MoonSpireCardRegistry.builtinMonsterCards()` 注册 `builtin_monster_goring_headbutt`、`builtin_monster_crushing_charge`、`builtin_monster_trampling_pressure`、`builtin_monster_thick_hide` 和 `builtin_monster_terrifying_roar`，复用现有攻击、格挡、守护、虚弱、缓慢、消耗和全体敌方目标结算。`MonsterDeckProfile` 在识别 `EntityType.RAVAGER` 时返回专属 10 张默认牌组。`BattleState` 仅在劫掠兽实体使用三张攻击牌时选择 `BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM`；客户端 `ClientBattleState` 按战斗视觉 tick 计算原版头部攻击窗口，`ClientEvents` 把该窗口写入客户端 `Ravager.attackTick`，让原版 `RavagerModel` 驱动头部伸缩。
   - 变更记录：本次新增劫掠兽默认卡组、五张内置劫掠兽怪物牌，以及兼容原版头部伸缩的劫掠兽战斗攻击视觉；本次将厚皮防御改为带有“消耗”。
+- 玩法描述：女巫默认使用 10 张药水牌：2 张“毒药投掷”、1 张“虚弱投掷”、1 张“缓慢投掷”、2 张“瞬伤投掷”、2 张“治疗饮剂”、1 张“迅捷饮剂”和 1 张“治疗投掷”。毒药投掷为 1 费远程单体敌方给予 4 层中毒；虚弱投掷为 1 费远程单体敌方给予 2 层虚弱；缓慢投掷为 1 费远程单体敌方给予 2 层缓慢；瞬伤投掷为 1 费远程单体敌方造成 6 点伤害，仍作为 Moon Spire 攻击伤害结算；治疗饮剂为 1 费自我恢复 7 点生命；迅捷饮剂为 1 费自身获得 2 层迅捷；治疗投掷为 1 费远程恢复一名非自身友方 7 点生命。单女巫没有非自身友方时不会把治疗投掷改成自疗；多敌方时治疗投掷按怪物 AI 治疗收益优先投给受伤友方。玩家获得这些牌后，投掷敌方药水只能指向敌方，治疗投掷只能指向非自身友方，自饮牌在出牌区使用。
+  - 代码实现：`MoonSpireCardRegistry.builtinMonsterCards()` 注册 7 张女巫药水内置牌，并通过 `builtinSourceStack(...)` 为它们提供带 `PotionContents` 的 `Items.SPLASH_POTION` 或 `Items.POTION` 源物品；`RegisteredCardDefinition.artItemStack()` 优先读取该源物品，让卡图、临时手持物和视觉投射物显示对应药水颜色。`MonsterDeckProfile` 在通用僵尸/骷髅等分支前识别 `EntityType.WITCH`，返回女巫 10 张默认卡组；奖励池默认继续由当前有效卡组去重生成。`CardInstance.normalizeCardId(...)` 同步新增这些内置牌的名称键映射。
+  - 变更记录：本次新增女巫默认药水卡组、7 张女巫药水内置牌、彩色药水卡图/表现物品和对应奖励池来源；治疗投掷严格限定非自身友方，无队友时不自动改为治疗自己。
 
 ## 牌组系统
 
@@ -414,6 +417,9 @@
 - 玩法描述：掠夺者使用扣下悬刀时，会复用掠夺者自身的原版弩装填和举弩射击动画，不额外创建 Moon Spire 专属掠夺者姿势。卡牌仍按 Moon Spire 远程箭命中后结算伤害，不会调用原版掠夺者攻击逻辑生成额外真实箭伤害。
   - 代码实现：扣下悬刀的表现物品为 `minecraft:crossbow`，因此远程动画走既有 `BattleVisualEvent.AnimationType.CROSSBOW_LOAD`；客户端只在该视觉期间临时覆盖掠夺者主手弩，并同步原版 `Pillager.setChargingCrossbow(...)` 与 aggressive 状态，让原版掠夺者模型负责装填/举弩表现，视觉结束后恢复进入视觉前的状态。
   - 变更记录：本次补齐掠夺者弩牌对原版掠夺者装填/射击动画状态的兼容，并避免另造专属动画。
+- 玩法描述：女巫药水牌和玩家获得后的同名药水牌都使用药水专属世界动画。投掷药水牌会先临时手持对应喷溅药水并挥手，再生成只用于表现的飞行药水，药水命中目标并播放破裂/溅落反馈后才结算卡牌伤害、治疗或状态；饮用药水牌会临时手持普通药水并维持约 32 tick 原版使用姿态，饮用完成后才结算自我治疗或迅捷。女巫投掷使用女巫投掷音效，玩家和其它实体投掷使用喷溅药水投掷音效；女巫饮用使用女巫饮药音效，玩家和其它实体饮用使用通用饮用音效。视觉药水不触发额外原版药水效果。
+  - 代码实现：`BattleVisualEvent.AnimationType` 末尾追加 `POTION_THROW` 和 `POTION_DRINK`。`BattleState.beginBattleAnimation(...)` 在普通远程/近战动画前识别彩色药水源物品，`PotionProjectileAnimation` 生成禁用原版命中效果的 `BattleThrownPotion` 作为视觉投射物，命中时只播放 `levelEvent(2002/2007)` 药水破裂反馈，再让战斗批次结算；`PotionDrinkAnimation` 延后到饮用 tick 完成后结算。客户端 `ClientBattleState.VisualState` 按 tick 维持药水手持和使用状态；`ClientEvents` 为女巫同步 `Witch#setUsingItem(true)` 并在视觉结束后恢复，普通 Humanoid 继续走原版物品使用姿态和对应声音。
+  - 变更记录：本次新增药水投掷/饮用世界动画，并让女巫和玩家使用女巫药水牌时共享同一套延后结算的视觉链路。
 - 玩法描述：卡牌现在额外支持恢复生命、获得力量、扣除力量、获得再生、获得迅捷、获得引信，以及给予中毒、烧伤、凋零、虚弱、缓慢。治疗默认作用于自己，非自身目标会在描述中写明目标；力量、再生、迅捷和引信默认作用于自己；扣除力量、中毒、烧伤、凋零、虚弱、缓慢默认作用于单体敌方。治疗会恢复战斗生命值但不超过当前有效战斗生命上限，并在目标头顶显示绿色恢复数字。
   - 代码实现：`CardEffectKind` 和 `DeveloperCardEffect.Kind` 新增对应效果并设置默认目标；`DeveloperCenterScreen` 的效果选择、保存和重新加载路径会把开发者效果转换为统一 `CardEffect`；`BattleState.applyPendingCardBatch()` 在同一批效果里结算治疗、力量增减和状态施加，`BattleVisualEvent.healedHealth`、`ClientBattleState` 与 `BattleWorldOverlay` 负责同步并显示绿色恢复飘字。
   - 变更记录：扩展卡牌效果列表、开发者中心效果列表、卡面描述、怪物意图汇总和战斗条目预览；新增“获得引信”和“给予凋零”效果。

@@ -465,6 +465,13 @@ public record CardInstance(
             case "card.moonspire.monster.claw.name" -> "builtin_monster_claw";
             case "card.moonspire.monster.rotten_guard.name" -> "builtin_monster_rotten_guard";
             case "card.moonspire.monster.undead_power.name" -> "builtin_monster_undead_power";
+            case "card.moonspire.monster.poison_splash.name" -> "builtin_monster_poison_splash";
+            case "card.moonspire.monster.weakness_splash.name" -> "builtin_monster_weakness_splash";
+            case "card.moonspire.monster.slowness_splash.name" -> "builtin_monster_slowness_splash";
+            case "card.moonspire.monster.harming_splash.name" -> "builtin_monster_harming_splash";
+            case "card.moonspire.monster.healing_draught.name" -> "builtin_monster_healing_draught";
+            case "card.moonspire.monster.swiftness_draught.name" -> "builtin_monster_swiftness_draught";
+            case "card.moonspire.monster.healing_splash.name" -> "builtin_monster_healing_splash";
             case "card.moonspire.monster.fang_line.name" -> "builtin_monster_fang_line";
             case "card.moonspire.monster.fang_circle.name" -> "builtin_monster_fang_circle";
             case "card.moonspire.monster.summon_vex.name" -> "builtin_monster_summon_vex";
