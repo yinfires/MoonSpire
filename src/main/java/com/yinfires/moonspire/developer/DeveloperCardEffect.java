@@ -36,9 +36,14 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
     }
 
     public static CardTarget defaultTarget(Kind kind) {
+        if (kind == Kind.EVOKER_FANG_CIRCLE) {
+            return CardTarget.ALL_ENEMIES;
+        }
         return kind == Kind.BLOCK
                 || kind == Kind.HEAL
                 || kind == Kind.GUARD
+                || kind == Kind.UNDYING
+                || kind == Kind.SUMMON_VEX
                 || kind == Kind.STRENGTH
                 || kind == Kind.REGENERATION
                 || kind == Kind.HASTE
@@ -79,6 +84,10 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         BLEED,
         GLOWING,
         GUARD,
+        UNDYING,
+        EVOKER_FANG_LINE,
+        EVOKER_FANG_CIRCLE,
+        SUMMON_VEX,
         STRENGTH,
         LOSE_STRENGTH,
         REGENERATION,

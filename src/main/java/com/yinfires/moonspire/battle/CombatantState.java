@@ -10,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 
 public class CombatantState {
     public static final int FAKE_DEATH_ANIMATION_TICKS = 20;
+    public static final int MAX_GUARD_STACKS = 9;
 
     private final LivingEntity entity;
     private final BattleDeck deck;
@@ -23,6 +24,8 @@ public class CombatantState {
     private boolean endedTurn;
     private boolean fakeDead;
     private int fakeDeathTicks;
+    private boolean battleSummoned;
+    private int pendingUndyingReviveHealth;
     private UUID creditedPlayerKill;
     private final Map<BattleEffectType, Integer> effects = new EnumMap<>(BattleEffectType.class);
 
@@ -114,6 +117,20 @@ public class CombatantState {
         return fakeDead;
     }
 
+    public boolean battleSummoned() {
+        return battleSummoned;
+    }
+
+    public void markBattleSummoned() {
+        battleSummoned = true;
+    }
+
+    public int consumeUndyingReviveHealth() {
+        int revivedHealth = pendingUndyingReviveHealth;
+        pendingUndyingReviveHealth = 0;
+        return revivedHealth;
+    }
+
     public int fakeDeathTicks() {
         return fakeDeathTicks;
     }
@@ -179,7 +196,12 @@ public class CombatantState {
     }
 
     public void killForSelfDestruct(UUID creditedPlayerKill) {
+        forceFakeDeath(creditedPlayerKill);
+    }
+
+    public void forceFakeDeath(UUID creditedPlayerKill) {
         battleHealth = 0.0F;
+        pendingUndyingReviveHealth = 0;
         markFakeDead(creditedPlayerKill);
     }
 
@@ -198,6 +220,9 @@ public class CombatantState {
             return;
         }
         int next = effects.getOrDefault(type, 0) + amount;
+        if (type == BattleEffectType.GUARD) {
+            next = Math.min(MAX_GUARD_STACKS, next);
+        }
         if (next == 0) {
             effects.remove(type);
         } else if (type.allowsNegativeStacks() || next > 0) {
@@ -305,6 +330,16 @@ public class CombatantState {
         if (amount > 0) {
             battleHealth = Math.max(0.0F, battleHealth - amount);
             if (battleHealth <= 0.0F) {
+                int reviveHealth = (int)Math.floor(effectiveMaxBattleHealth() * 0.5F);
+                if (effectAmount(BattleEffectType.UNDYING) > 0 && reviveHealth >= 1) {
+                    battleHealth = reviveHealth;
+                    pendingUndyingReviveHealth = reviveHealth;
+                    reduceEffect(BattleEffectType.UNDYING, 1);
+                    if (entity.isAlive()) {
+                        entity.setHealth(Math.max(1.0F, entity.getHealth()));
+                    }
+                    return;
+                }
                 markFakeDead(creditedPlayerKill);
             }
         }

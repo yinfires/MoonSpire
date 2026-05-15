@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.particles.ColorParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.Util;
 import net.minecraft.client.KeyMapping;
@@ -51,6 +52,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.entity.monster.Pillager;
+import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
@@ -191,6 +193,7 @@ public final class ClientEvents {
                     minecraft.setScreen(new BattleScreen());
                 }
                 playVisualEvents(minecraft);
+                spawnEvokerSpellParticles(minecraft);
                 syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
                 tickScheduledBattleSounds(minecraft);
@@ -652,6 +655,12 @@ public final class ClientEvents {
             if (!ClientBattleState.active() || ClientBattleState.snapshot().combatant(entity.getId()) == null) {
                 return;
             }
+            if (!(entity instanceof SpellcasterIllager) && ClientBattleState.visualEvokerSpellcasting(entity.getId())) {
+                TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
+                model.leftArmPose = MoonSpireArmPoses.evokerSpellcasting();
+                model.rightArmPose = MoonSpireArmPoses.evokerSpellcasting();
+                return;
+            }
             if (entity instanceof AbstractSkeleton && ClientBattleState.visualAnimationType(entity.getId()) == BattleVisualEvent.AnimationType.BOW_DRAW) {
                 TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
                 if (entity.getMainArm() == HumanoidArm.RIGHT) {
@@ -669,6 +678,12 @@ public final class ClientEvents {
             TEMP_ARM_POSES.computeIfAbsent(entity.getId(), id -> new TemporaryArmPoseState(model.leftArmPose, model.rightArmPose));
             model.leftArmPose = HumanoidModel.ArmPose.EMPTY;
             model.rightArmPose = HumanoidModel.ArmPose.EMPTY;
+        }
+
+        private static boolean isEvokerSpellAnimation(BattleVisualEvent.AnimationType type) {
+            return type == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE
+                    || type == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE
+                    || type == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX;
         }
 
         private static void restoreArmPose(LivingEntity entity) {
@@ -786,6 +801,47 @@ public final class ClientEvents {
                         }
                     }
                 }
+                if (event.animationType() == BattleVisualEvent.AnimationType.UNDYING_REVIVE && target instanceof LivingEntity livingTarget) {
+                    spawnUndyingParticles(livingTarget);
+                }
+            }
+        }
+
+        private static void spawnEvokerSpellParticles(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                return;
+            }
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                spawnEvokerSpellParticles(minecraft.level.getEntity(combatant.entityId()));
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                spawnEvokerSpellParticles(minecraft.level.getEntity(combatant.entityId()));
+            }
+        }
+
+        private static void spawnEvokerSpellParticles(Entity entity) {
+            if (!(entity instanceof LivingEntity living) || !ClientBattleState.visualEvokerSpellcasting(living.getId()) || living.level() == null) {
+                return;
+            }
+            BattleVisualEvent.AnimationType spellType = ClientBattleState.visualEvokerSpellType(living.getId());
+            float red = spellType == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX ? 0.7F : 0.4F;
+            float green = spellType == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX ? 0.7F : 0.3F;
+            float blue = spellType == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX ? 0.8F : 0.35F;
+            float angle = living.yBodyRot * ((float)Math.PI / 180.0F) + Mth.cos(living.tickCount * 0.6662F) * 0.25F;
+            float xOffset = Mth.cos(angle);
+            float zOffset = Mth.sin(angle);
+            double horizontalScale = 0.6D * living.getScale();
+            double y = living.getY() + 1.8D * living.getScale();
+            living.level().addParticle(ColorParticleOption.create(ParticleTypes.ENTITY_EFFECT, red, green, blue), living.getX() + xOffset * horizontalScale, y, living.getZ() + zOffset * horizontalScale, 0.0D, 0.0D, 0.0D);
+            living.level().addParticle(ColorParticleOption.create(ParticleTypes.ENTITY_EFFECT, red, green, blue), living.getX() - xOffset * horizontalScale, y, living.getZ() - zOffset * horizontalScale, 0.0D, 0.0D, 0.0D);
+        }
+
+        private static void spawnUndyingParticles(LivingEntity target) {
+            for (int i = 0; i < 30; i++) {
+                double x = target.getX() + (target.getRandom().nextDouble() - 0.5D) * target.getBbWidth();
+                double y = target.getY() + target.getRandom().nextDouble() * target.getBbHeight();
+                double z = target.getZ() + (target.getRandom().nextDouble() - 0.5D) * target.getBbWidth();
+                target.level().addParticle(ParticleTypes.TOTEM_OF_UNDYING, x, y, z, (target.getRandom().nextDouble() - 0.5D) * 0.5D, target.getRandom().nextDouble() * 0.5D, (target.getRandom().nextDouble() - 0.5D) * 0.5D);
             }
         }
 
@@ -831,6 +887,14 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
                 scheduleBattleSound(attacker, SoundEvents.GUARDIAN_ATTACK, 0, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE || event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE) {
+                scheduleBattleSound(attacker, SoundEvents.EVOKER_PREPARE_ATTACK, 0, 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.EVOKER_CAST_SPELL, 20, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX) {
+                scheduleBattleSound(attacker, SoundEvents.EVOKER_PREPARE_SUMMON, 0, 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.EVOKER_CAST_SPELL, 20, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.UNDYING_REVIVE) {
+                scheduleBattleSound(attacker, SoundEvents.TOTEM_USE, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.SELF_DESTRUCT) {
                 scheduleBattleSound(attacker, SoundEvents.CREEPER_PRIMED, 0, 1.0F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.GENERIC_EXPLODE.value(), Math.max(1, event.animationTicks()), 1.4F, 0.9F);

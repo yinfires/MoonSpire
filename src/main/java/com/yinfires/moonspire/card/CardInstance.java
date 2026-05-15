@@ -304,7 +304,7 @@ public record CardInstance(
 
     public int enemyDirectDamageAmount() {
         return effects().stream()
-                .filter(effect -> (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy())
+                .filter(effect -> isAttackDamageEffect(effect.kind()) && effect.target().targetsEnemy())
                 .mapToInt(effect -> effect.amount() * effect.count())
                 .sum();
     }
@@ -363,6 +363,13 @@ public record CardInstance(
 
     public boolean isAttackType() {
         return hasAttack();
+    }
+
+    public static boolean isAttackDamageEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.DAMAGE
+                || kind == CardEffectKind.CONSUME_ARROW
+                || kind == CardEffectKind.EVOKER_FANG_LINE
+                || kind == CardEffectKind.EVOKER_FANG_CIRCLE;
     }
 
     private static void writeToBuffer(RegistryFriendlyByteBuf buf, CardInstance card) {
@@ -458,6 +465,11 @@ public record CardInstance(
             case "card.moonspire.monster.claw.name" -> "builtin_monster_claw";
             case "card.moonspire.monster.rotten_guard.name" -> "builtin_monster_rotten_guard";
             case "card.moonspire.monster.undead_power.name" -> "builtin_monster_undead_power";
+            case "card.moonspire.monster.fang_line.name" -> "builtin_monster_fang_line";
+            case "card.moonspire.monster.fang_circle.name" -> "builtin_monster_fang_circle";
+            case "card.moonspire.monster.summon_vex.name" -> "builtin_monster_summon_vex";
+            case "card.moonspire.monster.totem_of_undying.name" -> "builtin_monster_totem_of_undying";
+            case "card.moonspire.monster.ritual_ward.name" -> "builtin_monster_ritual_ward";
             case "card.moonspire.monster.axe_chop.name" -> "builtin_monster_axe_chop";
             case "card.moonspire.monster.heavy_axe_blow.name" -> "builtin_monster_heavy_axe_blow";
             case "card.moonspire.monster.executioners_blow.name" -> "builtin_monster_executioners_blow";

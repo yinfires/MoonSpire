@@ -96,7 +96,7 @@ public final class BattleWorldOverlay {
         Matrix4f matrix = poseStack.last().pose();
         int light = Math.max(packedLight, LightTexture.FULL_BRIGHT);
         drawBar(font, matrix, bufferSource, combatant, light);
-        if (monster) {
+        if (snapshot.hasIntentCardsFor(entity.getId())) {
             drawIntent(font, matrix, bufferSource, snapshot.intentCardsFor(entity.getId()), combatant, light);
         }
         drawEffects(font, matrix, bufferSource, combatant.effects(), light);
@@ -237,6 +237,8 @@ public final class BattleWorldOverlay {
 
     private static void drawIntent(Font font, Matrix4f matrix, MultiBufferSource bufferSource, List<CardInstance> intentCards, BattleCombatantSnapshot enemy, int packedLight) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
+        boolean enemySideActor = snapshot.isEnemyEntity(enemy.entityId());
+        BattleCombatantSnapshot primaryOpponent = primaryOpponent(snapshot, enemySideActor);
         int attack = 0;
         int block = 0;
         int negative = 0;
@@ -244,7 +246,7 @@ public final class BattleWorldOverlay {
         int paralysis = Math.max(0, CardRenderHelper.effectAmount(enemy, BattleEffectType.PARALYSIS));
         for (CardInstance card : intentCards) {
             boolean paralyzedAttack = paralysis > 0 && card.hasAttack();
-            attack += Math.max(0, card.hasAttack() ? CardRenderHelper.previewAttack(card, enemy, snapshot.player(), paralyzedAttack) : 0);
+            attack += Math.max(0, card.hasAttack() && primaryOpponent != null ? CardRenderHelper.previewAttack(card, enemy, primaryOpponent, paralyzedAttack) : 0);
             if (paralyzedAttack) {
                 paralysis--;
             }
@@ -326,6 +328,16 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
                 || kind == CardEffectKind.GLOWING;
+    }
+
+    private static BattleCombatantSnapshot primaryOpponent(BattleSnapshot snapshot, boolean enemySideActor) {
+        List<BattleCombatantSnapshot> candidates = enemySideActor ? snapshot.players() : snapshot.enemies();
+        for (BattleCombatantSnapshot candidate : candidates) {
+            if (!candidate.fakeDead()) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static ResourceLocation effectIconTexture(BattleEffectType type) {

@@ -585,7 +585,7 @@ public final class CardRenderHelper {
 
     public static int previewAttack(CardInstance card, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, int attackerStrength, boolean attackerWeak) {
         int incoming = card.effects().stream()
-                .filter(effect -> (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy())
+                .filter(effect -> CardInstance.isAttackDamageEffect(effect.kind()) && effect.target().targetsEnemy())
                 .mapToInt(effect -> previewDamageAmount(effect.amount(), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false) * effect.count())
                 .sum();
         return Math.max(0, incoming);
@@ -625,6 +625,10 @@ public final class CardRenderHelper {
             CardEffect effect = card.effects().get(i);
             if (effect.kind() == CardEffectKind.DAMAGE) {
                 addEffectLine(lines, Component.translatable(damageDescriptionKey(effect.target()), statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
+            } else if (effect.kind() == CardEffectKind.EVOKER_FANG_LINE) {
+                addEffectLine(lines, Component.translatable("card.moonspire.effect.evoker_fang_line", statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
+            } else if (effect.kind() == CardEffectKind.EVOKER_FANG_CIRCLE) {
+                addEffectLine(lines, Component.translatable("card.moonspire.effect.evoker_fang_circle", statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
             } else if (effect.kind() == CardEffectKind.REMOTE) {
                 addEffectLine(lines, keyword(Component.translatable("keyword.moonspire.remote.name")));
             } else if (effect.kind() == CardEffectKind.CONSUME_ARROW) {
@@ -641,6 +645,10 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "glowing", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.glowing.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GUARD) {
                 addEffectLine(lines, Component.translatable(guardDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.guard.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.UNDYING) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "undying", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.undying.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.SUMMON_VEX) {
+                addEffectLine(lines, Component.translatable("card.moonspire.effect.summon", effect.amount(), effect.count(), keyword(Component.translatable("entity.minecraft.vex"))));
             } else if (effect.kind() == CardEffectKind.STRENGTH) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "strength", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.strength.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH) {
@@ -828,7 +836,7 @@ public final class CardRenderHelper {
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender, boolean paralyzedAttack) {
         int incoming = card.effects().stream()
-                .filter(effect -> (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy())
+                .filter(effect -> CardInstance.isAttackDamageEffect(effect.kind()) && effect.target().targetsEnemy())
                 .mapToInt(effect -> previewDamageAmount(paralysisAdjustedDamage(effect.amount(), paralyzedAttack), attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), effectAmount(defender, BattleEffectType.GLOWING) > 0) * effect.count())
                 .sum();
         return Math.max(0, incoming);
@@ -904,6 +912,10 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.glowing.name"), Component.translatable("effect.moonspire.glowing.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.UNDYING && renderedTips.add("undying")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.undying.name"), Component.translatable("effect.moonspire.undying.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && renderedTips.add("summoned")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.summoned.name"), Component.translatable("effect.moonspire.summoned.description"), x, tipY);
             } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.REGENERATION && renderedTips.add("regeneration")) {
@@ -978,6 +990,12 @@ public final class CardRenderHelper {
         return renderTip(graphics, font, Component.translatable("screen.moonspire.effect_tip_title", Component.translatable(type.nameKey()), amount), Component.translatable(descriptionKey, value), x, y);
     }
 
+    public static int effectTipHeight(Font font, BattleEffectType type, int amount) {
+        Object value = effectTipValue(type, amount);
+        String descriptionKey = type == BattleEffectType.STRENGTH && amount < 0 ? "effect.moonspire.strength.negative_active_description" : type.activeDescriptionKey();
+        return tipHeight(font, Component.translatable("screen.moonspire.effect_tip_title", Component.translatable(type.nameKey()), amount), Component.translatable(descriptionKey, value));
+    }
+
     private static Object effectTipValue(BattleEffectType type, int amount) {
         if (type == BattleEffectType.GUARD) {
             return BattleDamageCalculator.guardReductionPercent(amount);
@@ -987,6 +1005,9 @@ public final class CardRenderHelper {
         }
         if (type == BattleEffectType.FUSE) {
             return CardBalance.SELF_DESTRUCT_DAMAGE;
+        }
+        if (type == BattleEffectType.UNDYING) {
+            return Math.max(0, amount);
         }
         return amount;
     }
@@ -1013,6 +1034,10 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.glowing.name"), Component.translatable("effect.moonspire.glowing.description")) + 4;
             } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.UNDYING && renderedTips.add("undying")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.undying.name"), Component.translatable("effect.moonspire.undying.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && renderedTips.add("summoned")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.summoned.name"), Component.translatable("effect.moonspire.summoned.description")) + 4;
             } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description")) + 4;
             } else if (effect.kind() == CardEffectKind.REGENERATION && renderedTips.add("regeneration")) {

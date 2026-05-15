@@ -30,7 +30,7 @@ public final class ServerBattleEvents {
     @SubscribeEvent
     public static void onIncomingDamage(LivingIncomingDamageEvent event) {
         LivingEntity target = event.getEntity();
-        if (BattleManager.handleDamage(target, event.getSource().getEntity())) {
+        if (BattleManager.handleDamage(target, event.getSource().getEntity(), event.getSource().getDirectEntity())) {
             event.setCanceled(true);
         }
     }

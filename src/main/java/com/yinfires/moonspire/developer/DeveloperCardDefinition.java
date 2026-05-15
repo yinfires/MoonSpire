@@ -104,6 +104,10 @@ public record DeveloperCardDefinition(
             case BLEED -> CardEffectKind.BLEED;
             case GLOWING -> CardEffectKind.GLOWING;
             case GUARD -> CardEffectKind.GUARD;
+            case UNDYING -> CardEffectKind.UNDYING;
+            case EVOKER_FANG_LINE -> CardEffectKind.EVOKER_FANG_LINE;
+            case EVOKER_FANG_CIRCLE -> CardEffectKind.EVOKER_FANG_CIRCLE;
+            case SUMMON_VEX -> CardEffectKind.SUMMON_VEX;
             case STRENGTH -> CardEffectKind.STRENGTH;
             case LOSE_STRENGTH -> CardEffectKind.LOSE_STRENGTH;
             case REGENERATION -> CardEffectKind.REGENERATION;

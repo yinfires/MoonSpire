@@ -21,8 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -30,18 +33,25 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.monster.SpellcasterIllager;
+import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.EvokerFangs;
 import net.minecraft.world.entity.projectile.SpectralArrow;
 import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class BattleState {
     private static final int MONSTER_ACTION_DELAY_TICKS = 14;
@@ -68,6 +78,9 @@ public class BattleState {
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
     private static final int GUARDIAN_BEAM_TICKS = 80;
+    private static final int EVOKER_SPELL_WARMUP_TICKS = 20;
+    private static final int EVOKER_FANG_CAST_TICKS = 40;
+    private static final int EVOKER_SUMMON_CAST_TICKS = 40;
     private static final int RIPTIDE_CHARGE_TICKS = 16;
     private static final int RIPTIDE_RUSH_TICKS = 10;
     private static final int RIPTIDE_HIT_PAUSE_TICKS = 6;
@@ -103,6 +116,7 @@ public class BattleState {
     private final Map<Integer, CombatantState> byEntityId = new HashMap<>();
     private final Map<UUID, CombatantState> byPlayerId = new HashMap<>();
     private final Map<Integer, MonsterTurnPlan> monsterTurnPlans = new HashMap<>();
+    private final Map<Integer, MonsterTurnPlan> playerAllyTurnPlans = new HashMap<>();
     private final Map<Integer, EntityLock> locks = new HashMap<>();
     private final Map<Integer, KnockbackState> knockbackStates = new HashMap<>();
     private final Vec3 cameraCenter;
@@ -113,6 +127,9 @@ public class BattleState {
     private int currentEnemyIndex;
     private int monsterActionDelay;
     private List<CombatantState> enemyTurnOrder = List.of();
+    private List<CombatantState> playerAllyTurnOrder = List.of();
+    private int currentPlayerAllyIndex;
+    private int playerAllyActionDelay;
     private int openingProtectionTicks;
     private boolean suppressDamageEvent;
     private boolean started;
@@ -124,6 +141,7 @@ public class BattleState {
     private long snapshotSequence;
     private int finishDelayTicks;
     private boolean enemyHandsPredrawnForCurrentTurn;
+    private final Set<Integer> predrawnPlayerAllyHands = new LinkedHashSet<>();
     private final List<BattleVisualEvent> pendingVisualEvents = new ArrayList<>();
     private final List<PendingCardBatch> pendingCardBatches = new ArrayList<>();
     private final List<PendingCardStep> pendingCardSteps = new ArrayList<>();
@@ -161,7 +179,7 @@ public class BattleState {
                     enemy,
                     new BattleDeck(enemyStartCards, random),
                     monsterOverride != null && monsterOverride.hasEnergyOverride() ? monsterOverride.energy() : CardBalance.fixedEnergy(),
-                    monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : Math.max(1.0F, enemy.getMaxHealth()),
+                    monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : MonsterDeckProfile.defaultMaxBattleHealth(enemy),
                     monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : MonsterDeckProfile.defaultBaseSpeed(enemy));
             applyInitialEffects(state, monsterOverride);
             applyDefaultInitialEffects(state);
@@ -231,7 +249,7 @@ public class BattleState {
     }
 
     public boolean playerVictory() {
-        return !alivePlayers().isEmpty() && aliveEnemies().isEmpty();
+        return !aliveRealPlayers().isEmpty() && aliveEnemies().isEmpty();
     }
 
     public Vec3 cameraCenter() {
@@ -256,6 +274,18 @@ public class BattleState {
 
     public CombatantState stateFor(LivingEntity entity) {
         return entity == null ? null : byEntityId.get(entity.getId());
+    }
+
+    public boolean handleEntityCleanup(LivingEntity entity) {
+        CombatantState state = stateFor(entity);
+        if (state == null || !state.battleSummoned()) {
+            return false;
+        }
+        state.forceFakeDeath(null);
+        byEntityId.remove(entity.getId());
+        finishDelayTicks = Math.max(finishDelayTicks, CombatantState.FAKE_DEATH_ANIMATION_TICKS);
+        markDirty();
+        return true;
     }
 
     public boolean tick() {
@@ -288,7 +318,9 @@ public class BattleState {
         if (hasPendingCardBatches()) {
             return false;
         }
-        if (phase == BattlePhase.MONSTER_TURN) {
+        if (phase == BattlePhase.PLAYER_ALLY_TURN) {
+            tickPlayerAllyTurn();
+        } else if (phase == BattlePhase.MONSTER_TURN) {
             tickMonsterTurn();
         } else if (phase == BattlePhase.ROUND_END && phaseTicks >= ROUND_END_DELAY_TICKS) {
             beginRound();
@@ -307,6 +339,10 @@ public class BattleState {
     }
 
     public void finish() {
+        if (pendingAnimation != null) {
+            pendingAnimation.finish();
+            pendingAnimation = null;
+        }
         for (CombatantState state : allStates()) {
             EntityLock lock = locks.get(state.entity().getId());
             if (lock != null) {
@@ -314,13 +350,18 @@ public class BattleState {
             }
             state.entity().setGlowingTag(false);
         }
+        for (CombatantState state : allStates()) {
+            if (state.battleSummoned() && !state.entity().isRemoved()) {
+                state.entity().discard();
+            }
+        }
         for (CombatantState state : enemyStates) {
-            if (state.fakeDead() && state.entity().isAlive()) {
+            if (!state.battleSummoned() && state.fakeDead() && state.entity().isAlive()) {
                 applyTrueDeath(state);
             }
         }
         for (CombatantState state : playerStates) {
-            if (state.fakeDead()) {
+            if (!state.battleSummoned() && state.fakeDead()) {
                 applyTrueDeath(state);
                 if (state.entity().isAlive()) {
                     recoverBlockedPlayerDeath(state);
@@ -329,7 +370,7 @@ public class BattleState {
         }
         for (CombatantState state : allStates()) {
             EntityLock lock = locks.get(state.entity().getId());
-            if (lock != null && !state.fakeDead() && state.entity().isAlive()) {
+            if (lock != null && !state.battleSummoned() && !state.fakeDead() && state.entity().isAlive()) {
                 restoreSurvivor(state, lock);
             }
         }
@@ -413,8 +454,8 @@ public class BattleState {
         }
         state.setEndedTurn(true);
         markDirty();
-        if (alivePlayers().stream().allMatch(CombatantState::endedTurn)) {
-            for (CombatantState playerState : alivePlayers()) {
+        if (aliveRealPlayers().stream().allMatch(CombatantState::endedTurn)) {
+            for (CombatantState playerState : aliveRealPlayers()) {
                 applyOwnTurnEndEffects(playerState);
                 if (playerState.fakeDead()) {
                     continue;
@@ -422,7 +463,11 @@ public class BattleState {
                 playerState.reduceRetainedCardCosts();
                 playerState.deck().discardHand(true);
             }
-            beginMonsterTurn();
+            if (hasAlivePlayerAllies()) {
+                beginPlayerAllyTurn();
+            } else {
+                beginMonsterTurn();
+            }
         }
     }
 
@@ -464,7 +509,7 @@ public class BattleState {
         CardInstance monsterIntent = monsterIntentCards.isEmpty() ? null : monsterIntentCards.getFirst();
         long monsterNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - monsterStart : 0L;
         long enemyIntentsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
-        List<BattleEnemyIntentSnapshot> enemyIntents = enemyIntentSnapshots(firstEnemy);
+        List<BattleEnemyIntentSnapshot> enemyIntents = autoIntentSnapshots(firstEnemy);
         long enemyIntentsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - enemyIntentsStart : 0L;
         long entityHandsStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
         List<BattleEntityCardsSnapshot> entityHands = entityHandSnapshots(local, firstEnemy);
@@ -713,7 +758,7 @@ public class BattleState {
         phaseTicks = 0;
         markDirty();
         for (CombatantState state : playerStates) {
-            if (!state.fakeDead()) {
+            if (!state.fakeDead() && state.entity() instanceof ServerPlayer) {
                 state.clearDefense();
                 applyOwnTurnStartEffects(state);
                 if (state.fakeDead()) {
@@ -730,8 +775,38 @@ public class BattleState {
             }
         }
         enemyHandsPredrawnForCurrentTurn = true;
+        predrawPlayerAllyHandsForCurrentTurn();
         selectedTargets.clear();
         rebuildMonsterTurnPlans();
+        rebuildPlayerAllyTurnPlans();
+    }
+
+    private void beginPlayerAllyTurn() {
+        phase = BattlePhase.PLAYER_ALLY_TURN;
+        phaseTicks = 0;
+        markDirty();
+        playerAllyActionDelay = MONSTER_ACTION_DELAY_TICKS;
+        for (CombatantState state : playerSideAllies()) {
+            if (!state.fakeDead()) {
+                state.clearDefense();
+                applyOwnTurnStartEffects(state);
+                if (state.fakeDead()) {
+                    continue;
+                }
+                state.resetEnergy();
+                state.setEndedTurn(false);
+                boolean predrawn = predrawnPlayerAllyHands.remove(state.entity().getId());
+                int drawReduction = consumeHungerDrawReduction(state, predrawn);
+                if (!predrawn) {
+                    state.deck().startTurn(leader.getRandom(), drawReduction);
+                }
+            }
+        }
+        predrawnPlayerAllyHands.clear();
+        playerAllyTurnOrder = playerAllyActionOrder();
+        currentPlayerAllyIndex = 0;
+        selectedTargets.clear();
+        rebuildPlayerAllyTurnPlans();
     }
 
     private void beginMonsterTurn() {
@@ -753,6 +828,8 @@ public class BattleState {
             }
         }
         enemyHandsPredrawnForCurrentTurn = false;
+        predrawnPlayerAllyHands.clear();
+        playerAllyTurnPlans.clear();
         enemyTurnOrder = enemyActionOrder();
         currentEnemyIndex = 0;
         selectedTargets.clear();
@@ -763,7 +840,7 @@ public class BattleState {
         phase = BattlePhase.ROUND_END;
         phaseTicks = 0;
         markDirty();
-        for (CombatantState state : aliveEnemies()) {
+        for (CombatantState state : alive(enemyTurnOrder)) {
             applyOwnTurnEndEffects(state);
             if (state.fakeDead()) {
                 continue;
@@ -816,9 +893,76 @@ public class BattleState {
         monsterActionDelay = MONSTER_ACTION_DELAY_TICKS;
     }
 
+    private void tickPlayerAllyTurn() {
+        if (hasPendingCardBatches()) {
+            return;
+        }
+        if (playerAllyActionDelay > 0) {
+            playerAllyActionDelay--;
+            return;
+        }
+        while (currentPlayerAllyIndex < playerAllyTurnOrder.size() && playerAllyTurnOrder.get(currentPlayerAllyIndex).fakeDead()) {
+            currentPlayerAllyIndex++;
+        }
+        if (currentPlayerAllyIndex >= playerAllyTurnOrder.size()) {
+            beginMonsterTurn();
+            return;
+        }
+        CombatantState ally = playerAllyTurnOrder.get(currentPlayerAllyIndex);
+        MonsterCardChoice choice = nextPlannedPlayerAllyCard(ally);
+        if (choice == null) {
+            endAutoAllyTurn(ally);
+            currentPlayerAllyIndex++;
+            playerAllyActionDelay = MONSTER_ACTION_DELAY_TICKS;
+            return;
+        }
+        CardInstance card = ally.deck().peekHand(choice.handIndex());
+        if (card == null || !ally.spendEnergy(card.cost())) {
+            endAutoAllyTurn(ally);
+            currentPlayerAllyIndex++;
+            playerAllyActionDelay = MONSTER_ACTION_DELAY_TICKS;
+            return;
+        }
+        CardInstance used = ally.deck().useHand(choice.handIndex());
+        CombatantState target = choice.selectedTarget() == null || choice.selectedTarget().fakeDead() ? firstOpponent(ally) : choice.selectedTarget();
+        if (used == null || target == null) {
+            endAutoAllyTurn(ally);
+            currentPlayerAllyIndex++;
+            playerAllyActionDelay = MONSTER_ACTION_DELAY_TICKS;
+            return;
+        }
+        syncPlayerAllyTurnPlanState(ally);
+        queueCard(ally, target, used);
+        playerAllyActionDelay = MONSTER_ACTION_DELAY_TICKS;
+    }
+
+    private MonsterCardChoice chooseAutoAllyCard(CombatantState ally) {
+        return chooseMonsterCard(ally.deck().hand(), ally.energyLeft(), MonsterAiView.live(ally), liveAiViews(alive(opposingSideOf(ally))), liveAiViews(alive(sideOf(ally))));
+    }
+
+    private void endAutoAllyTurn(CombatantState ally) {
+        if (ally == null || ally.fakeDead()) {
+            return;
+        }
+        applyOwnTurnEndEffects(ally);
+        if (ally.fakeDead()) {
+            return;
+        }
+        ally.reduceRetainedCardCosts();
+        ally.deck().discardHand(true);
+        ally.setEndedTurn(true);
+    }
+
     private List<CombatantState> enemyActionOrder() {
         return enemyStates.stream()
                 .sorted(Comparator.comparingInt(CombatantState::roundSpeed).reversed())
+                .toList();
+    }
+
+    private List<CombatantState> playerAllyActionOrder() {
+        return playerSideAllies().stream()
+                .sorted(Comparator.comparingInt(CombatantState::roundSpeed).reversed()
+                        .thenComparingInt(playerStates::indexOf))
                 .toList();
     }
 
@@ -827,14 +971,14 @@ public class BattleState {
     }
 
     private List<CardInstance> monsterIntentCards(CombatantState monster) {
-        if (phase != BattlePhase.MONSTER_TURN && phase != BattlePhase.PLAYER_TURN) {
+        if (!showsPlannedMonsterIntent()) {
             return List.of();
         }
         return plannedMonsterCards(monster);
     }
 
     private List<CardInstance> plannedMonsterCards(CombatantState monster) {
-        if (monster == null || monster.fakeDead() || (phase != BattlePhase.MONSTER_TURN && phase != BattlePhase.PLAYER_TURN)) {
+        if (monster == null || monster.fakeDead() || !showsPlannedMonsterIntent()) {
             return List.of();
         }
         if (phase == BattlePhase.MONSTER_TURN) {
@@ -857,6 +1001,57 @@ public class BattleState {
                 monsterTurnPlans.put(enemy.entity().getId(), createMonsterTurnPlan(enemy));
             }
         }
+    }
+
+    private void rebuildPlayerAllyTurnPlans() {
+        playerAllyTurnPlans.clear();
+        for (CombatantState ally : playerSideAllies()) {
+            if (!ally.fakeDead()) {
+                playerAllyTurnPlans.put(ally.entity().getId(), createPlayerAllyTurnPlan(ally));
+            }
+        }
+    }
+
+    private void ensurePlayerAllyTurnPlans() {
+        playerAllyTurnPlans.keySet().removeIf(entityId -> {
+            CombatantState ally = byEntityId.get(entityId);
+            return ally == null || ally.fakeDead() || !playerStates.contains(ally) || ally.entity() instanceof ServerPlayer;
+        });
+        for (CombatantState ally : playerSideAllies()) {
+            if (!ally.fakeDead()) {
+                playerAllyTurnPlans.computeIfAbsent(ally.entity().getId(), ignored -> createPlayerAllyTurnPlan(ally));
+            }
+        }
+    }
+
+    private void syncPlayerAllyTurnPlanState(CombatantState ally) {
+        MonsterTurnPlan plan = playerAllyTurnPlans.get(ally.entity().getId());
+        if (plan != null) {
+            plan.setHandVersion(ally.deck().version());
+            plan.setEnergyLeft(allyPlanEnergy(ally));
+        }
+    }
+
+    private MonsterTurnPlan createPlayerAllyTurnPlan(CombatantState ally) {
+        MonsterTurnPlan plan = new MonsterTurnPlan(ally.deck().version(), allyPlanEnergy(ally));
+        refreshPlayerAllyTurnPlan(ally, plan);
+        return plan;
+    }
+
+    private void refreshPlayerAllyTurnPlan(CombatantState ally, MonsterTurnPlan plan) {
+        if (ally == null || ally.fakeDead() || !playerStates.contains(ally) || ally.entity() instanceof ServerPlayer) {
+            if (plan != null) {
+                plan.clear();
+            }
+            return;
+        }
+        int energy = allyPlanEnergy(ally);
+        if (plan.handVersion() == ally.deck().version() && plan.energyLeft() == energy && (plan.exhausted() || plan.hasDisplayableEntry(ally, phase == BattlePhase.PLAYER_ALLY_TURN))) {
+            return;
+        }
+        plan.rebuild(plannedAutoChoices(ally, liveAiViews(alive(opposingSideOf(ally))), liveAiViews(alive(sideOf(ally))), energy, phase != BattlePhase.PLAYER_ALLY_TURN));
+        plan.setHandVersion(ally.deck().version());
+        plan.setEnergyLeft(energy);
     }
 
     private void ensureMonsterTurnPlans() {
@@ -893,7 +1088,7 @@ public class BattleState {
             return;
         }
         int energy = planEnergy(monster);
-        if (plan.handVersion() == monster.deck().version() && plan.energyLeft() == energy && (plan.exhausted() || plan.hasDisplayableEntry(monster))) {
+        if (plan.handVersion() == monster.deck().version() && plan.energyLeft() == energy && (plan.exhausted() || plan.hasDisplayableEntry(monster, phase == BattlePhase.MONSTER_TURN))) {
             return;
         }
         plan.rebuild(plannedMonsterChoices(monster));
@@ -902,30 +1097,68 @@ public class BattleState {
     }
 
     private int planEnergy(CombatantState monster) {
-        return phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
+        return preMonsterActionPhase() ? monster.maxEnergy() : monster.energyLeft();
     }
 
     private List<MonsterCardChoice> plannedMonsterChoices(CombatantState monster) {
         if (monster == null || monster.fakeDead()) {
             return List.of();
         }
-        List<CardInstance> virtualHand = new ArrayList<>(monster.deck().hand());
-        int energyLeft = phase == BattlePhase.PLAYER_TURN ? monster.maxEnergy() : monster.energyLeft();
-        MonsterAiView self = MonsterAiView.live(monster).withDefense(phase == BattlePhase.PLAYER_TURN ? 0 : monster.defense());
-        List<MonsterAiView> playerViews = liveAiViews(alivePlayers());
-        List<MonsterAiView> enemyViews = liveAiViews(aliveEnemies());
+        return plannedAutoChoices(monster, liveAiViews(alivePlayers()), liveAiViews(aliveEnemies()), planEnergy(monster), preMonsterActionPhase());
+    }
+
+    private int allyPlanEnergy(CombatantState ally) {
+        return phase == BattlePhase.PLAYER_TURN ? ally.maxEnergy() : ally.energyLeft();
+    }
+
+    private void predrawPlayerAllyHandsForCurrentTurn() {
+        predrawnPlayerAllyHands.clear();
+        for (CombatantState ally : playerSideAllies()) {
+            if (!ally.fakeDead()) {
+                ally.deck().startTurn(leader.getRandom(), hungerDrawReduction(ally));
+                predrawnPlayerAllyHands.add(ally.entity().getId());
+            }
+        }
+    }
+
+    private List<CardInstance> playerAllyIntentCards(CombatantState ally) {
+        if (ally == null || ally.fakeDead() || !playerStates.contains(ally) || ally.entity() instanceof ServerPlayer || (phase != BattlePhase.PLAYER_TURN && phase != BattlePhase.PLAYER_ALLY_TURN)) {
+            return List.of();
+        }
+        ensurePlayerAllyTurnPlans();
+        MonsterTurnPlan plan = playerAllyTurnPlans.computeIfAbsent(ally.entity().getId(), ignored -> createPlayerAllyTurnPlan(ally));
+        refreshPlayerAllyTurnPlan(ally, plan);
+        return plan.cards(ally, phase == BattlePhase.PLAYER_ALLY_TURN);
+    }
+
+    private List<MonsterCardChoice> plannedAutoChoices(CombatantState actor, List<MonsterAiView> opponents, List<MonsterAiView> allies, int energyLeft, boolean clearPreviewDefense) {
+        if (actor == null || actor.fakeDead()) {
+            return List.of();
+        }
+        List<CardInstance> virtualHand = new ArrayList<>(actor.deck().hand());
+        MonsterAiView self = MonsterAiView.live(actor).withDefense(clearPreviewDefense ? 0 : actor.defense());
+        List<MonsterAiView> opponentViews = new ArrayList<>(opponents);
+        List<MonsterAiView> allyViews = new ArrayList<>(allies);
         List<MonsterCardChoice> planned = new ArrayList<>();
         while (!virtualHand.isEmpty() && self.health() > 0.0F) {
-            MonsterCardChoice choice = chooseMonsterCard(virtualHand, energyLeft, self, playerViews, enemyViews);
+            MonsterCardChoice choice = chooseMonsterCard(virtualHand, energyLeft, self, opponentViews, allyViews);
             if (choice == null) {
                 break;
             }
             CardInstance card = virtualHand.remove(choice.handIndex());
             planned.add(choice.withCardId(card.id()));
             energyLeft -= Math.max(0, card.cost());
-            applyMonsterAiSimulation(card, virtualHand, self, playerViews, enemyViews, choice.selectedEntityId());
+            applyMonsterAiSimulation(card, virtualHand, self, opponentViews, allyViews, choice.selectedEntityId());
         }
         return planned;
+    }
+
+    private boolean showsPlannedMonsterIntent() {
+        return phase == BattlePhase.MONSTER_TURN || preMonsterActionPhase();
+    }
+
+    private boolean preMonsterActionPhase() {
+        return phase == BattlePhase.PLAYER_TURN || phase == BattlePhase.PLAYER_ALLY_TURN;
     }
 
     private MonsterCardChoice nextPlannedMonsterCard(CombatantState monster) {
@@ -940,6 +1173,24 @@ public class BattleState {
         }
         choice = chooseMonsterCard(monster);
         CardInstance card = choice == null ? null : monster.deck().peekHand(choice.handIndex());
+        if (card != null) {
+            return choice.withCardId(card.id()).withCategory(cardCategory(card));
+        }
+        return null;
+    }
+
+    private MonsterCardChoice nextPlannedPlayerAllyCard(CombatantState ally) {
+        MonsterTurnPlan plan = playerAllyTurnPlans.computeIfAbsent(ally.entity().getId(), ignored -> createPlayerAllyTurnPlan(ally));
+        boolean hadPlannedEntries = !plan.entries().isEmpty();
+        MonsterCardChoice choice = plan.pollUsable(ally);
+        if (choice != null) {
+            return choice;
+        }
+        if (!hadPlannedEntries) {
+            return null;
+        }
+        choice = chooseAutoAllyCard(ally);
+        CardInstance card = choice == null ? null : ally.deck().peekHand(choice.handIndex());
         if (card != null) {
             return choice.withCardId(card.id()).withCategory(cardCategory(card));
         }
@@ -1037,7 +1288,7 @@ public class BattleState {
             if (effect.amount() <= 0 || !effect.kind().makesCardPlayable()) {
                 continue;
             }
-            if (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) {
+            if (CardInstance.isAttackDamageEffect(effect.kind())) {
                 attack = true;
             } else if (effect.kind() == CardEffectKind.BLOCK) {
                 defense = true;
@@ -1066,6 +1317,8 @@ public class BattleState {
         return kind == CardEffectKind.BLEED
                 || kind == CardEffectKind.GLOWING
                 || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.UNDYING
+                || kind == CardEffectKind.SUMMON_VEX
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.REGENERATION
@@ -1244,12 +1497,14 @@ public class BattleState {
     private double scoreMonsterEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target) {
         int totalAmount = effect.amount() * Math.max(1, effect.count());
         return switch (effect.kind()) {
-            case DAMAGE -> scoreDamage(card, totalAmount, self, target);
+            case DAMAGE, EVOKER_FANG_LINE, EVOKER_FANG_CIRCLE -> scoreDamage(card, totalAmount, self, target);
             case BLOCK -> scoreBlock(totalAmount, target);
             case HEAL -> scoreHeal(totalAmount, target);
             case BLEED -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BLEED, 2.2D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case GLOWING -> scoreNegativeStatus(totalAmount, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
             case GUARD -> scorePositiveStatus(totalAmount, target, BattleEffectType.GUARD, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
+            case UNDYING -> scorePositiveStatus(totalAmount, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
+            case SUMMON_VEX -> Math.max(0, totalAmount) * 3.4D + MONSTER_AI_STATUS_PLAY_BONUS;
             case STRENGTH -> scorePositiveStatus(totalAmount, target, BattleEffectType.STRENGTH, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
             case LOSE_STRENGTH -> scoreLoseStrength(totalAmount, target);
             case REGENERATION -> scorePositiveStatus(totalAmount, target, BattleEffectType.REGENERATION, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
@@ -1424,7 +1679,7 @@ public class BattleState {
     }
 
     private double effectTargetPriority(CardInstance card, CardEffectKind kind, int amount, int count, MonsterAiView self, MonsterAiView target) {
-        if (kind == CardEffectKind.DAMAGE || kind == CardEffectKind.CONSUME_ARROW) {
+        if (CardInstance.isAttackDamageEffect(kind)) {
             return scoreDamage(card, amount * count, self, target);
         }
         if (kind == CardEffectKind.BLEED) {
@@ -1457,6 +1712,12 @@ public class BattleState {
         if (kind == CardEffectKind.THORNS) {
             return scorePositiveStatus(amount * count, target, BattleEffectType.THORNS, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
         }
+        if (kind == CardEffectKind.UNDYING) {
+            return scorePositiveStatus(amount * count, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
+        if (kind == CardEffectKind.SUMMON_VEX) {
+            return Math.max(0, amount * count) * 3.4D + MONSTER_AI_STATUS_PLAY_BONUS;
+        }
         if (kind == CardEffectKind.WEAKNESS) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.WEAKNESS, 3.4D, MONSTER_AI_STATUS_SOFT_CAP);
         }
@@ -1468,6 +1729,8 @@ public class BattleState {
 
     private boolean harmfulMonsterEffect(CardEffectKind kind) {
         return kind == CardEffectKind.DAMAGE
+                || kind == CardEffectKind.EVOKER_FANG_LINE
+                || kind == CardEffectKind.EVOKER_FANG_CIRCLE
                 || kind == CardEffectKind.CONSUME_ARROW
                 || kind == CardEffectKind.BLEED
                 || kind == CardEffectKind.GLOWING
@@ -1486,6 +1749,8 @@ public class BattleState {
         return kind == CardEffectKind.BLOCK
                 || kind == CardEffectKind.HEAL
                 || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.UNDYING
+                || kind == CardEffectKind.SUMMON_VEX
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
@@ -1574,12 +1839,15 @@ public class BattleState {
     private void applyMonsterAiEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target) {
         int amount = effect.amount() * Math.max(1, effect.count());
         switch (effect.kind()) {
-            case DAMAGE -> target.takeDamage(directDamageAmount(amount, self, target, card.hasEffect(CardEffectKind.REMOTE)));
+            case DAMAGE, EVOKER_FANG_LINE, EVOKER_FANG_CIRCLE -> target.takeDamage(directDamageAmount(amount, self, target, card.hasEffect(CardEffectKind.REMOTE)));
             case BLOCK -> target.addDefense(amount);
             case HEAL -> target.heal(amount);
             case BLEED -> target.addEffect(BattleEffectType.BLEED, amount);
             case GLOWING -> target.addEffect(BattleEffectType.GLOWING, amount);
             case GUARD -> target.addEffect(BattleEffectType.GUARD, amount);
+            case UNDYING -> target.addEffect(BattleEffectType.UNDYING, amount);
+            case SUMMON_VEX -> {
+            }
             case STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, amount);
             case LOSE_STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, -amount);
             case REGENERATION -> target.addEffect(BattleEffectType.REGENERATION, amount);
@@ -1687,12 +1955,13 @@ public class BattleState {
         for (int repeat = 0; repeat < maxCount; repeat++) {
             List<PendingEffect> batchEffects = new ArrayList<>();
             for (CardEffect effect : effects) {
-                if (!effect.kind().isResolvedEffect() || effect.amount() <= 0 || effect.count() <= repeat) {
+                int repeatCount = effect.kind() == CardEffectKind.SUMMON_VEX ? 1 : effect.count();
+                if (!effect.kind().isResolvedEffect() || effect.amount() <= 0 || repeatCount <= repeat) {
                     continue;
                 }
                 for (CombatantState effectTarget : targetsForEffect(effect, user, selectedTarget)) {
                     int amount = adjustedAttackDamageAmount(effect, paralyzedAttack);
-                    batchEffects.add(new PendingEffect(effect.kind(), amount, effectTarget, false, remoteDamage && effect.kind() == CardEffectKind.DAMAGE));
+                    batchEffects.add(new PendingEffect(effect.kind(), amount, effectTarget, false, remoteDamage && effect.kind() == CardEffectKind.DAMAGE, effect.count()));
                 }
             }
             if (!batchEffects.isEmpty()) {
@@ -1702,7 +1971,7 @@ public class BattleState {
     }
 
     private int adjustedAttackDamageAmount(CardEffect effect, boolean paralyzedAttack) {
-        if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && paralyzedAttack) {
+        if (CardInstance.isAttackDamageEffect(effect.kind()) && paralyzedAttack) {
             return Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION);
         }
         return effect.amount();
@@ -1752,7 +2021,9 @@ public class BattleState {
     }
 
     private boolean triggersAttackUse(CardInstance card, CombatantState user) {
-        if (card.hasEnemyEffect(CardEffectKind.DAMAGE)) {
+        if (card.hasEnemyEffect(CardEffectKind.DAMAGE)
+                || card.hasEnemyEffect(CardEffectKind.EVOKER_FANG_LINE)
+                || card.hasEnemyEffect(CardEffectKind.EVOKER_FANG_CIRCLE)) {
             return true;
         }
         return card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.CONSUME_ARROW && effect.amount() > 0)
@@ -1760,7 +2031,9 @@ public class BattleState {
     }
 
     private boolean triggersAttackUse(CardInstance card, List<CardInstance> hand) {
-        if (card.hasEnemyEffect(CardEffectKind.DAMAGE)) {
+        if (card.hasEnemyEffect(CardEffectKind.DAMAGE)
+                || card.hasEnemyEffect(CardEffectKind.EVOKER_FANG_LINE)
+                || card.hasEnemyEffect(CardEffectKind.EVOKER_FANG_CIRCLE)) {
             return true;
         }
         return card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.CONSUME_ARROW && effect.amount() > 0)
@@ -2054,6 +2327,7 @@ public class BattleState {
                 completed.markEffectsApplied();
                 markDirty();
             }
+            completed.finish();
             if (!pendingCardBatches.isEmpty()) {
                 pendingCardBatchDelay = REPEATED_EFFECT_VISUAL_INTERVAL_TICKS;
                 prepareFacingForNextBatch();
@@ -2108,9 +2382,22 @@ public class BattleState {
     }
 
     private boolean beginBattleAnimation(PendingCardBatch batch) {
+        if (hasSummonVexEffect(batch)) {
+            emitVisual(batch.user().entity(), batch.user().entity(), ItemStack.EMPTY, ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX, EVOKER_SUMMON_CAST_TICKS);
+            pendingAnimation = new EvokerSpellAnimation(batch, batch.user(), BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX, EVOKER_SUMMON_CAST_TICKS);
+            return true;
+        }
         PendingEffect animated = firstAnimatedEffect(batch);
         if (animated == null) {
             return false;
+        }
+        if (hasEvokerFangLineEffect(batch) || hasEvokerFangCircleEffect(batch)) {
+            boolean line = hasEvokerFangLineEffect(batch);
+            BattleVisualEvent.AnimationType animationType = line ? BattleVisualEvent.AnimationType.EVOKER_FANG_LINE : BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE;
+            int animationTicks = line ? EVOKER_FANG_CAST_TICKS + 10 : EVOKER_FANG_CAST_TICKS;
+            emitVisual(batch.user().entity(), animated.target().entity(), ItemStack.EMPTY, ItemStack.EMPTY, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, animationType, animationTicks);
+            pendingAnimation = new EvokerFangAnimation(batch, animated.target(), line);
+            return true;
         }
         if (isRiptideRushCard(batch.card())) {
             RiptideRushAnimation animation = new RiptideRushAnimation(batch, animated.target());
@@ -2141,7 +2428,7 @@ public class BattleState {
 
     private PendingEffect firstAnimatedEffect(PendingCardBatch batch) {
         for (PendingEffect effect : batch.effects()) {
-            if (effect.kind() == CardEffectKind.DAMAGE && !effect.effectDamage() && effect.target() != null && !effect.target().fakeDead()) {
+            if (isDirectAttackEffect(effect.kind()) && !effect.effectDamage() && effect.target() != null && !effect.target().fakeDead()) {
                 return effect;
             }
         }
@@ -2153,6 +2440,18 @@ public class BattleState {
                 ? lunge.hitAnimationType()
                 : BattleVisualEvent.AnimationType.NONE;
         applyPendingCardBatch(animation.batch(), true, hitAnimationType);
+    }
+
+    private boolean hasSummonVexEffect(PendingCardBatch batch) {
+        return batch != null && batch.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.SUMMON_VEX);
+    }
+
+    private boolean hasEvokerFangLineEffect(PendingCardBatch batch) {
+        return batch != null && batch.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EVOKER_FANG_LINE);
+    }
+
+    private boolean hasEvokerFangCircleEffect(PendingCardBatch batch) {
+        return batch != null && batch.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EVOKER_FANG_CIRCLE);
     }
 
     private void advancePendingCardSteps() {
@@ -2283,10 +2582,11 @@ public class BattleState {
             if (effect.target() == null || effect.target().fakeDead()) {
                 continue;
             }
-            if (effect.kind() == CardEffectKind.DAMAGE) {
+            if (isDirectAttackEffect(effect.kind())) {
                 BattleDamageResult result = effect.effectDamage()
                         ? effect.target().applyEffectDamage(effect.amount(), killCredit)
                         : effect.target().applyCardDamage(effect.amount(), batch.user(), killCredit, effect.remoteDamage());
+                emitUndyingReviveIfTriggered(effect.target());
                 damageResults.merge(effect.target(), result, BattleState::mergeDamageResult);
                 if (effect.effectDamage()) {
                     effectDamageTargets.add(effect.target());
@@ -2295,6 +2595,7 @@ public class BattleState {
                 }
                 if (triggersThorns(effect, batch.user())) {
                     BattleDamageResult thornsResult = applyThornsDamage(effect.target(), batch.user());
+                    emitUndyingReviveIfTriggered(batch.user());
                     if (thornsResult.blockedDamage() > 0 || thornsResult.healthDamage() > 0) {
                         thornsResults.merge(effect.target(), thornsResult, BattleState::mergeDamageResult);
                     }
@@ -2322,6 +2623,12 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.GUARD) {
                 effect.target().addEffect(BattleEffectType.GUARD, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.UNDYING) {
+                effect.target().addEffect(BattleEffectType.UNDYING, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.SUMMON_VEX) {
+                summonVexes(effect.target(), effect.amount(), effect.count());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.STRENGTH) {
                 effect.target().addEffect(BattleEffectType.STRENGTH, effect.amount());
@@ -2409,7 +2716,7 @@ public class BattleState {
     }
 
     private boolean triggersThorns(PendingEffect effect, CombatantState attacker) {
-        return effect.kind() == CardEffectKind.DAMAGE
+        return isDirectAttackEffect(effect.kind())
                 && !effect.effectDamage()
                 && effect.amount() > 0
                 && attacker != null
@@ -2428,6 +2735,95 @@ public class BattleState {
             return new BattleDamageResult(0, 0, 0);
         }
         return attacker.applyEffectDamage(damage, playerKillCredit(thornsOwner));
+    }
+
+    private boolean isDirectAttackEffect(CardEffectKind kind) {
+        return kind == CardEffectKind.DAMAGE
+                || kind == CardEffectKind.EVOKER_FANG_LINE
+                || kind == CardEffectKind.EVOKER_FANG_CIRCLE;
+    }
+
+    private void emitUndyingReviveIfTriggered(CombatantState target) {
+        if (target == null) {
+            return;
+        }
+        int revivedHealth = target.consumeUndyingReviveHealth();
+        if (revivedHealth <= 0) {
+            return;
+        }
+        emitVisual(target.entity(), target.entity(), ItemStack.EMPTY, ItemStack.EMPTY, null, new BattleDamageResult(0, 0, 0), 0, revivedHealth, 0, BattleVisualEvent.AnimationType.UNDYING_REVIVE, 20);
+    }
+
+    private void startEvokerSpell(LivingEntity caster, BattleVisualEvent.AnimationType animationType, int durationTicks) {
+        if (!(caster instanceof SpellcasterIllager illager)) {
+            return;
+        }
+        illager.spellCastingTickCount = Math.max(illager.spellCastingTickCount, Math.max(1, durationTicks));
+        if (animationType == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX) {
+            illager.setIsCastingSpell(SpellcasterIllager.IllagerSpell.SUMMON_VEX);
+        } else if (animationType == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE || animationType == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE) {
+            illager.setIsCastingSpell(SpellcasterIllager.IllagerSpell.FANGS);
+        }
+    }
+
+    private void stopEvokerSpell(LivingEntity caster) {
+        if (!(caster instanceof SpellcasterIllager illager)) {
+            return;
+        }
+        illager.spellCastingTickCount = 0;
+        illager.setIsCastingSpell(SpellcasterIllager.IllagerSpell.NONE);
+    }
+
+    private void spawnEvokerFangs(LivingEntity caster, LivingEntity target, boolean line) {
+        if (caster == null || target == null || !(caster.level() instanceof ServerLevel level)) {
+            return;
+        }
+        double minY = Math.min(target.getY(), caster.getY());
+        double maxY = Math.max(target.getY(), caster.getY()) + 1.0D;
+        float angle = (float)Mth.atan2(target.getZ() - caster.getZ(), target.getX() - caster.getX());
+        if (line) {
+            for (int i = 0; i < 16; i++) {
+                double distance = 1.25D * (i + 1);
+                createEvokerFang(level, caster, caster.getX() + Mth.cos(angle) * distance, caster.getZ() + Mth.sin(angle) * distance, minY, maxY, angle, i);
+            }
+            return;
+        }
+        for (int i = 0; i < 5; i++) {
+            float fangAngle = angle + i * (float)Math.PI * 0.4F;
+            createEvokerFang(level, caster, caster.getX() + Mth.cos(fangAngle) * 1.5D, caster.getZ() + Mth.sin(fangAngle) * 1.5D, minY, maxY, fangAngle, 0);
+        }
+        for (int i = 0; i < 8; i++) {
+            float fangAngle = angle + i * (float)Math.PI * 2.0F / 8.0F + (float)(Math.PI * 2.0D / 5.0D);
+            createEvokerFang(level, caster, caster.getX() + Mth.cos(fangAngle) * 2.5D, caster.getZ() + Mth.sin(fangAngle) * 2.5D, minY, maxY, fangAngle, 3);
+        }
+    }
+
+    private void createEvokerFang(ServerLevel level, LivingEntity caster, double x, double z, double minY, double maxY, float yRot, int warmupDelay) {
+        BlockPos blockPos = BlockPos.containing(x, maxY, z);
+        boolean foundGround = false;
+        double yOffset = 0.0D;
+        do {
+            BlockPos below = blockPos.below();
+            BlockState blockState = level.getBlockState(below);
+            if (blockState.isFaceSturdy(level, below, Direction.UP)) {
+                if (!level.isEmptyBlock(blockPos)) {
+                    BlockState aboveState = level.getBlockState(blockPos);
+                    VoxelShape shape = aboveState.getCollisionShape(level, blockPos);
+                    if (!shape.isEmpty()) {
+                        yOffset = shape.max(Direction.Axis.Y);
+                    }
+                }
+                foundGround = true;
+                break;
+            }
+            blockPos = blockPos.below();
+        } while (blockPos.getY() >= Mth.floor(minY) - 1);
+        if (!foundGround) {
+            return;
+        }
+        double y = blockPos.getY() + yOffset;
+        level.addFreshEntity(new EvokerFangs(level, x, y, z, yRot, warmupDelay, caster));
+        level.gameEvent(GameEvent.ENTITY_PLACE, new Vec3(x, y, z), GameEvent.Context.of(caster));
     }
 
     private static ItemStack visualStack(PendingCardBatch batch, boolean suppressCardVisual) {
@@ -2469,6 +2865,59 @@ public class BattleState {
                 || "builtin_monster_frenzied_dive".equals(card.cardId());
     }
 
+    private void summonVexes(CombatantState caster, int amount, int lifetimeTurns) {
+        if (caster == null || caster.fakeDead() || amount <= 0 || !(caster.entity().level() instanceof ServerLevel level)) {
+            return;
+        }
+        int count = Math.max(0, amount);
+        Vec3 center = caster.entity().position().add(0.0D, caster.entity().getBbHeight() + 0.45D, 0.0D);
+        Vec3 look = caster.entity().getLookAngle().multiply(1.0D, 0.0D, 1.0D);
+        if (look.lengthSqr() <= 0.0001D) {
+            look = new Vec3(0.0D, 0.0D, 1.0D);
+        } else {
+            look = look.normalize();
+        }
+        Vec3 right = new Vec3(-look.z, 0.0D, look.x);
+        List<CombatantState> side = sideOf(caster);
+        for (int i = 0; i < count; i++) {
+            Vex vex = EntityType.VEX.create(level);
+            if (vex == null) {
+                continue;
+            }
+            double offset = (i - (count - 1) / 2.0D) * 0.85D;
+            Vec3 pos = center.add(right.scale(offset));
+            BlockPos blockPos = BlockPos.containing(pos);
+            vex.moveTo(pos.x, pos.y, pos.z, caster.entity().getYRot(), 0.0F);
+            vex.finalizeSpawn(level, level.getCurrentDifficultyAt(blockPos), MobSpawnType.MOB_SUMMONED, null);
+            if (caster.entity() instanceof Mob owner) {
+                vex.setOwner(owner);
+            }
+            vex.setBoundOrigin(blockPos);
+            vex.setNoAi(true);
+            vex.setNoGravity(true);
+            level.addFreshEntityWithPassengers(vex);
+            level.gameEvent(GameEvent.ENTITY_PLACE, blockPos, GameEvent.Context.of(caster.entity()));
+            CombatantState summoned = new CombatantState(
+                    vex,
+                    new BattleDeck(MonsterDeckProfile.createDefaultDeck(vex), leader.getRandom()),
+                    CardBalance.fixedEnergy(),
+                    MonsterDeckProfile.defaultMaxBattleHealth(vex),
+                    MonsterDeckProfile.defaultBaseSpeed(vex));
+            summoned.markBattleSummoned();
+            summoned.addEffect(BattleEffectType.SUMMONED, Math.max(1, lifetimeTurns));
+            side.add(summoned);
+            byEntityId.put(vex.getId(), summoned);
+            locks.put(vex.getId(), EntityLock.capture(vex));
+            BattleManager.registerDynamicCombatant(this, vex);
+            if (phase == BattlePhase.PLAYER_TURN && playerStates.contains(summoned)) {
+                summoned.deck().startTurn(leader.getRandom(), hungerDrawReduction(summoned));
+                predrawnPlayerAllyHands.add(summoned.entity().getId());
+                playerAllyTurnPlans.put(summoned.entity().getId(), createPlayerAllyTurnPlan(summoned));
+            }
+        }
+        markDirty();
+    }
+
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
         return new BattleDamageResult(
                 first.blockedDamage() + second.blockedDamage(),
@@ -2485,6 +2934,7 @@ public class BattleState {
         int poison = state.effectAmount(BattleEffectType.POISON);
         if (poison > 0) {
             BattleDamageResult result = state.applyEffectDamage(poison, null);
+            emitUndyingReviveIfTriggered(state);
             emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
             state.reduceEffect(BattleEffectType.POISON, 1);
         }
@@ -2514,7 +2964,10 @@ public class BattleState {
             return;
         }
         target.addEffect(BattleEffectType.HUNGER, amount);
-        if (enemyHandsPredrawnForCurrentTurn && phase == BattlePhase.PLAYER_TURN && enemyStates.contains(target) && target.deck().applyAdditionalStartTurnDrawReduction(hungerDrawReduction(target))) {
+        if (enemyHandsPredrawnForCurrentTurn && preMonsterActionPhase() && enemyStates.contains(target) && target.deck().applyAdditionalStartTurnDrawReduction(hungerDrawReduction(target))) {
+            markDirty();
+        }
+        if (phase == BattlePhase.PLAYER_TURN && predrawnPlayerAllyHands.contains(target.entity().getId()) && playerSideAllies().contains(target) && target.deck().applyAdditionalStartTurnDrawReduction(hungerDrawReduction(target))) {
             markDirty();
         }
     }
@@ -2535,6 +2988,7 @@ public class BattleState {
         if (burn > 0) {
             boolean triggerFuse = state.effectAmount(BattleEffectType.FUSE) > 0;
             BattleDamageResult result = state.applyEffectDamage(burn, null);
+            emitUndyingReviveIfTriggered(state);
             emitVisual(state.entity(), state.entity(), ItemStack.EMPTY, null, result, 0, 0, 0);
             state.reduceEffect(BattleEffectType.BURN, 1);
             if (triggerFuse) {
@@ -2556,6 +3010,14 @@ public class BattleState {
         state.reduceEffect(BattleEffectType.WEAKNESS, 1);
         state.reduceEffect(BattleEffectType.GLOWING, 1);
         state.decayEndOfTurnEffects();
+        int summoned = state.effectAmount(BattleEffectType.SUMMONED);
+        if (summoned > 0) {
+            state.reduceEffect(BattleEffectType.SUMMONED, 1);
+            if (summoned <= 1) {
+                state.forceFakeDeath(null);
+                finishDelayTicks = Math.max(finishDelayTicks, CombatantState.FAKE_DEATH_ANIMATION_TICKS);
+            }
+        }
     }
 
     private void triggerSelfDestruct(CombatantState user) {
@@ -2604,6 +3066,7 @@ public class BattleState {
                 continue;
             }
             BattleDamageResult result = target.applyEffectDamage(CardBalance.SELF_DESTRUCT_DAMAGE, killCredit);
+            emitUndyingReviveIfTriggered(target);
             damageResults.put(target, result);
         }
         for (Map.Entry<CombatantState, BattleDamageResult> entry : damageResults.entrySet()) {
@@ -3024,7 +3487,7 @@ public class BattleState {
     }
 
     private boolean hasWinner() {
-        return alivePlayers().isEmpty() || aliveEnemies().isEmpty();
+        return aliveRealPlayers().isEmpty() || aliveEnemies().isEmpty();
     }
 
     private boolean allFakeDeathAnimationsDone() {
@@ -3092,8 +3555,11 @@ public class BattleState {
         return enemyStates.stream().map(state -> state.snapshot(battleDeckCount(state))).toList();
     }
 
-    private List<BattleEnemyIntentSnapshot> enemyIntentSnapshots(CombatantState firstEnemy) {
+    private List<BattleEnemyIntentSnapshot> autoIntentSnapshots(CombatantState firstEnemy) {
         List<BattleEnemyIntentSnapshot> snapshots = new ArrayList<>();
+        for (CombatantState ally : playerSideAllies()) {
+            snapshots.add(new BattleEnemyIntentSnapshot(ally.entity().getId(), playerAllyIntentCards(ally)));
+        }
         for (CombatantState enemy : enemyStates) {
             if (enemy == firstEnemy) {
                 continue;
@@ -3137,6 +3603,18 @@ public class BattleState {
 
     private List<CombatantState> alivePlayers() {
         return alive(playerStates);
+    }
+
+    private List<CombatantState> aliveRealPlayers() {
+        return alive(playerStates).stream().filter(state -> state.entity() instanceof ServerPlayer).toList();
+    }
+
+    private boolean hasAlivePlayerAllies() {
+        return !playerSideAllies().isEmpty();
+    }
+
+    private List<CombatantState> playerSideAllies() {
+        return alive(playerStates).stream().filter(state -> !(state.entity() instanceof ServerPlayer)).toList();
     }
 
     private List<CombatantState> aliveEnemies() {
@@ -3278,7 +3756,11 @@ public class BattleState {
         }
     }
 
-    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage) {
+    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage, int count) {
+        private PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage) {
+            this(kind, amount, target, effectDamage, remoteDamage, 1);
+        }
+
         private PendingEffect(CardEffectKind kind, int amount, CombatantState target) {
             this(kind, amount, target, false, false);
         }
@@ -3397,8 +3879,8 @@ public class BattleState {
             return exhausted;
         }
 
-        private boolean hasDisplayableEntry(CombatantState monster) {
-            return !displayableCards(monster, phase == BattlePhase.MONSTER_TURN, true).isEmpty();
+        private boolean hasDisplayableEntry(CombatantState monster, boolean useCurrentEnergy) {
+            return !displayableCards(monster, useCurrentEnergy, true).isEmpty();
         }
 
         private List<CardInstance> cards(CombatantState monster, boolean useCurrentEnergy) {
@@ -3570,6 +4052,9 @@ public class BattleState {
                 return;
             }
             int next = effects.getOrDefault(type, 0) + amount;
+            if (type == BattleEffectType.GUARD) {
+                next = Math.min(CombatantState.MAX_GUARD_STACKS, next);
+            }
             if (next == 0) {
                 effects.remove(type);
             } else if (type.allowsNegativeStacks() || next > 0) {
@@ -3598,7 +4083,7 @@ public class BattleState {
         }
     }
 
-    private sealed interface BattleAnimation permits LungeAnimation, ProjectileAnimation, GuardianBeamAnimation, RiptideRushAnimation {
+    private sealed interface BattleAnimation permits LungeAnimation, ProjectileAnimation, GuardianBeamAnimation, RiptideRushAnimation, EvokerSpellAnimation {
         PendingCardBatch batch();
 
         boolean tick();
@@ -3612,6 +4097,98 @@ public class BattleState {
         boolean effectsApplied();
 
         void markEffectsApplied();
+
+        default void finish() {
+        }
+    }
+
+    private non-sealed class EvokerSpellAnimation implements BattleAnimation {
+        protected final PendingCardBatch batch;
+        protected final CombatantState target;
+        protected final LivingEntity actor;
+        protected final BattleVisualEvent.AnimationType animationType;
+        protected final int durationTicks;
+        protected int ticks;
+        protected boolean effectsApplied;
+
+        private EvokerSpellAnimation(PendingCardBatch batch, CombatantState target, BattleVisualEvent.AnimationType animationType, int durationTicks) {
+            this.batch = batch;
+            this.target = target;
+            this.actor = batch.user().entity();
+            this.animationType = animationType == null ? BattleVisualEvent.AnimationType.NONE : animationType;
+            this.durationTicks = Math.max(EVOKER_SPELL_WARMUP_TICKS, durationTicks);
+            startEvokerSpell(actor, this.animationType, this.durationTicks);
+        }
+
+        @Override
+        public PendingCardBatch batch() {
+            return batch;
+        }
+
+        @Override
+        public boolean tick() {
+            if (!actor.isAlive() || target == null || target.fakeDead()) {
+                return true;
+            }
+            finishPendingFacing(batch);
+            ticks++;
+            return ticks >= durationTicks;
+        }
+
+        @Override
+        public boolean movesEntity(LivingEntity entity) {
+            return false;
+        }
+
+        @Override
+        public boolean readyToApplyEffects() {
+            return ticks >= EVOKER_SPELL_WARMUP_TICKS && !effectsApplied;
+        }
+
+        @Override
+        public boolean effectsApplied() {
+            return effectsApplied;
+        }
+
+        @Override
+        public void markEffectsApplied() {
+            effectsApplied = true;
+        }
+
+        @Override
+        public void finish() {
+            stopEvokerSpell(actor);
+        }
+    }
+
+    private final class EvokerFangAnimation extends EvokerSpellAnimation {
+        private final boolean line;
+        private boolean fangsSpawned;
+
+        private EvokerFangAnimation(PendingCardBatch batch, CombatantState target, boolean line) {
+            super(batch, target, line ? BattleVisualEvent.AnimationType.EVOKER_FANG_LINE : BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE, line ? EVOKER_FANG_CAST_TICKS + 10 : EVOKER_FANG_CAST_TICKS);
+            this.line = line;
+        }
+
+        @Override
+        public boolean readyToApplyEffects() {
+            int fangDelay = line ? 15 : 3;
+            return ticks >= EVOKER_SPELL_WARMUP_TICKS + fangDelay + 9 && !effectsApplied;
+        }
+
+        @Override
+        public boolean tick() {
+            if (!actor.isAlive() || target == null || target.fakeDead()) {
+                return true;
+            }
+            finishPendingFacing(batch);
+            ticks++;
+            if (!fangsSpawned && ticks >= EVOKER_SPELL_WARMUP_TICKS) {
+                fangsSpawned = true;
+                spawnEvokerFangs(actor, target.entity(), line);
+            }
+            return ticks >= durationTicks;
+        }
     }
 
     private final class LungeAnimation implements BattleAnimation {

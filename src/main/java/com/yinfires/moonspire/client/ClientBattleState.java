@@ -522,6 +522,16 @@ public final class ClientBattleState {
         return state != null && state.vexCharging();
     }
 
+    public static boolean visualEvokerSpellcasting(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.evokerSpellcasting();
+    }
+
+    public static BattleVisualEvent.AnimationType visualEvokerSpellType(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? BattleVisualEvent.AnimationType.NONE : state.evokerSpellType();
+    }
+
     public static int visualTicksUsingItem(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? 0 : state.ticksUsingItem();
@@ -909,6 +919,9 @@ public final class ClientBattleState {
         private int selfDestructTicks;
         private int selfDestructAge;
         private int selfDestructTotalTicks;
+        private int evokerSpellTicks;
+        private int evokerSpellAge;
+        private BattleVisualEvent.AnimationType evokerSpellType = BattleVisualEvent.AnimationType.NONE;
         private Vec3 lungeStart = Vec3.ZERO;
         private Vec3 lungeStrike = Vec3.ZERO;
         private Vec3 previousLungePosition = Vec3.ZERO;
@@ -973,7 +986,7 @@ public final class ClientBattleState {
         }
 
         public BattleVisualEvent.AnimationType animationType() {
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0) {
                 return BattleVisualEvent.AnimationType.NONE;
             }
             return animationType;
@@ -1009,6 +1022,12 @@ public final class ClientBattleState {
                 selfDestructAge = 0;
                 this.animationType = nextType;
             }
+            if (isEvokerSpellAnimation(nextType) && animationTicks > 0) {
+                evokerSpellTicks = Math.max(1, animationTicks);
+                evokerSpellAge = 0;
+                evokerSpellType = nextType;
+                this.animationType = nextType;
+            }
             if (stack != null && !stack.isEmpty()) {
                 itemStack = stack.copy();
                 itemTicks = Math.max(18, animationTicks + 8);
@@ -1024,6 +1043,14 @@ public final class ClientBattleState {
                     usingAge = 0;
                 }
             }
+        }
+
+        private boolean evokerSpellcasting() {
+            return evokerSpellTicks > 0 && isEvokerSpellAnimation(evokerSpellType);
+        }
+
+        private BattleVisualEvent.AnimationType evokerSpellType() {
+            return evokerSpellcasting() ? evokerSpellType : BattleVisualEvent.AnimationType.NONE;
         }
 
         private ItemStack mainHandStack() {
@@ -1215,6 +1242,13 @@ public final class ClientBattleState {
                 selfDestructAge = 0;
                 selfDestructTotalTicks = 0;
             }
+            if (evokerSpellTicks > 0) {
+                evokerSpellTicks--;
+                evokerSpellAge++;
+            } else {
+                evokerSpellAge = 0;
+                evokerSpellType = BattleVisualEvent.AnimationType.NONE;
+            }
             float lungeWalkSpeed = 0.0F;
             if (lungeTicks > 0) {
                 previousLungePosition = currentLungePosition;
@@ -1240,7 +1274,7 @@ public final class ClientBattleState {
             if (walkSpeed <= 0.001F) {
                 walkSpeed = 0.0F;
             }
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0) {
                 animationType = BattleVisualEvent.AnimationType.NONE;
             }
         }
@@ -1298,8 +1332,14 @@ public final class ClientBattleState {
         }
 
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
         }
+    }
+
+    private static boolean isEvokerSpellAnimation(BattleVisualEvent.AnimationType type) {
+        return type == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE
+                || type == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE
+                || type == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX;
     }
 
     private static Vec3 lerp(Vec3 from, Vec3 to, double amount) {

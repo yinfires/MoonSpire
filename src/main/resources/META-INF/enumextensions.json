@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "enum": "net/minecraft/client/model/HumanoidModel$ArmPose",
+      "name": "MOONSPIRE_EVOKER_SPELLCASTING",
+      "constructor": "(ZLnet/neoforged/neoforge/client/IArmPoseTransformer;)V",
+      "parameters": {
+        "class": "com/yinfires/moonspire/client/MoonSpireArmPoses",
+        "field": "EVOKER_SPELLCASTING"
+      }
+    }
+  ]
+}

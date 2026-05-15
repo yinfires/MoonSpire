@@ -163,6 +163,10 @@ public record BattleSnapshot(
         return enemyEntityId == monster().entityId() ? monsterIntentCards : List.of();
     }
 
+    public boolean hasIntentCardsFor(int entityId) {
+        return !intentCardsFor(entityId).isEmpty();
+    }
+
     public List<CardInstance> handCardsFor(int entityId) {
         if (entityId == player().entityId()) {
             return hand;

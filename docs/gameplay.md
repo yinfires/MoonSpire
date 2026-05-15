@@ -14,6 +14,9 @@
 
 ## 战斗系统
 
+- 玩法描述：玩家方非本地友方单位在玩家回合就可以被查看意图；中央意图区卡牌默认不显示，只有 hover 或选中拥有意图的存活单位时才显示对应意图。玩家回合中新召唤出的友方单位也会立即拥有可查看的本轮意图。
+  - 代码实现：`BattleState.beginPlayerTurn()` 为玩家方友方预抽本轮自动行动手牌并重建 `playerAllyTurnPlans`；`BattleState.summonVexes(...)` 在玩家回合中新建玩家方召唤物时同步预抽手牌并创建计划，`BattleScreen.currentIntentEntityId()` 只从 hover/selected 的有效意图单位读取中央意图卡。
+  - 变更记录：修复玩家回合 hover/selected 友方单位时无法读取意图的问题，并明确中央意图区卡牌保持默认隐藏。
 - 玩法描述：战斗期间，参战玩家不能通过碰撞拾取地面掉落物；因此三叉戟牌等战斗表现不会让真实物品进入背包，其它掉落物也会留在世界中，直到战斗结束后再按原版规则拾取。
   - 代码实现：`ServerBattleEvents` 监听 `ItemEntityPickupEvent.Pre`，通过 `BattleManager.isInBattle(...)` 判断玩家是否正在参战，并在参战时返回 `TriState.FALSE` 禁止本次拾取。三叉戟和箭矢类战斗视觉投射物仍由 `BattleState.ProjectileAnimation` 生成，保持 `AbstractArrow.Pickup.DISALLOWED`，并在动画结束或提前结束时清理。
   - 变更记录：新增战斗期间禁止参战玩家拾取世界掉落物的规则，避免三叉戟相关牌或其它战斗过程让真实掉落物进入背包。
@@ -50,9 +53,9 @@
 - 玩法描述：格挡会持续到拥有者自己的下个回合开始前；默认情况下，格挡可以抵挡所有普通伤害，包括攻击牌伤害和流血这类效果伤害。只有特别描述为穿透格挡，或明确写作直接造成生命值伤害的效果，才会绕过格挡直接扣除生命。
   - 代码实现：`BattleState.beginPlayerTurn()` 和 `beginMonsterTurn()` 分别在玩家/怪物各自的回合开始时清理自己的格挡；`CombatantState.applyCardDamage()` 和 `applyEffectDamage()` 统一进入 `applyBlockableDamage()`，先扣减格挡再扣生命；`CombatantState.applyDirectHealthDamage()` 保留给后续明确的直接生命值伤害效果使用。
   - 变更记录：修正怪物格挡在玩家结束回合时过早清空的问题；将普通效果伤害改为默认受格挡吸收，并保留直接生命值伤害的专用入口。
-- 玩法描述：守护是正面战斗状态。每层守护提供 10% 直接伤害减免，2 层显示为获得 20% 减伤；10 层及以上时，来自攻击牌等直接造成伤害的效果会被完全免疫。不同来源的直接伤害增减益使用乘算并四舍五入，例如原伤害 10、速度减伤 50%、守护减伤 50% 时，最终直接伤害为 `round(10 × 0.5 × 0.5) = 3`。守护不减免流血等战斗状态伤害，也不减免明确直接扣除生命值的效果。
-  - 代码实现：`CardEffectKind.GUARD` 结算时向目标添加 `BattleEffectType.GUARD`；`BattleDamageCalculator` 统一计算直接伤害的速度乘区和守护乘区，`CombatantState.applyCardDamage()` 使用该结果进入格挡吸收，`applyEffectDamage()` 与 `applyDirectHealthDamage()` 不读取守护。`CardRenderHelper`、`BattleScreen` 和 `BattleWorldOverlay` 复用同一计算规则，让卡牌数值、怪物意图和实际结算保持一致。
-  - 变更记录：新增“获得守护”卡牌效果、守护状态图标和关键词说明；怪物意图新增正面增益简写“正”，守护计入正面增益。
+- 玩法描述：守护是正面战斗状态。每层守护提供 10% 攻击伤害减免，2 层显示为获得 20% 减伤；守护最多叠到 9 层，因此最高提供 90% 攻击伤害减免。不同来源的直接伤害增减益使用乘算并四舍五入，例如原伤害 10、速度减伤 50%、守护减伤 50% 时，最终直接伤害为 `round(10 × 0.5 × 0.5) = 3`。守护不减免流血等战斗状态伤害，也不减免明确直接扣除生命值的效果。
+  - 代码实现：`CardEffectKind.GUARD` 结算时向目标添加 `BattleEffectType.GUARD`；`CombatantState.addEffect(...)` 和怪物 AI 预览统一把守护限制到 `CombatantState.MAX_GUARD_STACKS = 9`；`BattleDamageCalculator` 统一计算直接伤害的速度乘区和守护乘区，`CombatantState.applyCardDamage()` 使用该结果进入格挡吸收，`applyEffectDamage()` 与 `applyDirectHealthDamage()` 不读取守护。`CardRenderHelper`、`BattleScreen` 和 `BattleWorldOverlay` 复用同一计算规则，让卡牌数值、意图和实际结算保持一致。
+  - 变更记录：新增“获得守护”卡牌效果、守护状态图标和关键词说明；怪物意图新增正面增益简写“正”，守护计入正面增益；本次将守护叠层上限统一改为 9 层。
 - 玩法描述：角色获得格挡时，会在世界中显示一枚随获得者体型缩放的格挡图标；图标固定显示在获得者身体中间，短暂停留后原地淡出，基本覆盖获得者身体，并同时播放穿铁胸甲音效。该动画使用和战斗状态一样的全局可透视表现，即使被生物模型遮住也能看见。该动画是战斗反馈，不改变格挡数值、持续时间或伤害结算。
   - 代码实现：`BattleState.applyPendingCardBatch()` 在同一批卡牌效果中累计每个目标获得的格挡量，并通过 `BattleVisualEvent.gainedBlock` 同步到客户端；`ClientBattleState` 收到可视事件后创建格挡动画状态，`ClientEvents.playVisualEvents()` 播放 `SoundEvents.ARMOR_EQUIP_IRON`，`BattleWorldOverlay` 使用 `textures/gui/animations/block_gain.png` 以 see-through billboard 方式绘制动画，并根据实体包围盒宽高计算覆盖尺寸。
   - 变更记录：新增获得格挡的世界动画和穿铁胸甲音效反馈，动画资源独立放在战斗动画目录中；动画使用全局可透视渲染并固定在身体中间，避免被生物模型遮住。
@@ -101,6 +104,10 @@
   - 变更记录：本次新增掠夺者默认卡组和扣下悬刀、掠过割伤、装填掩护三张内置怪物牌。
 
 ## 牌组系统
+
+- 玩法描述：唤魔者进入战斗时默认拥有 60 点战斗生命，并使用 10 张内置唤魔者牌组：3 张“尖牙直线”（1 费，单体攻击，造成 6 点伤害并显示原版 16 枚直线尖牙）、2 张“尖牙环阵”（2 费，群体攻击，对全体敌方造成 5 点伤害并显示原版 5+8 枚环阵尖牙）、2 张“召唤恼鬼”（3 费，消耗，召唤 3 只存活 3 回合的恼鬼）、1 张“不死图腾”（3 费，消耗，获得 1 层不死）和 2 张“仪式护盾”（1 费，获得 6 点格挡与 1 层守护）。唤魔者尖牙牌按攻击牌结算，吃力量、虚弱、麻痹、荆棘、格挡、速度和守护等攻击相关规则；尖牙实体只作为视觉，不会额外造成原版伤害。不死在死亡后以最大生命值 50% 向下取整复活并减少 1 层；如果复活生命小于 1，例如最大生命值为 1，则复活失败并死亡。召唤出的恼鬼加入召唤者所在阵营，位于召唤者头顶附近，多只横向排列，并带有“召唤物”状态；召唤物回合结束时减少 1 层，层数为 0 时死亡。玩家方召唤物会在真实玩家全部结束行动后、敌方行动前自动行动，友方之间先按本回合速度排序，同速按玩家方条目从上到下排序；真实玩家全灭仍判负，召唤物不能单独维持战斗。所有非本地玩家自己的出牌，包括其它玩家、玩家方友方召唤物和怪物出牌，都统一显示在怪物意图/出牌位置；玩家方友方的意图会和敌方意图一样在条目、世界头顶和顶部小卡中显示。
+  - 代码实现：`MonsterDeckProfile` 为 `EntityType.EVOKER` 返回 60 点默认战斗生命和 3/2/2/1/2 比例的唤魔者默认牌组；`MoonSpireCardRegistry` 注册 `builtin_monster_fang_line`、`builtin_monster_fang_circle`、`builtin_monster_summon_vex`、`builtin_monster_totem_of_undying` 和 `builtin_monster_ritual_ward`。`CardEffectKind.UNDYING`、`EVOKER_FANG_LINE`、`EVOKER_FANG_CIRCLE` 和 `SUMMON_VEX` 接入卡牌描述、AI 评分、攻击预览、目标解析和战斗结算；`BattleState.EvokerFangAnimation` 复用原版唤魔者尖牙生成路径并通过 `BattleManager.handleDamage(...)` 拦截 `EvokerFangs` 原版伤害。`BattleEffectType.UNDYING` 和 `SUMMONED` 使用本地 PNG 图标；`CombatantState.applyHealthDamage(...)` 处理不死复活并通过 `BattleVisualEvent.AnimationType.UNDYING_REVIVE` 同步不死图腾粒子和音效。`BattleState.summonVexes(...)` 动态生成无 AI/无重力恼鬼，登记到 `BattleState` 和 `BattleManager`，用 `SUMMONED` 层数控制存活回合；`BattlePhase.PLAYER_ALLY_TURN` 与 `playerAllyTurnPlans` 负责玩家方友方自动行动、意图计划和快照同步，`BattleScreen` 与 `BattleWorldOverlay` 用同一套 intent snapshot 显示友方和敌方意图。
+  - 变更记录：新增唤魔者 60 血默认配置、10 张唤魔者内置牌组、不死和召唤物状态、唤魔者尖牙视觉攻击、召唤恼鬼牌、玩家方友方自动行动阶段、友方意图显示，以及不死图腾触发粒子/音效反馈。
 
 - 玩法描述：战斗使用抽牌堆、手牌和弃牌堆。回合开始弃掉剩余手牌并抽 5 张；打出的牌进入弃牌堆；抽牌堆为空时洗入弃牌堆。
   - 代码实现：`BattleDeck.startTurn()`、`draw()`、`useHand()` 管理抽牌、弃牌和洗牌，并在手牌、抽牌堆、弃牌堆或消耗堆变化时递增本地牌堆版本；`BattleDeck` 构建时复用已经属于本场战斗的 `CardInstance`，避免大卡组入战时逐张二次复制，抽牌时通过随机索引与末尾交换并弹出的方式取得下一张牌，不再在入战或洗入弃牌堆时整堆 `shuffle`；`BattleSnapshot` 只同步牌堆数量、手牌和版本号，完整牌堆内容由 `RequestBattlePilePayload` / `BattlePileContentsPayload` 在玩家打开对应列表时按需同步。
@@ -395,6 +402,9 @@
 
 ## 本次卡牌效果与战斗状态补充
 
+- 玩法描述：玩家或其它非唤魔者类人生物使用“尖牙直线”“尖牙环阵”“召唤恼鬼”时，不再播放普通左右键挥手，而是在施法窗口内保持唤魔者式双臂抬起施法姿态；唤魔者实体仍使用原版施法状态。
+  - 代码实现：`BattleState` 仍通过 `BattleVisualEvent.AnimationType.EVOKER_FANG_LINE`、`EVOKER_FANG_CIRCLE` 和 `EVOKER_SUMMON_VEX` 同步施法视觉事件，并继续让 `SpellcasterIllager` 使用原版 `IllagerSpell` 与 `spellCastingTickCount`。`ClientBattleState.VisualState` 保存 `evokerSpellTicks` 作为持续施法窗口；`ClientEvents.playVisualEvents()` 不再把非唤魔者施法事件纳入 `LivingEntity.swing(...)`，`ClientEvents.suppressDefaultBattleArmPose(...)` 在非 `SpellcasterIllager` 的 Humanoid 施法时改用 `MoonSpireArmPoses.evokerSpellcasting()`。`META-INF/enumextensions.json` 扩展 `HumanoidModel.ArmPose`，`MoonSpireArmPoses` 复刻原版唤魔者施法双臂旋转公式。
+  - 变更记录：修复玩家使用三张唤魔者法术牌时只出现普通挥手的问题，补齐非唤魔者 Humanoid 的持续施法姿态，并保持唤魔者原版表现不变。
 - 玩法描述：拥有独特世界动画的卡牌不会再额外播放原版挥手动画，动画命中后产生的伤害、格挡、治疗和状态反馈也不会再次触发挥手。进入战斗时会取消参战实体进入前残留的使用物品、挥手和攻击动画状态；战斗中临时显示的手持物品与使用姿态只在对应卡牌动画期间存在，动画结束、退出战斗、登出或换世界时都会恢复，避免旁观其它玩家时看到残留的弓、弩、箭或抬手姿势。弓卡牌蓄力时会尽量复用原版拉弓使用姿态并在射击时播放原版箭射出音效；弩卡牌装填时会尽量复用原版装填姿态，播放原版装填开始、中段、结束音效，装填完成到射击前会举弩瞄准并播放原版弩射击音效。
   - 代码实现：`BattleVisualEvent.AnimationType` 不为 `NONE` 的事件在客户端不再触发 `LivingEntity.swing(...)`，服务器动画完成后的结算反馈不再携带出牌手持物品或卡牌展示，避免命中结算再次被识别为普通出牌视觉；没有特殊世界动画的普通伤害牌直接发送 `AnimationType.NONE` 的结算反馈，由 `ClientEvents.playVisualEvents()` 播放唯一一次原版主手挥手；`ClientBattleState.VisualState` 保存当前动画类型、手持物品和使用姿态时间，并按客户端 tick 推进，避免渲染帧率过高时提前结束；`ClientEvents` 在动画期间持续覆盖主手物品并维持原版 `startUsingItem(...)` 状态，让玩家渲染器通过 `ItemStack.getUseAnimation()`、`getUsedItemHand()` 和 `getUseItemRemainingTicks()` 自行选择弓/弩姿势，弩装填结束后的短暂瞄准阶段通过 `DataComponents.CHARGED_PROJECTILES` 复用原版已装填判定；视觉结束后恢复原状态，并在进入/退出战斗和登出时清理所有临时手部状态；战斗活跃期间客户端持续取消非战斗视觉驱动的使用物品状态，并在没有战斗视觉动画时压制参战者默认手持物品抬手姿势；`BattleState.beginBattle()` 会在服务端清除参战实体进入战斗前的使用物品和挥手状态。
   - 变更记录：修正弓、弩和近战冲击等独特战斗动画及其命中结算仍附带挥手的问题；补齐弓蓄力、弩装填/举弩的手部姿势与原版音效，修正动画期间弓弩手持物品闪烁，并清理进入战斗及观看其它玩家时的手部动画残留；本次修正普通直接伤害牌被错误归类为特殊近战冲击动画，导致默认原版挥手被跳过的问题。

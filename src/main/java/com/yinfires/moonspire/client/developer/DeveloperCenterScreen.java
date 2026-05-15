@@ -1794,6 +1794,14 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GLOWING, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.GUARD && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GUARD, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.UNDYING && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.UNDYING, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.EVOKER_FANG_LINE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EVOKER_FANG_LINE, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.EVOKER_FANG_CIRCLE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EVOKER_FANG_CIRCLE, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.SUMMON_VEX, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.STRENGTH && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.STRENGTH, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH && effect.amount() > 0) {
@@ -2345,6 +2353,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.BLEED,
                         DeveloperCardEffect.Kind.GLOWING,
                         DeveloperCardEffect.Kind.GUARD,
+                        DeveloperCardEffect.Kind.UNDYING,
+                        DeveloperCardEffect.Kind.EVOKER_FANG_LINE,
+                        DeveloperCardEffect.Kind.EVOKER_FANG_CIRCLE,
+                        DeveloperCardEffect.Kind.SUMMON_VEX,
                         DeveloperCardEffect.Kind.STRENGTH,
                         DeveloperCardEffect.Kind.LOSE_STRENGTH,
                         DeveloperCardEffect.Kind.REGENERATION,

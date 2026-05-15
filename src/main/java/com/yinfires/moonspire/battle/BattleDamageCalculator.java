@@ -4,7 +4,7 @@ import com.yinfires.moonspire.card.CardBalance;
 
 public final class BattleDamageCalculator {
     public static final int GUARD_REDUCTION_PERCENT_PER_STACK = 10;
-    private static final int MAX_GUARD_REDUCTION_STACKS = 10;
+    private static final int MAX_GUARD_REDUCTION_STACKS = 9;
 
     private BattleDamageCalculator() {
     }

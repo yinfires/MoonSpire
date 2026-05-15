@@ -152,6 +152,10 @@ public record BattleVisualEvent(
         RIPTIDE_RUSH,
         GUARDIAN_BEAM,
         VINDICATOR_AXE_SWING,
-        VEX_CHARGE_LUNGE
+        VEX_CHARGE_LUNGE,
+        EVOKER_FANG_LINE,
+        EVOKER_FANG_CIRCLE,
+        EVOKER_SUMMON_VEX,
+        UNDYING_REVIVE
     }
 }

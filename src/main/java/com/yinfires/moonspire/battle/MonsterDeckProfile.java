@@ -165,6 +165,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_evasive_flicker",
             "builtin_monster_evasive_flicker",
             "builtin_monster_frenzied_dive");
+    private static final List<String> EVOKER_DEFAULT_DECK = List.of(
+            "builtin_monster_fang_line",
+            "builtin_monster_fang_line",
+            "builtin_monster_fang_line",
+            "builtin_monster_fang_circle",
+            "builtin_monster_fang_circle",
+            "builtin_monster_summon_vex",
+            "builtin_monster_summon_vex",
+            "builtin_monster_totem_of_undying",
+            "builtin_monster_ritual_ward",
+            "builtin_monster_ritual_ward");
     private static final List<String> DROWNED_DEFAULT_DECK = List.of(
             "builtin_monster_trident_throw",
             "builtin_monster_trident_throw",
@@ -292,6 +303,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.VEX) {
             return cards(VEX_DEFAULT_DECK);
         }
+        if (type == EntityType.EVOKER) {
+            return cards(EVOKER_DEFAULT_DECK);
+        }
         return fallback(monster);
     }
 
@@ -344,6 +358,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.VEX) {
             return VEX_DEFAULT_DECK;
         }
+        if (type == EntityType.EVOKER) {
+            return EVOKER_DEFAULT_DECK;
+        }
         return FALLBACK_DEFAULT_DECK;
     }
 
@@ -367,6 +384,16 @@ public final class MonsterDeckProfile {
         }
         double movementSpeed = entity.getAttributeValue(Attributes.MOVEMENT_SPEED);
         return Math.max(1, Math.round((float) (movementSpeed / CardBalance.NON_PLAYER_BASELINE_MOVEMENT_SPEED * CardBalance.PLAYER_BASE_SPEED)));
+    }
+
+    public static float defaultMaxBattleHealth(LivingEntity entity) {
+        if (entity == null) {
+            return 1.0F;
+        }
+        if (entity.getType() == EntityType.EVOKER) {
+            return 60.0F;
+        }
+        return Math.max(1.0F, entity.getMaxHealth());
     }
 
     private static boolean isZombieFamily(EntityType<?> type) {

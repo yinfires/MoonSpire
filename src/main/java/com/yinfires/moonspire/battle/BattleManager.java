@@ -25,6 +25,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.projectile.EvokerFangs;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -221,7 +222,21 @@ public final class BattleManager {
                 battle.pileCardsFor(player, source, entityId)));
     }
 
+    public static void registerDynamicCombatant(BattleState battle, LivingEntity entity) {
+        if (battle == null || entity == null) {
+            return;
+        }
+        BY_ENTITY_ID.put(entity.getId(), battle);
+    }
+
     public static boolean handleDamage(LivingEntity target, Entity sourceEntity) {
+        return handleDamage(target, sourceEntity, sourceEntity);
+    }
+
+    public static boolean handleDamage(LivingEntity target, Entity sourceEntity, Entity directEntity) {
+        if (directEntity instanceof EvokerFangs fangs && fangs.getOwner() instanceof LivingEntity owner && battleFor(owner) != null) {
+            return true;
+        }
         BattleState battle = battleFor(target);
         if (battle == null) {
             return false;
@@ -246,7 +261,9 @@ public final class BattleManager {
         }
         BattleState battle = battleFor(entity);
         if (battle != null) {
-            endBattle(battle);
+            if (!battle.handleEntityCleanup(entity)) {
+                endBattle(battle);
+            }
         }
     }
 

@@ -37,6 +37,7 @@
 - When entering battle, clear both server and client use-item state and also suppress default held-item arm poses for combatants that are not currently playing a battle visual. A player entering battle while holding a bow, crossbow, shield, food, or another use item must not keep the pre-battle raised-hand pose.
 - Before using or modifying any world combat animation, including movement, melee attacks, ranged attacks, hurt/knockback reactions, projectile visuals, and vanilla item-use poses, first review the existing smooth world-animation pattern in `BattleState.LungeAnimation`, `BattleVisualEvent` animation fields, `ClientBattleState.VisualState`, and `ClientEvents` visual render/tick bridges. Keep server logic authoritative for combat state and safe positions, but put smooth player-facing interpolation, limb swing, recoil offsets, and vanilla pose state on the client visual layer where appropriate; avoid per-tick server player teleports for visible smooth motion.
 - When adding monster-specific cards, especially attack cards, check both the monster's own vanilla/existing action pose and the player-side behavior for reward use before implementing the card. Do not make an attack card that only works visually for the monster if players can later obtain and play it.
+- Intent area cards default to hidden. Only show the central intent cards when the user explicitly hovers or selects a live combatant that has intent; do not change this to default-visible by guesswork.
 
 ## Video References
 

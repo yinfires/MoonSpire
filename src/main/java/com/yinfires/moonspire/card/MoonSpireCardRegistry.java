@@ -272,6 +272,19 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_undead_power", "card.moonspire.monster.undead_power.name", "", 3, 0, 0, List.of(
                         new CardEffect(CardEffectKind.STRENGTH, 2, CardTarget.SELF),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_fang_line", "card.moonspire.monster.fang_line.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.EVOKER_FANG_LINE, 6, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:evoker_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_fang_circle", "card.moonspire.monster.fang_circle.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.EVOKER_FANG_CIRCLE, 5, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:evoker_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_summon_vex", "card.moonspire.monster.summon_vex.name", "", 3, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.SUMMON_VEX, 3, CardTarget.SELF, 3),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:vex_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_totem_of_undying", "card.moonspire.monster.totem_of_undying.name", "", 3, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.UNDYING, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:totem_of_undying", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_ritual_ward", "card.moonspire.monster.ritual_ward.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 6, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.GUARD, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:totem_of_undying", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_axe_chop", "card.moonspire.monster.axe_chop.name", "", 1, 6, 0, List.of(
                         new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_heavy_axe_blow", "card.moonspire.monster.heavy_axe_blow.name", "", 2, 10, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:iron_axe", 0, 0, 1.0F, "default", ""),

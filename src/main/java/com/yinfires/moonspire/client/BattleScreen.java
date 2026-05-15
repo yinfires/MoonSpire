@@ -56,7 +56,13 @@ public class BattleScreen extends NoBlurScreen {
     private static final int ENTRY_SPEED_X_OFFSET = 72;
     private static final int ENTRY_HEADER_Y_OFFSET = 7;
     private static final int ENTRY_ROW_HEIGHT = 42;
-    private static final int ENTRY_GAP = 8;
+    private static final int ENTRY_EFFECT_Y_OFFSET = ENTRY_ROW_HEIGHT + 3;
+    private static final int ENTRY_EFFECT_ICON_SIZE = 15;
+    private static final int ENTRY_EFFECT_SPACING = 18;
+    private static final int ENTRY_EFFECT_BAND_HEIGHT = ENTRY_EFFECT_Y_OFFSET + ENTRY_EFFECT_ICON_SIZE - ENTRY_ROW_HEIGHT;
+    private static final int ENTRY_GAP = 4;
+    private static final int ENTRY_OCCUPIED_HEIGHT = ENTRY_ROW_HEIGHT + ENTRY_EFFECT_BAND_HEIGHT;
+    private static final int ENTRY_TOTAL_HEIGHT = ENTRY_OCCUPIED_HEIGHT + ENTRY_GAP;
     private static final int ENTRY_SCROLL_STEP = 28;
     private static final int ENTRY_AREA_BOTTOM_MARGIN = 8;
     private static final int ENTRY_INTENT_GUTTER = 60;
@@ -244,8 +250,9 @@ public class BattleScreen extends NoBlurScreen {
     private void renderBattleBase(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY, float partialTick, boolean modalBackground) {
         long segmentStart = perfStart();
         boolean hideBaseForLocalHandSelection = modalBackground && handSelectionConfirmation.active();
+        EffectTooltip hoveredEffect = null;
         if (!hideBaseForLocalHandSelection) {
-            renderEntries(graphics, snapshot, mouseX, mouseY);
+            hoveredEffect = renderEntries(graphics, snapshot, mouseX, mouseY);
         }
         battleRenderEntriesNanos += elapsedPerf(segmentStart);
         segmentStart = perfStart();
@@ -277,6 +284,7 @@ public class BattleScreen extends NoBlurScreen {
         if (!hideBaseForLocalHandSelection) {
             renderExhaustTooltip(graphics, snapshot, mouseX, mouseY);
             renderHudTooltip(graphics, snapshot, mouseX, mouseY);
+            renderEffectTooltip(graphics, hoveredEffect);
         }
         battleRenderOtherNanos += elapsedPerf(segmentStart);
     }
@@ -538,18 +546,20 @@ public class BattleScreen extends NoBlurScreen {
         return false;
     }
 
-    private void renderEntries(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY) {
-        renderEntryArea(graphics, snapshot, liveCombatants(snapshot.players()), layout().resolve("player_entry", width, height), false, mouseX, mouseY);
-        renderEntryArea(graphics, snapshot, liveCombatants(snapshot.enemies()), layout().resolve("monster_entry", width, height), true, mouseX, mouseY);
+    private EffectTooltip renderEntries(GuiGraphics graphics, BattleSnapshot snapshot, int mouseX, int mouseY) {
+        EffectTooltip playerTooltip = renderEntryArea(graphics, snapshot, liveCombatants(snapshot.players()), layout().resolve("player_entry", width, height), false, mouseX, mouseY);
+        EffectTooltip enemyTooltip = renderEntryArea(graphics, snapshot, liveCombatants(snapshot.enemies()), layout().resolve("monster_entry", width, height), true, mouseX, mouseY);
+        return enemyTooltip != null ? enemyTooltip : playerTooltip;
     }
 
-    private void renderEntryArea(GuiGraphics graphics, BattleSnapshot snapshot, List<BattleCombatantSnapshot> entries, MoonSpireUiRect baseRect, boolean enemyArea, int mouseX, int mouseY) {
+    private EffectTooltip renderEntryArea(GuiGraphics graphics, BattleSnapshot snapshot, List<BattleCombatantSnapshot> entries, MoonSpireUiRect baseRect, boolean enemyArea, int mouseX, int mouseY) {
         if (entries.isEmpty()) {
             clampEntryScroll(entries.size(), baseRect, enemyArea);
-            return;
+            return null;
         }
         MoonSpireUiRect area = entryAreaRect(baseRect);
         double scroll = clampEntryScroll(entries.size(), baseRect, enemyArea);
+        EffectTooltip hoveredEffect = null;
         graphics.enableScissor(Math.max(0, area.x() - ENTRY_INTENT_GUTTER - 2), Math.max(0, area.y() - 2), Math.min(width, area.right() + ENTRY_INTENT_GUTTER + 2), Math.min(height, area.bottom() + 2));
         try {
             for (int i = 0; i < entries.size(); i++) {
@@ -558,26 +568,30 @@ public class BattleScreen extends NoBlurScreen {
                 if (row.bottom() < area.y() || row.y() > area.bottom()) {
                     continue;
                 }
-                renderEntry(graphics, entry, row, entityName(entry.entityId(), Component.translatable(enemyArea ? "screen.moonspire.monster_entry" : "screen.moonspire.player_entry")), enemyArea, mouseX, mouseY);
+                EffectTooltip entryHoveredEffect = renderEntry(graphics, entry, row, area, entityName(entry.entityId(), Component.translatable(enemyArea ? "screen.moonspire.monster_entry" : "screen.moonspire.player_entry")), enemyArea, mouseX, mouseY);
+                if (entryHoveredEffect != null) {
+                    hoveredEffect = entryHoveredEffect;
+                }
             }
         } finally {
             graphics.disableScissor();
         }
+        return hoveredEffect;
     }
 
     private MoonSpireUiRect entryRowRect(MoonSpireUiRect baseRect, int index, double scroll) {
-        return new MoonSpireUiRect(baseRect.x(), (int) Math.round(baseRect.y() + index * (ENTRY_ROW_HEIGHT + ENTRY_GAP) - scroll), baseRect.width(), ENTRY_ROW_HEIGHT);
+        return new MoonSpireUiRect(baseRect.x(), (int) Math.round(baseRect.y() + index * ENTRY_TOTAL_HEIGHT - scroll), baseRect.width(), ENTRY_OCCUPIED_HEIGHT);
     }
 
     private MoonSpireUiRect entryAreaRect(MoonSpireUiRect baseRect) {
         MoonSpireUiRect exhaust = layout().resolve("exhaust_pile", width, height);
-        int bottomLimit = Math.max(baseRect.y() + ENTRY_ROW_HEIGHT, exhaust.y() - ENTRY_AREA_BOTTOM_MARGIN);
-        return new MoonSpireUiRect(baseRect.x(), baseRect.y(), baseRect.width(), Math.max(ENTRY_ROW_HEIGHT, bottomLimit - baseRect.y()));
+        int bottomLimit = Math.max(baseRect.y() + ENTRY_OCCUPIED_HEIGHT, exhaust.y() - ENTRY_AREA_BOTTOM_MARGIN);
+        return new MoonSpireUiRect(baseRect.x(), baseRect.y(), baseRect.width(), Math.max(ENTRY_OCCUPIED_HEIGHT, bottomLimit - baseRect.y()));
     }
 
-    private void renderEntry(GuiGraphics graphics, BattleCombatantSnapshot entry, MoonSpireUiRect rect, Component fallbackName, boolean selectable, int mouseX, int mouseY) {
+    private EffectTooltip renderEntry(GuiGraphics graphics, BattleCombatantSnapshot entry, MoonSpireUiRect rect, MoonSpireUiRect area, Component fallbackName, boolean selectable, int mouseX, int mouseY) {
         if (entry.fakeDead()) {
-            return;
+            return null;
         }
         boolean hovered = ClientBattleState.isHoveredEntityId(entry.entityId());
         boolean selected = selectable && !ClientBattleState.hasHoveredEntityIds() && ClientBattleState.selectedTargetId() == entry.entityId();
@@ -588,18 +602,19 @@ public class BattleScreen extends NoBlurScreen {
         } else if (hovered) {
             graphics.renderOutline(x - 1, y - 1, rect.width() + 2, rect.height() + 2, 0xDDA8F7FF);
         }
-        renderIntentSummary(graphics, entry, x - 54, y + 8);
+        int intentX = selectable ? x - 54 : x + rect.width() + 8;
+        renderIntentSummary(graphics, entry, intentX, y + 8);
         graphics.drawString(font, fallbackName, x + 8, y + ENTRY_HEADER_Y_OFFSET, 0xFFFFEAC2, false);
         MoonSpireUiRect speedRect = entrySpeedTextRect(entry, rect);
         graphics.drawString(font, Component.translatable("screen.moonspire.speed_short", entry.roundSpeed()), speedRect.x(), speedRect.y(), 0xFFB8E6FF, false);
         renderHealthBar(graphics, x + 8, y + 22, rect.width() - 16, 12, entry);
-        renderEffects(graphics, entry.effects(), x + 8, y + rect.height() + 3, mouseX, mouseY);
+        return renderEffects(graphics, entry.effects(), area, x + 8, y + ENTRY_EFFECT_Y_OFFSET, mouseX, mouseY);
     }
 
     private void renderIntentSummary(GuiGraphics graphics, BattleCombatantSnapshot entry, int x, int y) {
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         List<CardInstance> intentCards = snapshot.intentCardsFor(entry.entityId());
-        if (!snapshot.isEnemyEntity(entry.entityId()) || intentCards.isEmpty()) {
+        if (intentCards.isEmpty()) {
             return;
         }
         int attack = 0;
@@ -616,14 +631,20 @@ public class BattleScreen extends NoBlurScreen {
                 if (effect.amount() <= 0) {
                     continue;
                 }
-                List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, true, -1, entry.entityId());
+                boolean automaticEnemySide = snapshot.isEnemyEntity(entry.entityId());
+                List<Integer> targets = targetIdsForEffectTarget(effect.target(), snapshot, automaticEnemySide, -1, entry.entityId());
                 int totalAmount = Math.max(0, effect.amount()) * Math.max(1, effect.count());
-                if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && targets.contains(snapshot.player().entityId())) {
+                int primaryOpponent = primaryOpponentEntityId(snapshot, automaticEnemySide);
+                if (CardInstance.isAttackDamageEffect(effect.kind()) && targets.contains(primaryOpponent)) {
+                    BattleCombatantSnapshot opponent = snapshot.combatant(primaryOpponent);
+                    if (opponent == null) {
+                        continue;
+                    }
                     int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
-                    attack += CardRenderHelper.previewDamageAmount(baseDamage, entry.roundSpeed(), snapshot.player().roundSpeed(), snapshot.player().defense(), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(snapshot.player(), BattleEffectType.GLOWING) > 0) * Math.max(1, effect.count());
+                    attack += CardRenderHelper.previewDamageAmount(baseDamage, entry.roundSpeed(), opponent.roundSpeed(), opponent.defense(), CardRenderHelper.effectAmount(opponent, BattleEffectType.GUARD), CardRenderHelper.effectAmount(entry, BattleEffectType.STRENGTH), CardRenderHelper.effectAmount(entry, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(opponent, BattleEffectType.GLOWING) > 0) * Math.max(1, effect.count());
                 } else if (effect.kind() == CardEffectKind.BLOCK && targets.contains(entry.entityId())) {
                     block += totalAmount;
-                } else if (negativeEffect(effect.kind()) && targets.contains(snapshot.player().entityId())) {
+                } else if (negativeEffect(effect.kind()) && targets.contains(primaryOpponent)) {
                     negativeEffects += totalAmount;
                 } else if (positiveEffect(effect.kind()) && targets.contains(entry.entityId())) {
                     positiveEffects += totalAmount;
@@ -652,34 +673,42 @@ public class BattleScreen extends NoBlurScreen {
         CardRenderHelper.renderCombatantBar(graphics, font, entry, x, y, w, h);
     }
 
-    private void renderEffects(GuiGraphics graphics, List<BattleEffectSnapshot> effects, int x, int y, int mouseX, int mouseY) {
-        BattleEffectSnapshot hovered = null;
-        int hoveredX = 0;
-        int hoveredY = 0;
+    private EffectTooltip renderEffects(GuiGraphics graphics, List<BattleEffectSnapshot> effects, MoonSpireUiRect area, int x, int y, int mouseX, int mouseY) {
+        EffectTooltip hovered = null;
         for (int i = 0; i < effects.size(); i++) {
             BattleEffectSnapshot effect = effects.get(i);
-            int ex = x + i * 18;
+            int ex = x + i * ENTRY_EFFECT_SPACING;
             Component amount = Component.translatable("screen.moonspire.effect_short", effect.amount());
             ResourceLocation texture = effectIconTexture(effect.type());
             if (texture != null) {
-                graphics.blit(texture, ex, y, 15, 15, 0.0F, 0.0F, 64, 64, 64, 64);
+                graphics.blit(texture, ex, y, ENTRY_EFFECT_ICON_SIZE, ENTRY_EFFECT_ICON_SIZE, 0.0F, 0.0F, 64, 64, 64, 64);
             } else {
-                graphics.renderOutline(ex, y, 15, 15, 0xCCFFB1C0);
+                graphics.renderOutline(ex, y, ENTRY_EFFECT_ICON_SIZE, ENTRY_EFFECT_ICON_SIZE, 0xCCFFB1C0);
                 Component marker = Component.translatable("screen.moonspire.effect_unknown_icon");
-                graphics.drawString(font, marker, ex + (15 - font.width(marker)) / 2, y + 2, 0xFFFFB1C0, false);
+                graphics.drawString(font, marker, ex + (ENTRY_EFFECT_ICON_SIZE - font.width(marker)) / 2, y + 2, 0xFFFFB1C0, false);
             }
             int amountColor = effect.type() == BattleEffectType.STRENGTH && effect.amount() < 0 ? 0xFFFF5454 : 0xFFFFFFFF;
-            graphics.drawString(font, amount, ex + 15 - font.width(amount), y + 7, amountColor, true);
-            if (mouseX >= ex && mouseX <= ex + 15 && mouseY >= y && mouseY <= y + 15) {
-                hovered = effect;
-                hoveredX = ex;
-                hoveredY = y;
+            graphics.drawString(font, amount, ex + ENTRY_EFFECT_ICON_SIZE - font.width(amount), y + 7, amountColor, true);
+            if (area.contains(mouseX, mouseY) && mouseX >= ex && mouseX <= ex + ENTRY_EFFECT_ICON_SIZE && mouseY >= y && mouseY <= y + ENTRY_EFFECT_ICON_SIZE) {
+                hovered = new EffectTooltip(effect.type(), effect.amount(), ex, y);
             }
         }
-        if (hovered != null) {
-            int tipX = Math.min(width - CardRenderHelper.TIP_WIDTH - 6, hoveredX);
-            CardRenderHelper.renderEffectTip(graphics, font, hovered.type(), hovered.amount(), tipX, hoveredY + 18);
+        return hovered;
+    }
+
+    private void renderEffectTooltip(GuiGraphics graphics, EffectTooltip tooltip) {
+        if (tooltip == null) {
+            return;
         }
+        int tipHeight = CardRenderHelper.effectTipHeight(font, tooltip.type(), tooltip.amount());
+        int tipX = clampTooltipX(tooltip.x(), CardRenderHelper.TIP_WIDTH);
+        int preferredY = tooltip.y() + ENTRY_EFFECT_ICON_SIZE + 3;
+        int tipY = preferredY + tipHeight <= height - 6 ? preferredY : tooltip.y() - tipHeight - 3;
+        tipY = clampTooltipY(tipY, tipHeight);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 500.0F);
+        CardRenderHelper.renderEffectTip(graphics, font, tooltip.type(), tooltip.amount(), tipX, tipY);
+        graphics.pose().popPose();
     }
 
     private static ResourceLocation effectIconTexture(BattleEffectType type) {
@@ -730,7 +759,8 @@ public class BattleScreen extends NoBlurScreen {
             if (monsterIntentPreview.visible() && monsterIntentPreview.matches(card.id())) {
                 continue;
             }
-            CardRenderHelper.renderSmallCard(graphics, font, card, x + i * spacing, y, false, false, cardValues(snapshot, card, intentAttacker(snapshot, intentEntityId), true), false);
+            BattleCombatantSnapshot attacker = intentAttacker(snapshot, intentEntityId);
+            CardRenderHelper.renderSmallCard(graphics, font, card, x + i * spacing, y, false, false, cardValues(snapshot, card, attacker, snapshot.isEnemyEntity(attacker.entityId())), false);
         }
         CardInstance previewCard = monsterIntentPreviewCard(intentCards);
         if (previewCard == null) {
@@ -767,7 +797,8 @@ public class BattleScreen extends NoBlurScreen {
         CardPreviewAnimation.RenderBounds bounds = animation.renderBounds();
         graphics.pose().translate(bounds.x(), bounds.y(), 0.0F);
         graphics.pose().scale(animation.scale(), animation.scale(), 1.0F);
-        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, false, cardValues(snapshot, card, intentAttacker(snapshot, attackerEntityId), true), false);
+        BattleCombatantSnapshot attacker = intentAttacker(snapshot, attackerEntityId);
+        CardRenderHelper.renderSmallCard(graphics, font, card, 0, 0, false, false, cardValues(snapshot, card, attacker, snapshot.isEnemyEntity(attacker.entityId())), false);
         graphics.pose().popPose();
     }
 
@@ -786,23 +817,18 @@ public class BattleScreen extends NoBlurScreen {
 
     private int currentIntentEntityId(BattleSnapshot snapshot) {
         int hovered = ClientBattleState.hoveredEntityId();
-        if (liveEnemy(snapshot, hovered)) {
+        if (liveIntentCombatant(snapshot, hovered)) {
             return hovered;
         }
         int selected = ClientBattleState.selectedTargetId();
-        if (liveEnemy(snapshot, selected)) {
+        if (liveIntentCombatant(snapshot, selected)) {
             return selected;
         }
-        for (BattleCombatantSnapshot enemy : snapshot.enemies()) {
-            if (!enemy.fakeDead()) {
-                return enemy.entityId();
-            }
-        }
-        return snapshot.monster().entityId();
+        return -1;
     }
 
-    private boolean liveEnemy(BattleSnapshot snapshot, int entityId) {
-        return snapshot.isEnemyEntity(entityId) && !combatantFakeDead(snapshot, entityId);
+    private boolean liveIntentCombatant(BattleSnapshot snapshot, int entityId) {
+        return snapshot.hasIntentCardsFor(entityId) && !combatantFakeDead(snapshot, entityId);
     }
 
     private List<CardInstance> intentCardsFor(BattleSnapshot snapshot, int enemyEntityId) {
@@ -2457,7 +2483,7 @@ public class BattleScreen extends NoBlurScreen {
                 BattleCombatantSnapshot intentUser = snapshot.combatant(intent.entityId());
                 if (intentUser != null) {
                     attacker = intentUser;
-                    monsterCard = true;
+                    monsterCard = snapshot.isEnemyEntity(intentUser.entityId());
                     break;
                 }
             }
@@ -2469,7 +2495,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender) {
-        return cardValues(snapshot, card, attacker, attacker.entityId() == snapshot.monster().entityId());
+        return cardValues(snapshot, card, attacker, snapshot.isEnemyEntity(attacker.entityId()));
     }
 
     private CardRenderHelper.CardValues cardValues(BattleSnapshot snapshot, CardInstance card, BattleCombatantSnapshot attacker, boolean monsterCard) {
@@ -2488,7 +2514,7 @@ public class BattleScreen extends NoBlurScreen {
             int damageAmount = effect.amount();
             int blockAmount = effect.amount();
             BattleCombatantSnapshot singleTarget = singlePreviewTarget(card, effect.target(), snapshot, monsterCard);
-            if (effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) {
+            if (CardInstance.isAttackDamageEffect(effect.kind())) {
                 int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
                 boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
                 int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
@@ -2500,7 +2526,7 @@ public class BattleScreen extends NoBlurScreen {
             }
             damageAmounts.add(damageAmount);
             blockAmounts.add(blockAmount);
-            if ((effect.kind() == CardEffectKind.DAMAGE || effect.kind() == CardEffectKind.CONSUME_ARROW) && effect.target().targetsEnemy()) {
+            if (CardInstance.isAttackDamageEffect(effect.kind()) && effect.target().targetsEnemy()) {
                 previewAttackTotal += damageAmount * effect.count();
                 hasPreviewAttack = true;
             }
@@ -2535,6 +2561,8 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.DRAW_CARDS
                 || kind == CardEffectKind.GAIN_ENERGY
                 || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.UNDYING
+                || kind == CardEffectKind.SUMMON_VEX
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
@@ -2826,13 +2854,14 @@ public class BattleScreen extends NoBlurScreen {
     private Component phaseComponent(BattlePhase phase) {
         return switch (phase) {
             case PLAYER_TURN -> Component.translatable("screen.moonspire.turn.player");
+            case PLAYER_ALLY_TURN -> Component.translatable("screen.moonspire.turn.player_ally");
             case MONSTER_TURN -> Component.translatable("screen.moonspire.turn.monster");
             default -> Component.translatable(phase.translationKey());
         };
     }
 
     private void showTurnBanner(BattlePhase phase) {
-        if (phase == BattlePhase.PLAYER_TURN || phase == BattlePhase.MONSTER_TURN) {
+        if (phase == BattlePhase.PLAYER_TURN || phase == BattlePhase.PLAYER_ALLY_TURN || phase == BattlePhase.MONSTER_TURN) {
             turnBannerPhase = phase;
             turnBannerTicks = TURN_BANNER_TICKS;
         } else {
@@ -3377,7 +3406,7 @@ public class BattleScreen extends NoBlurScreen {
 
     private boolean monsterIntentSmallCardAt(double mouseX, double mouseY, BattleSnapshot snapshot) {
         List<CardInstance> intentCards = intentCardsFor(snapshot, currentIntentEntityId(snapshot));
-        if (intentCards.isEmpty() || !hasSelectedOrHoveredMonster(snapshot)) {
+        if (intentCards.isEmpty() || !hasSelectedOrHoveredIntentCombatant(snapshot)) {
             return false;
         }
         MoonSpireUiRect rect = layout().resolve("monster_intent", width, height);
@@ -3465,7 +3494,7 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private double maxEntryScroll(int entryCount, MoonSpireUiRect baseRect) {
-        int contentHeight = entryCount <= 0 ? 0 : entryCount * ENTRY_ROW_HEIGHT + Math.max(0, entryCount - 1) * ENTRY_GAP;
+        int contentHeight = entryCount <= 0 ? 0 : entryCount * ENTRY_OCCUPIED_HEIGHT + Math.max(0, entryCount - 1) * ENTRY_GAP;
         return Math.max(0.0D, contentHeight - entryAreaRect(baseRect).height());
     }
 
@@ -3704,6 +3733,11 @@ public class BattleScreen extends NoBlurScreen {
         };
     }
 
+    private int primaryOpponentEntityId(BattleSnapshot snapshot, boolean enemySideActor) {
+        List<Integer> opponents = liveIds(enemySideActor ? snapshot.players() : snapshot.enemies());
+        return opponents.isEmpty() ? -1 : opponents.getFirst();
+    }
+
     private List<Integer> liveIds(List<BattleCombatantSnapshot> combatants) {
         List<Integer> ids = new ArrayList<>();
         for (BattleCombatantSnapshot combatant : combatants) {
@@ -3734,13 +3768,17 @@ public class BattleScreen extends NoBlurScreen {
         return !needsEnemy || !needsAlly;
     }
 
-    private boolean hasSelectedOrHoveredMonster(BattleSnapshot snapshot) {
-        return snapshot.isEnemyEntity(snapshot.selectedTargetId()) && !combatantFakeDead(snapshot, snapshot.selectedTargetId())
-                || snapshot.enemies().stream().anyMatch(enemy -> !enemy.fakeDead() && ClientBattleState.isHoveredEntityId(enemy.entityId()));
+    private boolean hasSelectedOrHoveredIntentCombatant(BattleSnapshot snapshot) {
+        int selected = ClientBattleState.selectedTargetId();
+        if (snapshot.hasIntentCardsFor(selected) && !combatantFakeDead(snapshot, selected)) {
+            return true;
+        }
+        return snapshot.players().stream().anyMatch(player -> !player.fakeDead() && player.entityId() != snapshot.localPlayerEntityId() && snapshot.hasIntentCardsFor(player.entityId()) && ClientBattleState.isHoveredEntityId(player.entityId()))
+                || snapshot.enemies().stream().anyMatch(enemy -> !enemy.fakeDead() && snapshot.hasIntentCardsFor(enemy.entityId()) && ClientBattleState.isHoveredEntityId(enemy.entityId()));
     }
 
     private boolean shouldRenderMonsterIntent(BattleSnapshot snapshot, double mouseX, double mouseY) {
-        return hasSelectedOrHoveredMonster(snapshot) && !draggingTargetedCardAtMonster(snapshot, mouseX, mouseY);
+        return hasSelectedOrHoveredIntentCombatant(snapshot) && !draggingTargetedCardAtMonster(snapshot, mouseX, mouseY);
     }
 
     private boolean draggingTargetedCardAtMonster(BattleSnapshot snapshot, double mouseX, double mouseY) {
@@ -4568,6 +4606,9 @@ public class BattleScreen extends NoBlurScreen {
     }
 
     private record HandRenderEntry(CardInstance card, HandCardAnimation animation, boolean selected, CardRenderData renderData) {
+    }
+
+    private record EffectTooltip(BattleEffectType type, int amount, int x, int y) {
     }
 
     private record HudTooltip(Component title, List<Component> paragraphs, MoonSpireUiRect avoidRect) {
