@@ -59,6 +59,7 @@ import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.monster.breeze.Breeze;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -101,6 +102,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
+    private static final Set<Integer> VISUAL_BREEZE_WIND_CHARGES = new HashSet<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
     private static final List<ScheduledSelfDestructExplosion> SCHEDULED_SELF_DESTRUCT_EXPLOSIONS = new ArrayList<>();
@@ -199,6 +201,7 @@ public final class ClientEvents {
                     minecraft.setScreen(new BattleScreen());
                 }
                 playVisualEvents(minecraft);
+                playProjectileImpactVisuals(minecraft);
                 spawnEvokerSpellParticles(minecraft);
                 syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
@@ -206,6 +209,7 @@ public final class ClientEvents {
                 tickScheduledSelfDestructExplosions(minecraft);
                 syncVisualRiptideStates(minecraft);
                 syncVisualRavagerHeadRams(minecraft);
+                syncVisualBreezeWindCharges(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
             }
@@ -696,6 +700,48 @@ public final class ClientEvents {
             }
         }
 
+        private static void syncVisualBreezeWindCharges(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_BREEZE_WIND_CHARGES.clear();
+                return;
+            }
+            Set<Integer> activeBreezes = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualBreezeWindCharge(minecraft.level.getEntity(combatant.entityId()), activeBreezes);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualBreezeWindCharge(minecraft.level.getEntity(combatant.entityId()), activeBreezes);
+            }
+            for (int entityId : VISUAL_BREEZE_WIND_CHARGES.toArray(Integer[]::new)) {
+                if (!activeBreezes.contains(entityId)) {
+                    if (minecraft.level.getEntity(entityId) instanceof Breeze breeze) {
+                        stopVisualBreezeWindCharge(breeze);
+                    }
+                    VISUAL_BREEZE_WIND_CHARGES.remove(entityId);
+                }
+            }
+        }
+
+        private static void syncVisualBreezeWindCharge(Entity entity, Set<Integer> activeBreezes) {
+            if (!(entity instanceof Breeze breeze)) {
+                return;
+            }
+            int ticks = ClientBattleState.visualWindChargeTicks(breeze.getId());
+            if (ticks <= 0) {
+                return;
+            }
+            activeBreezes.add(breeze.getId());
+            if (VISUAL_BREEZE_WIND_CHARGES.add(breeze.getId())) {
+                breeze.inhale.start(breeze.tickCount);
+                breeze.shoot.start(breeze.tickCount);
+            }
+        }
+
+        private static void stopVisualBreezeWindCharge(Breeze breeze) {
+            breeze.inhale.stop();
+            breeze.shoot.stop();
+        }
+
         private static void syncVisualUseItemState(LivingEntity entity, ItemStack mainHand) {
             int duration = Math.max(1, mainHand.getUseDuration(entity));
             int usedTicks = Math.max(0, ClientBattleState.visualTicksUsingItem(entity.getId()));
@@ -831,6 +877,12 @@ public final class ClientEvents {
                         ravager.attackTick = 0;
                     }
                 }
+                for (int entityId : VISUAL_BREEZE_WIND_CHARGES.toArray(Integer[]::new)) {
+                    if (minecraft.level.getEntity(entityId) instanceof Breeze breeze) {
+                        stopVisualBreezeWindCharge(breeze);
+                    }
+                }
+                VISUAL_BREEZE_WIND_CHARGES.clear();
                 for (var combatant : ClientBattleState.snapshot().players()) {
                     clearEntityHandAnimation(minecraft.level.getEntity(combatant.entityId()), stopUsingItems);
                 }
@@ -844,6 +896,7 @@ public final class ClientEvents {
             TEMP_ARM_POSES.clear();
             VISUAL_RIPTIDE_STATES.clear();
             VISUAL_RAVAGER_HEAD_RAMS.clear();
+            VISUAL_BREEZE_WIND_CHARGES.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
             SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();
@@ -920,6 +973,44 @@ public final class ClientEvents {
                 if (event.animationType() == BattleVisualEvent.AnimationType.UNDYING_REVIVE && target instanceof LivingEntity livingTarget) {
                     spawnUndyingParticles(livingTarget);
                 }
+            }
+        }
+
+        private static void playProjectileImpactVisuals(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                ClientBattleState.consumeProjectileImpactVisuals();
+                return;
+            }
+            for (ClientBattleState.ProjectileImpactVisual impact : ClientBattleState.consumeProjectileImpactVisuals()) {
+                if (impact.animationType() != BattleVisualEvent.AnimationType.WIND_CHARGE || impact.position() == null) {
+                    continue;
+                }
+                Entity attacker = minecraft.level.getEntity(impact.attackerId());
+                boolean breeze = attacker instanceof Breeze;
+                SoundEvent burstSound = breeze ? SoundEvents.BREEZE_WIND_CHARGE_BURST.value() : SoundEvents.WIND_CHARGE_BURST.value();
+                Vec3 position = impact.position();
+                minecraft.level.playLocalSound(position.x, position.y, position.z, burstSound, SoundSource.PLAYERS, 1.0F, 1.0F, false);
+                spawnWindChargeBurstParticles(minecraft, position);
+            }
+        }
+
+        private static void spawnWindChargeBurstParticles(Minecraft minecraft, Vec3 position) {
+            if (minecraft.level == null) {
+                return;
+            }
+            minecraft.level.addParticle(ParticleTypes.GUST_EMITTER_SMALL, position.x, position.y, position.z, 0.0D, 0.0D, 0.0D);
+            for (int i = 0; i < 8; i++) {
+                double angle = i * Math.PI * 0.25D;
+                double x = Math.cos(angle);
+                double z = Math.sin(angle);
+                minecraft.level.addParticle(
+                        ParticleTypes.SMALL_GUST,
+                        position.x + x * 0.35D,
+                        position.y,
+                        position.z + z * 0.35D,
+                        x * 0.12D,
+                        0.02D,
+                        z * 0.12D);
             }
         }
 
@@ -1004,6 +1095,13 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_THROW : SoundEvents.SPLASH_POTION_THROW, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.POTION_DRINK) {
                 scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_DRINK : SoundEvents.GENERIC_DRINK, 0, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.WIND_CHARGE) {
+                if (attacker instanceof Breeze) {
+                    scheduleBattleSound(attacker, SoundEvents.BREEZE_CHARGE, 0, 0.9F, 1.0F);
+                    scheduleBattleSound(attacker, SoundEvents.BREEZE_SHOOT, Math.max(1, prepareTicks), 1.0F, 1.0F);
+                } else {
+                    scheduleBattleSound(attacker, SoundEvents.WIND_CHARGE_THROW, Math.max(1, prepareTicks), 1.0F, 1.0F);
+                }
             } else if (event.animationType() == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {

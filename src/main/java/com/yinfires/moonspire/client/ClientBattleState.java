@@ -66,6 +66,7 @@ public final class ClientBattleState {
     private static final int KNOCKBACK_SETTLE_TICKS = 4;
     static final int POTION_THROW_PREPARE_TICKS = 8;
     private static final int PROJECTILE_DEFAULT_PREPARE_TICKS = 20;
+    private static final int WIND_CHARGE_PREPARE_TICKS = 15;
     private static final double KNOCKBACK_HORIZONTAL_DRAG = 0.82D;
     private static final double KNOCKBACK_VERTICAL_DRAG = 0.98D;
     private static final double KNOCKBACK_GRAVITY = 0.08D;
@@ -106,6 +107,7 @@ public final class ClientBattleState {
     private static final List<BlockGainAnimation> blockGainAnimations = new ArrayList<>();
     private static final List<GuardianBeamAnimation> guardianBeamAnimations = new ArrayList<>();
     private static final List<ProjectileVisual> projectileVisuals = new ArrayList<>();
+    private static final List<ProjectileImpactVisual> projectileImpactVisuals = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
     private static final Map<Integer, FakeDeathVisual> fakeDeathVisuals = new HashMap<>();
@@ -436,6 +438,12 @@ public final class ClientBattleState {
         return projectileVisuals;
     }
 
+    public static List<ProjectileImpactVisual> consumeProjectileImpactVisuals() {
+        List<ProjectileImpactVisual> impacts = new ArrayList<>(projectileImpactVisuals);
+        projectileImpactVisuals.clear();
+        return impacts;
+    }
+
     public static List<BattleVisualEvent> consumeVisualEvents() {
         List<BattleVisualEvent> events = new ArrayList<>();
         Iterator<ScheduledVisualEvent> iterator = pendingVisualEvents.iterator();
@@ -552,6 +560,11 @@ public final class ClientBattleState {
         return state != null && state.evokerSpellcasting();
     }
 
+    public static int visualWindChargeTicks(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.windChargeTicks();
+    }
+
     public static BattleVisualEvent.AnimationType visualEvokerSpellType(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? BattleVisualEvent.AnimationType.NONE : state.evokerSpellType();
@@ -632,6 +645,7 @@ public final class ClientBattleState {
         visualStates.clear();
         guardianBeamAnimations.clear();
         projectileVisuals.clear();
+        projectileImpactVisuals.clear();
     }
 
     public static int fakeDeathRenderTicks(int entityId) {
@@ -683,6 +697,9 @@ public final class ClientBattleState {
         while (projectileIterator.hasNext()) {
             ProjectileVisual visual = projectileIterator.next();
             visual.tick();
+            if (visual.consumeImpact()) {
+                projectileImpactVisuals.add(visual.impactVisual());
+            }
             if (visual.done()) {
                 projectileIterator.remove();
             }
@@ -931,7 +948,8 @@ public final class ClientBattleState {
                 || event.animationType() == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
                 || event.animationType() == BattleVisualEvent.AnimationType.TRIDENT_THROW
                 || event.animationType() == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
-                || event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW;
+                || event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW
+                || event.animationType() == BattleVisualEvent.AnimationType.WIND_CHARGE;
     }
 
     public static int projectilePrepareTicks(BattleVisualEvent event) {
@@ -946,6 +964,7 @@ public final class ClientBattleState {
             case POTION_THROW -> POTION_THROW_PREPARE_TICKS;
             case CROSSBOW_LOAD -> 25;
             case TRIDENT_THROW, CHANNELING_TRIDENT_THROW -> 18;
+            case WIND_CHARGE -> WIND_CHARGE_PREPARE_TICKS;
             default -> PROJECTILE_DEFAULT_PREPARE_TICKS;
         };
         return Math.max(0, Math.min(Math.max(0, animationTicks), prepareTicks));
@@ -956,7 +975,8 @@ public final class ClientBattleState {
                 || animationType == BattleVisualEvent.AnimationType.CROSSBOW_LOAD
                 || animationType == BattleVisualEvent.AnimationType.TRIDENT_THROW
                 || animationType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
-                || animationType == BattleVisualEvent.AnimationType.POTION_THROW;
+                || animationType == BattleVisualEvent.AnimationType.POTION_THROW
+                || animationType == BattleVisualEvent.AnimationType.WIND_CHARGE;
     }
 
     private static Vec3 lungeStart(BattleVisualEvent event) {
@@ -1091,6 +1111,7 @@ public final class ClientBattleState {
         private final int prepareTicks;
         private final int totalTicks;
         private int age;
+        private boolean impactConsumed;
 
         private ProjectileVisual(BattleVisualEvent event) {
             this.attackerId = event.attackerId();
@@ -1147,6 +1168,18 @@ public final class ClientBattleState {
             age++;
         }
 
+        private boolean consumeImpact() {
+            if (impactConsumed || age < totalTicks) {
+                return false;
+            }
+            impactConsumed = true;
+            return true;
+        }
+
+        private ProjectileImpactVisual impactVisual() {
+            return new ProjectileImpactVisual(attackerId, targetId, animationType, strike);
+        }
+
         private boolean done() {
             return age > totalTicks;
         }
@@ -1172,6 +1205,9 @@ public final class ClientBattleState {
             if (animationType == BattleVisualEvent.AnimationType.POTION_THROW) {
                 return new ItemStack(Items.SPLASH_POTION);
             }
+            if (animationType == BattleVisualEvent.AnimationType.WIND_CHARGE) {
+                return new ItemStack(Items.WIND_CHARGE);
+            }
             return new ItemStack(Items.ARROW);
         }
 
@@ -1181,6 +1217,9 @@ public final class ClientBattleState {
             stack.set(DataComponents.POTION_CONTENTS, new PotionContents(java.util.Optional.empty(), java.util.Optional.of(contents.getColor()), List.of()));
             return stack;
         }
+    }
+
+    public record ProjectileImpactVisual(int attackerId, int targetId, BattleVisualEvent.AnimationType animationType, Vec3 position) {
     }
 
     public static final class VisualState {
@@ -1197,6 +1236,7 @@ public final class ClientBattleState {
         private int selfDestructTotalTicks;
         private int evokerSpellTicks;
         private int evokerSpellAge;
+        private int windChargeTicks;
         private BattleVisualEvent.AnimationType evokerSpellType = BattleVisualEvent.AnimationType.NONE;
         private Vec3 lungeStart = Vec3.ZERO;
         private Vec3 lungeStrike = Vec3.ZERO;
@@ -1261,8 +1301,12 @@ public final class ClientBattleState {
             return selfDestructTicks;
         }
 
+        public int windChargeTicks() {
+            return windChargeTicks;
+        }
+
         public BattleVisualEvent.AnimationType animationType() {
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0) {
                 return BattleVisualEvent.AnimationType.NONE;
             }
             return animationType;
@@ -1304,6 +1348,10 @@ public final class ClientBattleState {
                 evokerSpellTicks = Math.max(1, animationTicks);
                 evokerSpellAge = 0;
                 evokerSpellType = nextType;
+                this.animationType = nextType;
+            }
+            if (nextType == BattleVisualEvent.AnimationType.WIND_CHARGE && animationTicks > 0) {
+                windChargeTicks = Math.max(1, animationTicks);
                 this.animationType = nextType;
             }
             if (stack != null && !stack.isEmpty()) {
@@ -1550,6 +1598,9 @@ public final class ClientBattleState {
                 evokerSpellAge = 0;
                 evokerSpellType = BattleVisualEvent.AnimationType.NONE;
             }
+            if (windChargeTicks > 0) {
+                windChargeTicks--;
+            }
             float lungeWalkSpeed = 0.0F;
             if (lungeTicks > 0) {
                 previousLungePosition = currentLungePosition;
@@ -1575,7 +1626,7 @@ public final class ClientBattleState {
             if (walkSpeed <= 0.001F) {
                 walkSpeed = 0.0F;
             }
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0) {
                 animationType = BattleVisualEvent.AnimationType.NONE;
             }
         }
@@ -1633,7 +1684,7 @@ public final class ClientBattleState {
         }
 
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
         }
     }
 

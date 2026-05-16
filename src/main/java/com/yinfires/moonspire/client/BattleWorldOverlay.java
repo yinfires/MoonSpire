@@ -31,6 +31,8 @@ import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.projectile.SpectralArrow;
 import net.minecraft.world.entity.projectile.ThrownPotion;
 import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.entity.projectile.windcharge.BreezeWindCharge;
+import net.minecraft.world.entity.projectile.windcharge.WindCharge;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -474,6 +476,8 @@ public final class BattleWorldOverlay {
         private SpectralArrow spectralArrow;
         private ThrownTrident trident;
         private ThrownPotion potion;
+        private BreezeWindCharge breezeWindCharge;
+        private WindCharge windCharge;
         private int nextVisualId = -1000000;
 
         private Entity entityFor(Minecraft minecraft, ClientBattleState.ProjectileVisual visual) {
@@ -481,6 +485,9 @@ public final class BattleWorldOverlay {
                 return null;
             }
             ItemStack stack = visual.stack();
+            if (visual.animationType() == com.yinfires.moonspire.battle.BattleVisualEvent.AnimationType.WIND_CHARGE) {
+                return windChargeEntity(minecraft, visual);
+            }
             if (visual.animationType() == com.yinfires.moonspire.battle.BattleVisualEvent.AnimationType.POTION_THROW || stack.is(Items.SPLASH_POTION)) {
                 if (potion == null || potion.level() != minecraft.level) {
                     potion = new ThrownPotion(minecraft.level, 0.0D, 0.0D, 0.0D);
@@ -510,6 +517,22 @@ public final class BattleWorldOverlay {
             }
             prepareArrow(arrow);
             return arrow;
+        }
+
+        private Entity windChargeEntity(Minecraft minecraft, ClientBattleState.ProjectileVisual visual) {
+            Entity attacker = minecraft.level.getEntity(visual.attackerId());
+            if (attacker != null && attacker.getType() == net.minecraft.world.entity.EntityType.BREEZE) {
+                if (breezeWindCharge == null || breezeWindCharge.level() != minecraft.level) {
+                    breezeWindCharge = new BreezeWindCharge(net.minecraft.world.entity.EntityType.BREEZE_WIND_CHARGE, minecraft.level);
+                    initializeVisualEntity(breezeWindCharge);
+                }
+                return breezeWindCharge;
+            }
+            if (windCharge == null || windCharge.level() != minecraft.level) {
+                windCharge = new WindCharge(net.minecraft.world.entity.EntityType.WIND_CHARGE, minecraft.level);
+                initializeVisualEntity(windCharge);
+            }
+            return windCharge;
         }
 
         private void initializeVisualEntity(Entity entity) {

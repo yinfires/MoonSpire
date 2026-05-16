@@ -256,6 +256,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_gelatinous_body",
             "builtin_monster_gelatinous_body",
             "builtin_monster_splattering_pressure");
+    private static final List<String> BREEZE_DEFAULT_DECK = List.of(
+            "builtin_monster_wind_charge",
+            "builtin_monster_wind_charge",
+            "builtin_monster_wind_charge",
+            "builtin_monster_gale_burst",
+            "builtin_monster_gale_burst",
+            "builtin_monster_sweeping_gust",
+            "builtin_monster_whirling_guard",
+            "builtin_monster_whirling_guard",
+            "builtin_monster_unsteady_air",
+            "builtin_monster_unsteady_air");
     private static final float SLIME_LARGE_BASE_HEALTH = 16.0F;
     private static final float SPLIT_CHILD_VALUE_MULTIPLIER = 0.5F;
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
@@ -318,6 +329,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.SLIME) {
             return slimeCards(monster);
+        }
+        if (type == EntityType.BREEZE) {
+            return cards(BREEZE_DEFAULT_DECK);
         }
         if (type == EntityType.GUARDIAN) {
             return cards(GUARDIAN_DEFAULT_DECK);
@@ -385,6 +399,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.SLIME) {
             return SLIME_DEFAULT_DECK;
+        }
+        if (type == EntityType.BREEZE) {
+            return BREEZE_DEFAULT_DECK;
         }
         if (type == EntityType.GUARDIAN) {
             return GUARDIAN_DEFAULT_DECK;

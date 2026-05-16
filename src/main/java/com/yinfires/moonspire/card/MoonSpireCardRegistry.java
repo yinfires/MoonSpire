@@ -223,7 +223,11 @@ public final class MoonSpireCardRegistry {
     }
 
     private static boolean specialConvertedCard(ItemStack stack) {
-        return stack.is(Items.BOW) || stack.is(Items.CROSSBOW) || stack.is(Items.ARROW) || stack.is(Items.SPECTRAL_ARROW);
+        return stack.is(Items.BOW)
+                || stack.is(Items.CROSSBOW)
+                || stack.is(Items.ARROW)
+                || stack.is(Items.SPECTRAL_ARROW)
+                || stack.is(Items.WIND_CHARGE);
     }
 
     private static RegisteredCardDefinition specialConvertedCardDefinition(ItemStack stack) {
@@ -256,6 +260,11 @@ public final class MoonSpireCardRegistry {
                     new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
                     new CardEffect(CardEffectKind.GLOWING, 1, CardTarget.SINGLE_ENEMY),
                     new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.UNKNOWN, "", artItemId, 0, 0, 1.0F, "default", "");
+        }
+        if (stack.is(Items.WIND_CHARGE)) {
+            return new RegisteredCardDefinition(id, stack.getDescriptionId(), "", 1, 0, 0, List.of(
+                    new CardEffect(CardEffectKind.REMOTE, 1),
+                    new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY)), CardSourceType.UNKNOWN, "", artItemId, 0, 0, 1.0F, "default", "");
         }
         return null;
     }
@@ -366,6 +375,19 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_terrifying_roar", "card.moonspire.monster.terrifying_roar.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.WEAKNESS, 2, CardTarget.ALL_ENEMIES),
                         new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:goat_horn", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_wind_charge", "card.moonspire.monster.wind_charge.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:wind_charge", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_gale_burst", "card.moonspire.monster.gale_burst.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:wind_charge", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_sweeping_gust", "card.moonspire.monster.sweeping_gust.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:wind_charge", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_whirling_guard", "card.moonspire.monster.whirling_guard.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:breeze_rod", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_unsteady_air", "card.moonspire.monster.unsteady_air.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:breeze_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_slime_bump", "card.moonspire.monster.slime_bump.name", "", 1, 4, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_sticky_slap", "card.moonspire.monster.sticky_slap.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),

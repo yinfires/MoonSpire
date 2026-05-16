@@ -83,6 +83,7 @@ public class BattleState {
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
+    private static final int WIND_CHARGE_TICKS = 15;
     private static final int GUARDIAN_BEAM_TICKS = 80;
     private static final int POTION_THROW_PREPARE_TICKS = 8;
     private static final int POTION_DRINK_TICKS = 32;
@@ -2205,6 +2206,9 @@ public class BattleState {
         if (isTridentCard(card)) {
             return TRIDENT_DRAW_TICKS;
         }
+        if (isWindChargeCard(card)) {
+            return WIND_CHARGE_TICKS;
+        }
         ItemStack stack = card.sourceStack();
         if (!stack.isEmpty() && stack.is(Items.CROSSBOW)) {
             return CROSSBOW_LOAD_TICKS;
@@ -2222,10 +2226,29 @@ public class BattleState {
         if (isTridentCard(card)) {
             return BattleVisualEvent.AnimationType.TRIDENT_THROW;
         }
+        if (isWindChargeCard(card)) {
+            return BattleVisualEvent.AnimationType.WIND_CHARGE;
+        }
         ItemStack stack = card.sourceStack();
         return !stack.isEmpty() && stack.is(Items.CROSSBOW)
                 ? BattleVisualEvent.AnimationType.CROSSBOW_LOAD
                 : BattleVisualEvent.AnimationType.BOW_DRAW;
+    }
+
+    private boolean isWindChargeCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        ItemStack stack = card.sourceStack();
+        return (!stack.isEmpty() && stack.is(Items.WIND_CHARGE))
+                || "item_minecraft_wind_charge".equals(card.cardId())
+                || "builtin_monster_wind_charge".equals(card.cardId())
+                || "builtin_monster_gale_burst".equals(card.cardId())
+                || "builtin_monster_sweeping_gust".equals(card.cardId());
+    }
+
+    private ItemStack windChargeStack() {
+        return new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace("wind_charge")));
     }
 
     private boolean isTridentCard(CardInstance card) {
@@ -2495,8 +2518,9 @@ public class BattleState {
                 return true;
             }
             boolean trident = isTridentCard(batch.card());
-            ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
-            ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
+            boolean windCharge = isWindChargeCard(batch.card());
+            ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? windChargeStack() : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
+            ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? ItemStack.EMPTY : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
             int drawTicks = rangedPrepareTicks(batch.card());
             LivingEntity actor = batch.user().entity();
             LivingEntity target = animated.target().entity();

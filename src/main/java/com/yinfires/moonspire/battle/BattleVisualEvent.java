@@ -159,6 +159,7 @@ public record BattleVisualEvent(
         UNDYING_REVIVE,
         RAVAGER_HEAD_RAM,
         POTION_THROW,
-        POTION_DRINK
+        POTION_DRINK,
+        WIND_CHARGE
     }
 }
