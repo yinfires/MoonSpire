@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.client;
 
 import com.yinfires.moonspire.MoonSpirePerfDiagnostics;
+import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.BattlePileSource;
 import com.yinfires.moonspire.battle.BattleSnapshot;
@@ -71,6 +72,8 @@ public final class ClientBattleState {
     private static final double KNOCKBACK_MAX_FALL_SPEED = -3.92D;
     private static final double KNOCKBACK_STOP_SPEED_SQR = 0.0025D;
     private static final float SELF_DESTRUCT_MAX_SCALE = 1.35F;
+    private static final int FAKE_DEATH_DISSIPATE_TICKS = 6;
+    private static final int FAKE_DEATH_PARTICLE_COUNT = 24;
     private static BattleSnapshot snapshot = BattleSnapshot.inactive();
     private static long snapshotVersion;
     private static UUID serverBattleId = BattleSnapshot.INACTIVE_BATTLE_ID;
@@ -105,7 +108,7 @@ public final class ClientBattleState {
     private static final List<ProjectileVisual> projectileVisuals = new ArrayList<>();
     private static final List<ScheduledVisualEvent> pendingVisualEvents = new ArrayList<>();
     private static final Map<Integer, VisualState> visualStates = new HashMap<>();
-    private static final Map<Integer, Long> fakeDeathStarts = new HashMap<>();
+    private static final Map<Integer, FakeDeathVisual> fakeDeathVisuals = new HashMap<>();
     private static final Map<PileContentsKey, PileContents> pileContents = new HashMap<>();
     private static CardInstance monsterPlayedCard;
     private static int monsterPlayedCardAttackerId = -1;
@@ -162,7 +165,7 @@ public final class ClientBattleState {
             projectileVisuals.clear();
             pendingVisualEvents.clear();
             clearVisualStates();
-            clearFakeDeathStarts();
+            clearFakeDeathVisuals();
             pileContents.clear();
             monsterPlayedCard = null;
             monsterPlayedCardAttackerId = -1;
@@ -188,7 +191,7 @@ public final class ClientBattleState {
         }
         long visualsNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - visualsStart : 0L;
         long fakeDeathStart = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() : 0L;
-        updateFakeDeathStarts(next);
+        updateFakeDeathVisuals(next);
         long fakeDeathNanos = MoonSpirePerfDiagnostics.enabled() ? MoonSpirePerfDiagnostics.now() - fakeDeathStart : 0L;
         clampSelectedHandIndex();
         if (MoonSpirePerfDiagnostics.enabled()) {
@@ -445,7 +448,7 @@ public final class ClientBattleState {
             BattleVisualEvent event = scheduled.event;
             VisualState attackerVisual = visualStates.computeIfAbsent(event.attackerId(), id -> new VisualState());
             attackerVisual.showItem(event.itemStack(), event.animationType(), event.animationTicks(), lungeStart(event), lungeStrike(event), isPounceEvent(event), riptideCenterYOffset(event));
-            if (event.healthDamage() > 0) {
+            if (event.healthDamage() > 0 && !fakeDeathHidden(event.targetId())) {
                 visualStates.computeIfAbsent(event.targetId(), id -> new VisualState()).hurtFlash(event.knockbackDelta());
             }
             if (event.gainedBlock() > 0) {
@@ -615,6 +618,16 @@ public final class ClientBattleState {
         return state != null && state.selfDestructTicks() > 0;
     }
 
+    public static boolean fakeDeathHidden(int entityId) {
+        FakeDeathVisual visual = fakeDeathVisuals.get(entityId);
+        return visual != null && (visual.stage == FakeDeathStage.DISSIPATING || visual.stage == FakeDeathStage.HIDDEN);
+    }
+
+    public static boolean fakeDeathAnimating(int entityId) {
+        FakeDeathVisual visual = fakeDeathVisuals.get(entityId);
+        return visual != null && visual.stage == FakeDeathStage.DEATH_ANIMATION;
+    }
+
     public static void clearVisualStates() {
         visualStates.clear();
         guardianBeamAnimations.clear();
@@ -622,11 +635,11 @@ public final class ClientBattleState {
     }
 
     public static int fakeDeathRenderTicks(int entityId) {
-        Long start = fakeDeathStarts.get(entityId);
-        if (start == null) {
+        FakeDeathVisual visual = fakeDeathVisuals.get(entityId);
+        if (visual == null || visual.stage != FakeDeathStage.DEATH_ANIMATION) {
             return 0;
         }
-        return Math.min(CombatantState.FAKE_DEATH_ANIMATION_TICKS, (int) ((System.nanoTime() - start) / 50_000_000L));
+        return Math.min(CombatantState.FAKE_DEATH_ANIMATION_TICKS, visual.age);
     }
 
     public static void tickDamageNumbers() {
@@ -635,6 +648,7 @@ public final class ClientBattleState {
 
     public static void tickClientLogic() {
         tickDamageNumbers(true);
+        tickFakeDeathVisuals();
     }
 
     public static void tickDamageNumbers(boolean tickVisualStates) {
@@ -733,8 +747,7 @@ public final class ClientBattleState {
         }
     }
 
-    private static void updateFakeDeathStarts(BattleSnapshot next) {
-        long now = System.nanoTime();
+    private static void updateFakeDeathVisuals(BattleSnapshot next) {
         Set<Integer> fakeDeadIds = new HashSet<>();
         for (var player : next.players()) {
             if (player.fakeDead()) {
@@ -746,7 +759,7 @@ public final class ClientBattleState {
                 fakeDeadIds.add(enemy.entityId());
             }
         }
-        Iterator<Integer> iterator = fakeDeathStarts.keySet().iterator();
+        Iterator<Integer> iterator = fakeDeathVisuals.keySet().iterator();
         while (iterator.hasNext()) {
             int entityId = iterator.next();
             if (!fakeDeadIds.contains(entityId)) {
@@ -758,15 +771,54 @@ public final class ClientBattleState {
             if (visualSelfDestructing(entityId)) {
                 continue;
             }
-            fakeDeathStarts.putIfAbsent(entityId, now);
+            fakeDeathVisuals.putIfAbsent(entityId, new FakeDeathVisual());
         }
     }
 
-    private static void clearFakeDeathStarts() {
-        for (int entityId : fakeDeathStarts.keySet()) {
+    private static void tickFakeDeathVisuals() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (snapshot.active()) {
+            for (BattleCombatantSnapshot combatant : snapshot.players()) {
+                addFakeDeathVisualIfReady(combatant);
+            }
+            for (BattleCombatantSnapshot combatant : snapshot.enemies()) {
+                addFakeDeathVisualIfReady(combatant);
+            }
+        }
+        Iterator<Map.Entry<Integer, FakeDeathVisual>> iterator = fakeDeathVisuals.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, FakeDeathVisual> entry = iterator.next();
+            int entityId = entry.getKey();
+            FakeDeathVisual visual = entry.getValue();
+            BattleCombatantSnapshot combatant = snapshot.combatant(entityId);
+            if (!snapshot.active() || combatant == null || !combatant.fakeDead()) {
+                resetFakeDeathAnimation(entityId);
+                iterator.remove();
+                continue;
+            }
+            Entity entity = minecraft.level == null ? null : minecraft.level.getEntity(entityId);
+            if (!(entity instanceof LivingEntity living) || living.isRemoved()) {
+                iterator.remove();
+                continue;
+            }
+            visual.tick(living);
+        }
+    }
+
+    private static void addFakeDeathVisualIfReady(BattleCombatantSnapshot combatant) {
+        if (combatant != null
+                && combatant.fakeDead()
+                && !visualSelfDestructing(combatant.entityId())
+                && !fakeDeathVisuals.containsKey(combatant.entityId())) {
+            fakeDeathVisuals.put(combatant.entityId(), new FakeDeathVisual());
+        }
+    }
+
+    private static void clearFakeDeathVisuals() {
+        for (int entityId : fakeDeathVisuals.keySet()) {
             resetFakeDeathAnimation(entityId);
         }
-        fakeDeathStarts.clear();
+        fakeDeathVisuals.clear();
     }
 
     private static void resetFakeDeathAnimation(int entityId) {
@@ -776,6 +828,60 @@ public final class ClientBattleState {
         }
         if (minecraft.level.getEntity(entityId) instanceof net.minecraft.world.entity.LivingEntity living && living.isAlive()) {
             living.deathTime = 0;
+        }
+    }
+
+    private static void clearVisualState(int entityId) {
+        visualStates.remove(entityId);
+    }
+
+    private static void spawnFakeDeathDissipateParticles(LivingEntity living) {
+        if (living.level() == null) {
+            return;
+        }
+        double width = Math.max(0.25D, living.getBbWidth());
+        double height = Math.max(0.25D, living.getBbHeight());
+        for (int i = 0; i < FAKE_DEATH_PARTICLE_COUNT; i++) {
+            double x = living.getX() + (living.getRandom().nextDouble() - 0.5D) * width;
+            double y = living.getY() + living.getRandom().nextDouble() * height;
+            double z = living.getZ() + (living.getRandom().nextDouble() - 0.5D) * width;
+            double dx = (living.getRandom().nextDouble() - 0.5D) * 0.08D;
+            double dy = living.getRandom().nextDouble() * 0.08D;
+            double dz = (living.getRandom().nextDouble() - 0.5D) * 0.08D;
+            living.level().addParticle(ParticleTypes.POOF, x, y, z, dx, dy, dz);
+        }
+    }
+
+    private enum FakeDeathStage {
+        DEATH_ANIMATION,
+        DISSIPATING,
+        HIDDEN
+    }
+
+    private static final class FakeDeathVisual {
+        private FakeDeathStage stage = FakeDeathStage.DEATH_ANIMATION;
+        private int age;
+
+        private void tick(LivingEntity living) {
+            if (stage == FakeDeathStage.DEATH_ANIMATION) {
+                age++;
+                living.deathTime = Math.max(living.deathTime, Math.min(CombatantState.FAKE_DEATH_ANIMATION_TICKS, age));
+                if (age >= CombatantState.FAKE_DEATH_ANIMATION_TICKS) {
+                    stage = FakeDeathStage.DISSIPATING;
+                    age = 0;
+                    clearVisualState(living.getId());
+                    spawnFakeDeathDissipateParticles(living);
+                }
+                return;
+            }
+            if (stage == FakeDeathStage.DISSIPATING) {
+                age++;
+                if (age >= FAKE_DEATH_DISSIPATE_TICKS) {
+                    stage = FakeDeathStage.HIDDEN;
+                    age = 0;
+                    clearVisualState(living.getId());
+                }
+            }
         }
     }
 

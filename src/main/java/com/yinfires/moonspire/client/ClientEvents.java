@@ -315,9 +315,16 @@ public final class ClientEvents {
 
         @SubscribeEvent
         public static void tintHurtCombatants(RenderLivingEvent.Pre<?, ?> event) {
+            if (ClientBattleState.fakeDeathHidden(event.getEntity().getId())) {
+                event.setCanceled(true);
+                return;
+            }
             if (ClientBattleState.active()) {
                 var combatant = ClientBattleState.snapshot().combatant(event.getEntity().getId());
-                if (combatant != null && combatant.fakeDead() && event.getEntity() instanceof LivingEntity living) {
+                if (combatant != null
+                        && combatant.fakeDead()
+                        && ClientBattleState.fakeDeathAnimating(event.getEntity().getId())
+                        && event.getEntity() instanceof LivingEntity living) {
                     living.deathTime = Math.max(living.deathTime, ClientBattleState.fakeDeathRenderTicks(event.getEntity().getId()));
                 }
             }
@@ -339,6 +346,9 @@ public final class ClientEvents {
         @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void applyVisualLungeOffset(RenderLivingEvent.Pre<?, ?> event) {
             LivingEntity entity = event.getEntity();
+            if (ClientBattleState.fakeDeathHidden(entity.getId())) {
+                return;
+            }
             Vec3 renderedPosition = new Vec3(
                     Mth.lerp(event.getPartialTick(), entity.xOld, entity.getX()),
                     Mth.lerp(event.getPartialTick(), entity.yOld, entity.getY()),
