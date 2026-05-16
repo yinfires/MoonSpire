@@ -1832,6 +1832,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BLOCK, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BLEED && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.BLEED, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.GAZE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GAZE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.GLOWING && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.GLOWING, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.GUARD && effect.amount() > 0) {
@@ -1852,6 +1854,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.REGENERATION, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.HASTE && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.HASTE, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.PHASE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.PHASE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.POISON && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.POISON, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.BURN && effect.amount() > 0) {
@@ -2393,6 +2397,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.HEAL,
                         DeveloperCardEffect.Kind.BLOCK,
                         DeveloperCardEffect.Kind.BLEED,
+                        DeveloperCardEffect.Kind.GAZE,
                         DeveloperCardEffect.Kind.GLOWING,
                         DeveloperCardEffect.Kind.GUARD,
                         DeveloperCardEffect.Kind.UNDYING,
@@ -2403,6 +2408,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.LOSE_STRENGTH,
                         DeveloperCardEffect.Kind.REGENERATION,
                         DeveloperCardEffect.Kind.HASTE,
+                        DeveloperCardEffect.Kind.PHASE,
                         DeveloperCardEffect.Kind.POISON,
                         DeveloperCardEffect.Kind.BURN,
                         DeveloperCardEffect.Kind.WITHER,

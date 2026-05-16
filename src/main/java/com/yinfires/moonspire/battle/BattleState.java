@@ -1341,6 +1341,7 @@ public class BattleState {
 
     private boolean isMonsterAiStatusEffect(CardEffectKind kind) {
         return kind == CardEffectKind.BLEED
+                || kind == CardEffectKind.GAZE
                 || kind == CardEffectKind.GLOWING
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.UNDYING
@@ -1351,6 +1352,7 @@ public class BattleState {
                 || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.PHASE
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WITHER
@@ -1529,6 +1531,7 @@ public class BattleState {
             case BLOCK -> scoreBlock(totalAmount, target);
             case HEAL -> scoreHeal(totalAmount, target);
             case BLEED -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BLEED, 2.2D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
+            case GAZE -> scoreNegativeStatus(totalAmount, target, BattleEffectType.GAZE, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case GLOWING -> scoreNegativeStatus(totalAmount, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
             case GUARD -> scorePositiveStatus(totalAmount, target, BattleEffectType.GUARD, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case UNDYING -> scorePositiveStatus(totalAmount, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
@@ -1537,6 +1540,7 @@ public class BattleState {
             case LOSE_STRENGTH -> scoreLoseStrength(totalAmount, target);
             case REGENERATION -> scorePositiveStatus(totalAmount, target, BattleEffectType.REGENERATION, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case HASTE -> scorePositiveStatus(totalAmount, target, BattleEffectType.HASTE, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
+            case PHASE -> scorePositiveStatus(totalAmount, target, BattleEffectType.PHASE, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
             case POISON -> scoreNegativeStatus(totalAmount, target, BattleEffectType.POISON, 2.8D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case BURN -> scoreNegativeStatus(totalAmount, target, BattleEffectType.BURN, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
             case WITHER -> scoreNegativeStatus(totalAmount, target, BattleEffectType.WITHER, 3.1D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
@@ -1713,6 +1717,9 @@ public class BattleState {
         if (kind == CardEffectKind.BLEED) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.BLEED, 2.2D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
         }
+        if (kind == CardEffectKind.GAZE) {
+            return scoreNegativeStatus(amount * count, target, BattleEffectType.GAZE, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
         if (kind == CardEffectKind.GLOWING) {
             return scoreNegativeStatus(amount * count, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
         }
@@ -1740,6 +1747,9 @@ public class BattleState {
         if (kind == CardEffectKind.THORNS) {
             return scorePositiveStatus(amount * count, target, BattleEffectType.THORNS, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
         }
+        if (kind == CardEffectKind.PHASE) {
+            return scorePositiveStatus(amount * count, target, BattleEffectType.PHASE, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
+        }
         if (kind == CardEffectKind.UNDYING) {
             return scorePositiveStatus(amount * count, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
         }
@@ -1761,6 +1771,7 @@ public class BattleState {
                 || kind == CardEffectKind.EVOKER_FANG_CIRCLE
                 || kind == CardEffectKind.CONSUME_ARROW
                 || kind == CardEffectKind.BLEED
+                || kind == CardEffectKind.GAZE
                 || kind == CardEffectKind.GLOWING
                 || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.POISON
@@ -1784,6 +1795,7 @@ public class BattleState {
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.PHASE
                 || kind == CardEffectKind.THORNS
                 || kind == CardEffectKind.FUSE
                 || kind == CardEffectKind.DRAW_CARDS
@@ -1791,12 +1803,21 @@ public class BattleState {
     }
 
     private int directDamageAmount(int amount, MonsterAiView attacker, MonsterAiView defender, boolean remote) {
-        int incoming = Math.max(0, amount + attacker.effectAmount(BattleEffectType.STRENGTH));
-        return BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), defender.effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0, remote, defender.effectAmount(BattleEffectType.GLOWING) > 0);
+        return directDamageAmount(amount, attacker, defender, remote, true);
+    }
+
+    private int directDamageAmount(int amount, MonsterAiView attacker, MonsterAiView defender, boolean remote, boolean applyPhase) {
+        int incoming = Math.max(0, amount + Math.max(0, defender.effectAmount(BattleEffectType.GAZE)) + attacker.effectAmount(BattleEffectType.STRENGTH));
+        int damage = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), defender.effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0, remote, defender.effectAmount(BattleEffectType.GLOWING) > 0);
+        if (applyPhase && incoming > 0 && defender.effectAmount(BattleEffectType.PHASE) > 0) {
+            return BattleDamageCalculator.phaseReducedDamage(damage);
+        }
+        return damage;
     }
 
     private double targetPriority(MonsterAiView target) {
         return Math.max(0, target.effectAmount(BattleEffectType.GLOWING)) * 8.0D
+                + Math.max(0, target.effectAmount(BattleEffectType.GAZE)) * 6.0D
                 + (1.0D - target.healthRatio()) * 28.0D
                 + Math.max(0, 10 - target.defense()) * 0.7D;
     }
@@ -1815,6 +1836,7 @@ public class BattleState {
         if (paralyzedAttack) {
             self.reduceEffect(BattleEffectType.PARALYSIS, 1);
         }
+        Map<MonsterAiView, Integer> gazeTriggeredAmounts = new LinkedHashMap<>();
         for (CardEffect effect : card.effects()) {
             if (effect.amount() <= 0 || !effect.kind().makesCardPlayable()) {
                 continue;
@@ -1824,6 +1846,7 @@ public class BattleState {
                 if (selectedTarget != null) {
                     int arrowDamage = consumeArrowDamage(card, hand, effect, paralyzedAttack);
                     if (arrowDamage > 0) {
+                        recordTriggeredGaze(gazeTriggeredAmounts, selectedTarget);
                         applyMonsterAiEffect(card, new CardEffect(CardEffectKind.DAMAGE, arrowDamage, CardTarget.SINGLE_ENEMY), self, selectedTarget);
                     }
                     if (arrow != null) {
@@ -1852,8 +1875,24 @@ public class BattleState {
             MonsterAiView selectedEnemy = selectedTarget != null && players.contains(selectedTarget) ? selectedTarget : bestExplicitEnemyTarget(card, hand, self, players);
             MonsterAiView selectedAlly = selectedTarget != null && enemies.contains(selectedTarget) ? selectedTarget : bestExplicitAllyTarget(card, self, enemies);
             for (MonsterAiView target : aiTargetsForEffect(simulationEffect, self, players, enemies, selectedEnemy, selectedAlly)) {
+                if (isDirectAttackEffect(simulationEffect.kind())) {
+                    recordTriggeredGaze(gazeTriggeredAmounts, target);
+                }
                 applyMonsterAiEffect(card, simulationEffect, self, target);
             }
+        }
+        for (Map.Entry<MonsterAiView, Integer> entry : gazeTriggeredAmounts.entrySet()) {
+            entry.getKey().reduceEffect(BattleEffectType.GAZE, entry.getValue());
+        }
+    }
+
+    private void recordTriggeredGaze(Map<MonsterAiView, Integer> triggeredAmounts, MonsterAiView target) {
+        if (triggeredAmounts == null || target == null) {
+            return;
+        }
+        int amount = Math.max(0, target.effectAmount(BattleEffectType.GAZE));
+        if (amount > 0) {
+            triggeredAmounts.merge(target, amount, Math::max);
         }
     }
 
@@ -1869,10 +1908,18 @@ public class BattleState {
     private void applyMonsterAiEffect(CardInstance card, CardEffect effect, MonsterAiView self, MonsterAiView target) {
         int amount = effect.amount() * Math.max(1, effect.count());
         switch (effect.kind()) {
-            case DAMAGE, EVOKER_FANG_LINE, EVOKER_FANG_CIRCLE -> target.takeDamage(directDamageAmount(amount, self, target, card.hasEffect(CardEffectKind.REMOTE)));
+            case DAMAGE, EVOKER_FANG_LINE, EVOKER_FANG_CIRCLE -> {
+                int prePhaseDamage = directDamageAmount(amount, self, target, card.hasEffect(CardEffectKind.REMOTE), false);
+                int damage = target.effectAmount(BattleEffectType.PHASE) > 0 ? BattleDamageCalculator.phaseReducedDamage(prePhaseDamage) : prePhaseDamage;
+                if (amount + Math.max(0, target.effectAmount(BattleEffectType.GAZE)) + self.effectAmount(BattleEffectType.STRENGTH) > 0) {
+                    target.reduceEffect(BattleEffectType.PHASE, 1);
+                }
+                target.takeDamage(damage);
+            }
             case BLOCK -> target.addDefense(amount);
             case HEAL -> target.heal(amount);
             case BLEED -> target.addEffect(BattleEffectType.BLEED, amount);
+            case GAZE -> target.addEffect(BattleEffectType.GAZE, amount);
             case GLOWING -> target.addEffect(BattleEffectType.GLOWING, amount);
             case GUARD -> target.addEffect(BattleEffectType.GUARD, amount);
             case UNDYING -> target.addEffect(BattleEffectType.UNDYING, amount);
@@ -1882,6 +1929,7 @@ public class BattleState {
             case LOSE_STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, -amount);
             case REGENERATION -> target.addEffect(BattleEffectType.REGENERATION, amount);
             case HASTE -> target.addEffect(BattleEffectType.HASTE, amount);
+            case PHASE -> target.addEffect(BattleEffectType.PHASE, amount);
             case POISON -> target.addEffect(BattleEffectType.POISON, amount);
             case BURN -> target.addEffect(BattleEffectType.BURN, amount);
             case WITHER -> target.addEffect(BattleEffectType.WITHER, amount);
@@ -1916,10 +1964,6 @@ public class BattleState {
         boolean attackUse = triggersAttackUse(card, user);
         boolean paralyzedAttack = attackUse && user.effectAmount(BattleEffectType.PARALYSIS) > 0;
         if (attackUse) {
-            PendingEffect bleed = bleedEffectForAttack(user);
-            if (bleed != null) {
-                pendingCardSteps.add(new PendingBatchStep(new PendingCardBatch(user, card.sourceStack(), ItemStack.EMPTY, null, List.of(bleed))));
-            }
             user.reduceEffect(BattleEffectType.PARALYSIS, 1);
         }
         List<CardEffect> currentEffects = new ArrayList<>();
@@ -2342,14 +2386,6 @@ public class BattleState {
         return LungeStyle.NORMAL;
     }
 
-    private PendingEffect bleedEffectForAttack(CombatantState user) {
-        int bleed = user.effectAmount(BattleEffectType.BLEED);
-        if (bleed <= 0) {
-            return null;
-        }
-        return new PendingEffect(CardEffectKind.DAMAGE, bleed, user, true, false);
-    }
-
     private void emitVisual(LivingEntity attacker, LivingEntity target, ItemStack stack, CardInstance playedCard, BattleDamageResult result, int delayTicks) {
         emitVisual(attacker, target, stack, ItemStack.EMPTY, playedCard, result, 0, 0, delayTicks, BattleVisualEvent.AnimationType.NONE, 0);
     }
@@ -2687,6 +2723,7 @@ public class BattleState {
 
     private void applyPendingCardBatch(PendingCardBatch batch, boolean suppressCardVisual, BattleVisualEvent.AnimationType hitAnimationType) {
         Map<CombatantState, BattleDamageResult> damageResults = new LinkedHashMap<>();
+        Map<CombatantState, BattleDamageResult> bleedResults = new LinkedHashMap<>();
         Map<CombatantState, BattleDamageResult> thornsResults = new LinkedHashMap<>();
         Map<CombatantState, Integer> blockGains = new LinkedHashMap<>();
         Map<CombatantState, Integer> heals = new LinkedHashMap<>();
@@ -2695,27 +2732,40 @@ public class BattleState {
         Map<CombatantState, Vec3> knockbackDeltas = new LinkedHashMap<>();
         Set<CombatantState> knockbackTargets = new LinkedHashSet<>();
         Set<CombatantState> effectOnlyTargets = new LinkedHashSet<>();
+        Map<CombatantState, Integer> gazeTriggeredAmounts = new LinkedHashMap<>();
         UUID killCredit = playerKillCredit(batch.user());
         for (PendingEffect effect : batch.effects()) {
             if (effect.target() == null || effect.target().fakeDead()) {
                 continue;
             }
             if (isDirectAttackEffect(effect.kind())) {
+                boolean cardAttackDamage = !effect.effectDamage();
+                int gazeBonus = cardAttackDamage ? Math.max(0, effect.target().effectAmount(BattleEffectType.GAZE)) : 0;
                 BattleDamageResult result = effect.effectDamage()
                         ? effect.target().applyEffectDamage(effect.amount(), killCredit)
-                        : effect.target().applyCardDamage(effect.amount(), batch.user(), killCredit, effect.remoteDamage());
+                        : effect.target().applyCardDamage(effect.amount(), batch.user(), killCredit, effect.remoteDamage(), gazeBonus, true);
                 emitUndyingReviveIfTriggered(effect.target());
                 damageResults.merge(effect.target(), result, BattleState::mergeDamageResult);
                 if (effect.effectDamage()) {
                     effectDamageTargets.add(effect.target());
                 } else {
                     cardDamageTargets.add(effect.target());
+                    if (gazeBonus > 0) {
+                        gazeTriggeredAmounts.merge(effect.target(), gazeBonus, Math::max);
+                    }
                 }
                 if (triggersThorns(effect, batch.user())) {
                     BattleDamageResult thornsResult = applyThornsDamage(effect.target(), batch.user());
                     emitUndyingReviveIfTriggered(batch.user());
                     if (thornsResult.blockedDamage() > 0 || thornsResult.healthDamage() > 0) {
                         thornsResults.merge(effect.target(), thornsResult, BattleState::mergeDamageResult);
+                    }
+                }
+                if (cardAttackDamage) {
+                    BattleDamageResult bleedResult = applyAttackBleedDamage(batch.user());
+                    emitUndyingReviveIfTriggered(batch.user());
+                    if (bleedResult.blockedDamage() > 0 || bleedResult.healthDamage() > 0) {
+                        bleedResults.merge(batch.user(), bleedResult, BattleState::mergeDamageResult);
                     }
                 }
                 if (!effect.effectDamage() && result.healthDamage() > 0 && !effect.target().fakeDead()) {
@@ -2735,6 +2785,9 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 effect.target().addEffect(BattleEffectType.BLEED, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.GAZE) {
+                effect.target().addEffect(BattleEffectType.GAZE, effect.amount());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.GLOWING) {
                 effect.target().addEffect(BattleEffectType.GLOWING, effect.amount());
@@ -2759,6 +2812,9 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.HASTE) {
                 effect.target().addEffect(BattleEffectType.HASTE, effect.amount());
+                effectOnlyTargets.add(effect.target());
+            } else if (effect.kind() == CardEffectKind.PHASE) {
+                effect.target().addEffect(BattleEffectType.PHASE, effect.amount());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.POISON) {
                 effect.target().addEffect(BattleEffectType.POISON, effect.amount());
@@ -2798,6 +2854,12 @@ public class BattleState {
                 effectOnlyTargets.add(effect.target());
             }
         }
+        for (Map.Entry<CombatantState, Integer> entry : gazeTriggeredAmounts.entrySet()) {
+            CombatantState target = entry.getKey();
+            if (!hasRemainingDirectCardDamageTo(target)) {
+                target.reduceEffect(BattleEffectType.GAZE, entry.getValue());
+            }
+        }
         for (CombatantState target : knockbackTargets) {
             Vec3 delta = applyBattleKnockback(batch.user().entity(), target.entity(), damageResults.getOrDefault(target, new BattleDamageResult(0, 0, 0)));
             if (delta.lengthSqr() > 0.0001D) {
@@ -2818,6 +2880,9 @@ public class BattleState {
                 emittedCardVisual = true;
             }
         }
+        for (Map.Entry<CombatantState, BattleDamageResult> entry : bleedResults.entrySet()) {
+            emitVisual(entry.getKey().entity(), entry.getKey().entity(), ItemStack.EMPTY, ItemStack.EMPTY, null, entry.getValue(), 0, 0, 0, BattleVisualEvent.AnimationType.NONE, 0);
+        }
         for (Map.Entry<CombatantState, BattleDamageResult> entry : thornsResults.entrySet()) {
             emitVisual(entry.getKey().entity(), batch.user().entity(), ItemStack.EMPTY, ItemStack.EMPTY, null, entry.getValue(), 0, 0, 0, BattleVisualEvent.AnimationType.NONE, 0);
         }
@@ -2833,10 +2898,67 @@ public class BattleState {
         }
     }
 
+    private BattleDamageResult applyAttackBleedDamage(CombatantState attacker) {
+        if (attacker == null || attacker.fakeDead()) {
+            return new BattleDamageResult(0, 0, 0);
+        }
+        int bleed = attacker.effectAmount(BattleEffectType.BLEED);
+        if (bleed <= 0) {
+            return new BattleDamageResult(0, 0, 0);
+        }
+        return attacker.applyEffectDamage(bleed, playerKillCredit(attacker));
+    }
+
+    private boolean hasRemainingDirectCardDamageTo(CombatantState target) {
+        if (target == null) {
+            return false;
+        }
+        for (PendingCardBatch batch : pendingCardBatches) {
+            if (batchHasDirectCardDamageTo(batch, target)) {
+                return true;
+            }
+        }
+        for (PendingCardStep step : pendingCardSteps) {
+            if (step instanceof PendingBatchStep batchStep && batchHasDirectCardDamageTo(batchStep.batch(), target)) {
+                return true;
+            }
+            if (step instanceof PendingHandSelectionStep selectionStep && arrowResolutionHasDirectCardDamageTo(selectionStep.arrowResolution(), target)) {
+                return true;
+            }
+        }
+        return pendingHandSelection != null && arrowResolutionHasDirectCardDamageTo(pendingHandSelection.arrowResolution(), target);
+    }
+
+    private boolean batchHasDirectCardDamageTo(PendingCardBatch batch, CombatantState target) {
+        if (batch == null || target == null) {
+            return false;
+        }
+        for (PendingEffect effect : batch.effects()) {
+            if (isDirectAttackEffect(effect.kind()) && !effect.effectDamage() && effect.target() == target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean arrowResolutionHasDirectCardDamageTo(ArrowResolution resolution, CombatantState target) {
+        if (resolution == null || target == null || resolution.selectedTarget() != target) {
+            return false;
+        }
+        if (resolution.amount() > 0) {
+            return true;
+        }
+        for (CardEffect effect : resolution.attachedEffects()) {
+            if (isDirectAttackEffect(effect.kind()) && effect.amount() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean triggersThorns(PendingEffect effect, CombatantState attacker) {
         return isDirectAttackEffect(effect.kind())
                 && !effect.effectDamage()
-                && effect.amount() > 0
                 && attacker != null
                 && effect.target() != null
                 && attacker != effect.target()
@@ -4526,6 +4648,13 @@ public class BattleState {
             if (next > 0 || (type.allowsNegativeStacks() && next != 0)) {
                 effects.put(type, next);
             } else {
+                effects.remove(type);
+            }
+            health = Math.min(health, effectiveMaxHealth());
+        }
+
+        private void clearEffect(BattleEffectType type) {
+            if (type != null) {
                 effects.remove(type);
             }
             health = Math.min(health, effectiveMaxHealth());

@@ -29,6 +29,15 @@ public final class BattleDamageCalculator {
         return Math.min(MAX_GUARD_REDUCTION_STACKS, Math.max(0, stacks)) * GUARD_REDUCTION_PERCENT_PER_STACK;
     }
 
+    public static int phaseReducedDamage(int damage) {
+        int incoming = Math.max(0, damage);
+        if (incoming <= 0) {
+            return 0;
+        }
+        int reduction = Math.max(1, (incoming + 1) / 2);
+        return Math.max(0, incoming - reduction);
+    }
+
     private static float speedFactor(int attackerSpeed, int defenderSpeed, int defenderBlock, boolean ignoreSpeed) {
         if (ignoreSpeed || defenderBlock > 0) {
             return 1.0F;

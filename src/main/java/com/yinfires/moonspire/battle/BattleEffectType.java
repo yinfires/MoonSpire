@@ -2,6 +2,7 @@ package com.yinfires.moonspire.battle;
 
 public enum BattleEffectType {
     BLEED("bleed", "effect.moonspire.bleed.name", "effect.moonspire.bleed.description", "effect.moonspire.bleed.active_description", "gui/effects/bleeding.png"),
+    GAZE("gaze", "effect.moonspire.gaze.name", "effect.moonspire.gaze.description", "effect.moonspire.gaze.active_description", "gui/effects/gaze.png"),
     GLOWING("glowing", "effect.moonspire.glowing.name", "effect.moonspire.glowing.description", "effect.moonspire.glowing.active_description", "gui/effects/glowing.png"),
     GUARD("guard", "effect.moonspire.guard.name", "effect.moonspire.guard.description", "effect.moonspire.guard.active_description", "gui/effects/guard.png"),
     UNDYING("undying", "effect.moonspire.undying.name", "effect.moonspire.undying.description", "effect.moonspire.undying.active_description", "gui/effects/undying.png"),
@@ -10,6 +11,7 @@ public enum BattleEffectType {
     STRENGTH("strength", "effect.moonspire.strength.name", "effect.moonspire.strength.description", "effect.moonspire.strength.active_description", "gui/effects/strength.png", true),
     REGENERATION("regeneration", "effect.moonspire.regeneration.name", "effect.moonspire.regeneration.description", "effect.moonspire.regeneration.active_description", "gui/effects/regeneration.png"),
     HASTE("haste", "effect.moonspire.haste.name", "effect.moonspire.haste.description", "effect.moonspire.haste.active_description", "gui/effects/haste.png"),
+    PHASE("phase", "effect.moonspire.phase.name", "effect.moonspire.phase.description", "effect.moonspire.phase.active_description", "gui/effects/phase.png"),
     POISON("poison", "effect.moonspire.poison.name", "effect.moonspire.poison.description", "effect.moonspire.poison.active_description", "gui/effects/poison.png"),
     BURN("burn", "effect.moonspire.burn.name", "effect.moonspire.burn.description", "effect.moonspire.burn.active_description", "gui/effects/burn.png"),
     WITHER("wither", "effect.moonspire.wither.name", "effect.moonspire.wither.description", "effect.moonspire.wither.active_description", "gui/effects/wither.png"),

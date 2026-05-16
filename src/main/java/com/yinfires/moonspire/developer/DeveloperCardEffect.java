@@ -56,6 +56,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
                 || kind == Kind.STRENGTH
                 || kind == Kind.REGENERATION
                 || kind == Kind.HASTE
+                || kind == Kind.PHASE
                 || kind == Kind.FUSE
                 || kind == Kind.THORNS
                 || kind == Kind.DRAW_CARDS
@@ -104,6 +105,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         HEAL,
         BLOCK,
         BLEED,
+        GAZE,
         GLOWING,
         GUARD,
         UNDYING,
@@ -116,6 +118,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         LOSE_STRENGTH,
         REGENERATION,
         HASTE,
+        PHASE,
         POISON,
         BURN,
         WITHER,

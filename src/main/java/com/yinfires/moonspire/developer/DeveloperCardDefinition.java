@@ -102,6 +102,7 @@ public record DeveloperCardDefinition(
             case HEAL -> CardEffectKind.HEAL;
             case BLOCK -> CardEffectKind.BLOCK;
             case BLEED -> CardEffectKind.BLEED;
+            case GAZE -> CardEffectKind.GAZE;
             case GLOWING -> CardEffectKind.GLOWING;
             case GUARD -> CardEffectKind.GUARD;
             case UNDYING -> CardEffectKind.UNDYING;
@@ -112,6 +113,7 @@ public record DeveloperCardDefinition(
             case LOSE_STRENGTH -> CardEffectKind.LOSE_STRENGTH;
             case REGENERATION -> CardEffectKind.REGENERATION;
             case HASTE -> CardEffectKind.HASTE;
+            case PHASE -> CardEffectKind.PHASE;
             case POISON -> CardEffectKind.POISON;
             case BURN -> CardEffectKind.BURN;
             case WITHER -> CardEffectKind.WITHER;

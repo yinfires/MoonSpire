@@ -398,6 +398,16 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_splattering_pressure", "card.moonspire.monster.splattering_pressure.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
                         new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_ender_stare", "card.moonspire.monster.ender_stare.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.GAZE, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_blink_step", "card.moonspire.monster.blink_step.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.PHASE, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_void_claw", "card.moonspire.monster.void_claw.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:enderman_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_pearl_shift", "card.moonspire.monster.pearl_shift.name", "", 2, 0, 4, List.of(
+                        new CardEffect(CardEffectKind.PHASE, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_rending_gaze", "card.moonspire.monster.rending_gaze.name", "", 2, 7, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

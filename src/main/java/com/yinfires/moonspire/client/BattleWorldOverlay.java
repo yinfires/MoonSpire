@@ -357,12 +357,14 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
+                || kind == CardEffectKind.PHASE
                 || kind == CardEffectKind.THORNS
                 || kind == CardEffectKind.FUSE;
     }
 
     private static boolean negativeEffect(CardEffectKind kind) {
-        return kind == CardEffectKind.LOSE_STRENGTH
+        return kind == CardEffectKind.GAZE
+                || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.POISON
                 || kind == CardEffectKind.BURN
                 || kind == CardEffectKind.WITHER

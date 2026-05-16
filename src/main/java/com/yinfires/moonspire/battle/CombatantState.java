@@ -179,8 +179,16 @@ public class CombatantState {
     }
 
     public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill, boolean ignoreSpeed) {
-        int incoming = Math.max(0, amount + attacker.effectAmount(BattleEffectType.STRENGTH));
+        return applyCardDamage(amount, attacker, creditedPlayerKill, ignoreSpeed, 0, true);
+    }
+
+    public BattleDamageResult applyCardDamage(int amount, CombatantState attacker, UUID creditedPlayerKill, boolean ignoreSpeed, int bonusDamage, boolean triggerPhase) {
+        int incoming = Math.max(0, amount + bonusDamage + attacker.effectAmount(BattleEffectType.STRENGTH));
         int modifiedIncoming = BattleDamageCalculator.directDamage(incoming, attacker.roundSpeed(), this.roundSpeed(), defense, effectAmount(BattleEffectType.GUARD), attacker.effectAmount(BattleEffectType.WEAKNESS) > 0, ignoreSpeed, effectAmount(BattleEffectType.GLOWING) > 0);
+        if (triggerPhase && incoming > 0 && effectAmount(BattleEffectType.PHASE) > 0) {
+            reduceEffect(BattleEffectType.PHASE, 1);
+            modifiedIncoming = BattleDamageCalculator.phaseReducedDamage(modifiedIncoming);
+        }
         return applyBlockableDamage(incoming, modifiedIncoming, creditedPlayerKill);
     }
 

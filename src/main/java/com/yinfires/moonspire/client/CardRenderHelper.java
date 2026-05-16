@@ -604,7 +604,12 @@ public final class CardRenderHelper {
     }
 
     public static int previewDamageAmount(int amount, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, int attackerStrength, boolean attackerWeak, boolean ignoreSpeed, boolean glowingTarget) {
-        return BattleDamageCalculator.directDamage(Math.max(0, amount + attackerStrength), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerWeak, ignoreSpeed, glowingTarget);
+        return previewDamageAmount(amount, attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerStrength, attackerWeak, ignoreSpeed, glowingTarget, 0, false);
+    }
+
+    public static int previewDamageAmount(int amount, int attackerSpeed, int defenderSpeed, int defenderBlock, int defenderGuard, int attackerStrength, boolean attackerWeak, boolean ignoreSpeed, boolean glowingTarget, int gazeBonus, boolean phased) {
+        int damage = BattleDamageCalculator.directDamage(Math.max(0, amount + attackerStrength + Math.max(0, gazeBonus)), attackerSpeed, defenderSpeed, defenderBlock, defenderGuard, attackerWeak, ignoreSpeed, glowingTarget);
+        return phased ? BattleDamageCalculator.phaseReducedDamage(damage) : damage;
     }
 
     public static List<Component> descriptionLines(CardInstance card, int attackValue, boolean modifiedAttack) {
@@ -641,6 +646,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(blockDescriptionKey(effect.target()), statNumber(effect.amount(), displayedBlockAmount(effect, values, i)), keyword(Component.translatable("keyword.moonspire.block.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 addEffectLine(lines, Component.translatable(bleedDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.bleed.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.GAZE) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.gaze.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GLOWING) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "glowing", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.glowing.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GUARD) {
@@ -657,6 +664,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "regeneration", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.regeneration.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.HASTE) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "haste", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.haste.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.PHASE) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "haste", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.phase.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.POISON) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.poison.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.BURN) {
@@ -835,10 +844,23 @@ public final class CardRenderHelper {
     }
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender, boolean paralyzedAttack) {
-        int incoming = card.effects().stream()
-                .filter(effect -> CardInstance.isAttackDamageEffect(effect.kind()) && effect.target().targetsEnemy())
-                .mapToInt(effect -> previewDamageAmount(paralysisAdjustedDamage(effect.amount(), paralyzedAttack), attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), effectAmount(defender, BattleEffectType.GLOWING) > 0) * effect.count())
-                .sum();
+        int incoming = 0;
+        int phaseStacks = Math.max(0, effectAmount(defender, BattleEffectType.PHASE));
+        int gazeBonus = Math.max(0, effectAmount(defender, BattleEffectType.GAZE));
+        for (CardEffect effect : card.effects()) {
+            if (!CardInstance.isAttackDamageEffect(effect.kind()) || !effect.target().targetsEnemy()) {
+                continue;
+            }
+            int baseDamage = paralysisAdjustedDamage(effect.amount(), paralyzedAttack);
+            int hits = Math.max(1, effect.count());
+            for (int i = 0; i < hits; i++) {
+                int prePhase = previewDamageAmount(baseDamage, attacker.roundSpeed(), defender.roundSpeed(), defender.defense(), effectAmount(defender, BattleEffectType.GUARD), effectAmount(attacker, BattleEffectType.STRENGTH), effectAmount(attacker, BattleEffectType.WEAKNESS) > 0, card.hasEffect(CardEffectKind.REMOTE), effectAmount(defender, BattleEffectType.GLOWING) > 0, gazeBonus, false);
+                incoming += phaseStacks > 0 ? BattleDamageCalculator.phaseReducedDamage(prePhase) : prePhase;
+                if (phaseStacks > 0 && prePhase > 0) {
+                    phaseStacks--;
+                }
+            }
+        }
         return Math.max(0, incoming);
     }
 
@@ -908,6 +930,8 @@ public final class CardRenderHelper {
         for (CardEffect effect : card.effects()) {
             if (effect.kind() == CardEffectKind.BLEED && renderedTips.add("bleed")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.bleed.name"), Component.translatable("effect.moonspire.bleed.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.GAZE && renderedTips.add("gaze")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.gaze.name"), Component.translatable("effect.moonspire.gaze.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.GLOWING && renderedTips.add("glowing")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.glowing.name"), Component.translatable("effect.moonspire.glowing.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
@@ -922,6 +946,8 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.regeneration.name"), Component.translatable("effect.moonspire.regeneration.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.HASTE && renderedTips.add("haste")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.haste.name"), Component.translatable("effect.moonspire.haste.description"), x, tipY);
+            } else if (effect.kind() == CardEffectKind.PHASE && renderedTips.add("phase")) {
+                tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.phase.name"), Component.translatable("effect.moonspire.phase.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.POISON && renderedTips.add("poison")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
@@ -1030,6 +1056,8 @@ public final class CardRenderHelper {
         for (CardEffect effect : card.effects()) {
             if (effect.kind() == CardEffectKind.BLEED && renderedTips.add("bleed")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.bleed.name"), Component.translatable("effect.moonspire.bleed.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.GAZE && renderedTips.add("gaze")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.gaze.name"), Component.translatable("effect.moonspire.gaze.description")) + 4;
             } else if (effect.kind() == CardEffectKind.GLOWING && renderedTips.add("glowing")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.glowing.name"), Component.translatable("effect.moonspire.glowing.description")) + 4;
             } else if (effect.kind() == CardEffectKind.GUARD && renderedTips.add("guard")) {
@@ -1044,6 +1072,8 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.regeneration.name"), Component.translatable("effect.moonspire.regeneration.description")) + 4;
             } else if (effect.kind() == CardEffectKind.HASTE && renderedTips.add("haste")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.haste.name"), Component.translatable("effect.moonspire.haste.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.PHASE && renderedTips.add("phase")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.phase.name"), Component.translatable("effect.moonspire.phase.description")) + 4;
             } else if (effect.kind() == CardEffectKind.POISON && renderedTips.add("poison")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.poison.name"), Component.translatable("effect.moonspire.poison.description")) + 4;
             } else if (effect.kind() == CardEffectKind.BURN && renderedTips.add("burn")) {
