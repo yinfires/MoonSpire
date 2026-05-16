@@ -6,6 +6,7 @@ public enum BattleEffectType {
     GUARD("guard", "effect.moonspire.guard.name", "effect.moonspire.guard.description", "effect.moonspire.guard.active_description", "gui/effects/guard.png"),
     UNDYING("undying", "effect.moonspire.undying.name", "effect.moonspire.undying.description", "effect.moonspire.undying.active_description", "gui/effects/undying.png"),
     SUMMONED("summoned", "effect.moonspire.summoned.name", "effect.moonspire.summoned.description", "effect.moonspire.summoned.active_description", "gui/effects/summoned.png"),
+    SPLIT("split", "effect.moonspire.split.name", "effect.moonspire.split.description", "effect.moonspire.split.active_description", "gui/effects/split.png"),
     STRENGTH("strength", "effect.moonspire.strength.name", "effect.moonspire.strength.description", "effect.moonspire.strength.active_description", "gui/effects/strength.png", true),
     REGENERATION("regeneration", "effect.moonspire.regeneration.name", "effect.moonspire.regeneration.description", "effect.moonspire.regeneration.active_description", "gui/effects/regeneration.png"),
     HASTE("haste", "effect.moonspire.haste.name", "effect.moonspire.haste.description", "effect.moonspire.haste.active_description", "gui/effects/haste.png"),

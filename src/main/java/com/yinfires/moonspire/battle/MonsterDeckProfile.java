@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.battle;
 
 import com.yinfires.moonspire.card.CardBalance;
+import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.developer.DeveloperDataManager;
@@ -10,10 +11,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.Slime;
 
 public final class MonsterDeckProfile {
     private static final List<String> ZOMBIE_DEFAULT_DECK = List.of(
@@ -242,6 +245,19 @@ public final class MonsterDeckProfile {
             "builtin_monster_thick_hide",
             "builtin_monster_thick_hide",
             "builtin_monster_terrifying_roar");
+    private static final List<String> SLIME_DEFAULT_DECK = List.of(
+            "builtin_monster_slime_bump",
+            "builtin_monster_slime_bump",
+            "builtin_monster_slime_bump",
+            "builtin_monster_sticky_slap",
+            "builtin_monster_sticky_slap",
+            "builtin_monster_viscous_snare",
+            "builtin_monster_viscous_snare",
+            "builtin_monster_gelatinous_body",
+            "builtin_monster_gelatinous_body",
+            "builtin_monster_splattering_pressure");
+    private static final float SLIME_LARGE_BASE_HEALTH = 16.0F;
+    private static final float SPLIT_CHILD_VALUE_MULTIPLIER = 0.5F;
     private static final List<String> FALLBACK_DEFAULT_DECK = List.of(
             "builtin_monster_strike",
             "builtin_monster_guard",
@@ -271,6 +287,9 @@ public final class MonsterDeckProfile {
         if (override.isPresent() && override.get().hasRewardOverride()) {
             return uniqueResolvableIds(override.get().rewardCardIds());
         }
+        if (monster != null && monster.getType() == EntityType.SLIME && (override.isEmpty() || !override.get().hasDeckOverride())) {
+            return uniqueResolvableIds(SLIME_DEFAULT_DECK);
+        }
         return uniqueCardIds(battleStartDeck);
     }
 
@@ -296,6 +315,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.RAVAGER) {
             return cards(RAVAGER_DEFAULT_DECK);
+        }
+        if (type == EntityType.SLIME) {
+            return slimeCards(monster);
         }
         if (type == EntityType.GUARDIAN) {
             return cards(GUARDIAN_DEFAULT_DECK);
@@ -360,6 +382,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.RAVAGER) {
             return RAVAGER_DEFAULT_DECK;
+        }
+        if (type == EntityType.SLIME) {
+            return SLIME_DEFAULT_DECK;
         }
         if (type == EntityType.GUARDIAN) {
             return GUARDIAN_DEFAULT_DECK;
@@ -426,6 +451,19 @@ public final class MonsterDeckProfile {
         return isSkeletonFamily(type) || type == EntityType.PILLAGER;
     }
 
+    public static int defaultSlimeSplitStacks(LivingEntity entity) {
+        if (entity instanceof Slime slime && entity.getType() == EntityType.SLIME) {
+            int size = slime.getSize();
+            if (size >= 4) {
+                return 2;
+            }
+            if (size >= 2) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     public static int defaultBaseSpeed(LivingEntity entity) {
         if (entity == null) {
             return CardBalance.PLAYER_BASE_SPEED;
@@ -443,6 +481,12 @@ public final class MonsterDeckProfile {
         }
         if (entity.getType() == EntityType.EVOKER) {
             return 60.0F;
+        }
+        if (entity instanceof Slime slime && entity.getType() == EntityType.SLIME) {
+            int reductions = slimeWeakeningSteps(slime);
+            if (reductions > 0) {
+                return weakenedPositiveFloat(SLIME_LARGE_BASE_HEALTH, reductions);
+            }
         }
         return Math.max(1.0F, entity.getMaxHealth());
     }
@@ -463,6 +507,91 @@ public final class MonsterDeckProfile {
                 card("builtin_monster_heavy_strike", attack + 3, 0, 2),
                 card("builtin_monster_strike", attack, 0, attack >= 8 ? 2 : 1),
                 card("builtin_monster_guard", 0, defense, 1)));
+    }
+
+    private static List<CardInstance> slimeCards(LivingEntity monster) {
+        List<CardInstance> cards = cards(SLIME_DEFAULT_DECK);
+        if (monster instanceof Slime slime) {
+            int reductions = slimeWeakeningSteps(slime);
+            for (int i = 0; i < reductions; i++) {
+                cards = weakenedCards(cards);
+            }
+        }
+        return cards;
+    }
+
+    private static int slimeWeakeningSteps(Slime slime) {
+        int size = slime.getSize();
+        if (size >= 4) {
+            return 0;
+        }
+        if (size >= 2) {
+            return 1;
+        }
+        return 2;
+    }
+
+    private static List<CardInstance> weakenedCards(List<CardInstance> sourceCards) {
+        List<CardInstance> cards = new ArrayList<>();
+        for (CardInstance card : sourceCards) {
+            cards.add(weakenedCard(card));
+        }
+        return cards;
+    }
+
+    private static CardInstance weakenedCard(CardInstance card) {
+        List<CardEffect> effects = new ArrayList<>();
+        for (CardEffect effect : card.effects()) {
+            int amount = effect.kind().usesAmount() ? weakenedNonZero(effect.amount()) : effect.amount();
+            effects.add(new CardEffect(effect.kind(), amount, effect.target(), effect.count(), effect.entityTypeId()));
+        }
+        return new CardInstance(
+                UUID.randomUUID(),
+                slimeWeakenedCardId(card),
+                card.sourceStack().copy(),
+                card.nameKey(),
+                card.descriptionKey(),
+                weakenedNonZero(card.attack()),
+                weakenedNonZero(card.defense()),
+                card.baseCost(),
+                card.battleCostReduction(),
+                effects,
+                card.sourceType(),
+                "",
+                card.artPath(),
+                card.artItemId(),
+                card.artX(),
+                card.artY(),
+                card.artScale(),
+                card.faceId());
+    }
+
+    private static String slimeWeakenedCardId(CardInstance card) {
+        String sourceId = card == null ? "" : card.cardId();
+        if (sourceId == null || sourceId.isBlank()) {
+            sourceId = "card";
+        }
+        return "dynamic_slime_weakened_" + dynamicCardIdSuffix(sourceId);
+    }
+
+    private static String dynamicCardIdSuffix(String sourceId) {
+        String normalized = MoonSpireCardRegistry.normalizeId(sourceId);
+        if (normalized.isBlank()) {
+            return "card";
+        }
+        return normalized.replace(':', '_');
+    }
+
+    private static int weakenedNonZero(int value) {
+        return value <= 0 ? 0 : Math.max(1, (int) Math.ceil(value * SPLIT_CHILD_VALUE_MULTIPLIER));
+    }
+
+    private static float weakenedPositiveFloat(float value, int reductions) {
+        float result = Math.max(1.0F, value);
+        for (int i = 0; i < reductions; i++) {
+            result = Math.max(1.0F, (float) Math.ceil(result * SPLIT_CHILD_VALUE_MULTIPLIER));
+        }
+        return result;
     }
 
     private static CardInstance card(String id) {

@@ -19,13 +19,14 @@ public record BattleCombatantSnapshot(
         int fakeDeathTicks,
         long deckVersion,
         int battleDeckCount,
+        boolean dynamicCombatant,
         List<BattleEffectSnapshot> effects) {
     public static final StreamCodec<RegistryFriendlyByteBuf, BattleCombatantSnapshot> STREAM_CODEC = StreamCodec.of(
             BattleCombatantSnapshot::write,
             BattleCombatantSnapshot::read);
 
     public static BattleCombatantSnapshot empty() {
-        return new BattleCombatantSnapshot(-1, 0.0F, 0.0F, 0, 0, 0, 0, 0, false, false, 0, 0L, 0, List.of());
+        return new BattleCombatantSnapshot(-1, 0.0F, 0.0F, 0, 0, 0, 0, 0, false, false, 0, 0L, 0, false, List.of());
     }
 
     private static void write(RegistryFriendlyByteBuf buf, BattleCombatantSnapshot snapshot) {
@@ -42,6 +43,7 @@ public record BattleCombatantSnapshot(
         buf.writeVarInt(snapshot.fakeDeathTicks);
         buf.writeVarLong(snapshot.deckVersion);
         buf.writeVarInt(snapshot.battleDeckCount);
+        buf.writeBoolean(snapshot.dynamicCombatant);
         buf.writeVarInt(snapshot.effects.size());
         for (BattleEffectSnapshot effect : snapshot.effects) {
             BattleEffectSnapshot.STREAM_CODEC.encode(buf, effect);
@@ -62,11 +64,12 @@ public record BattleCombatantSnapshot(
         int fakeDeathTicks = buf.readVarInt();
         long deckVersion = buf.readVarLong();
         int battleDeckCount = buf.readVarInt();
-        int effectCount = Math.min(16, buf.readVarInt());
+        boolean dynamicCombatant = buf.readBoolean();
+        int effectCount = Math.max(0, buf.readVarInt());
         List<BattleEffectSnapshot> effects = new ArrayList<>(effectCount);
         for (int i = 0; i < effectCount; i++) {
             effects.add(BattleEffectSnapshot.STREAM_CODEC.decode(buf));
         }
-        return new BattleCombatantSnapshot(entityId, health, maxHealth, defense, energyLeft, maxEnergy, baseSpeed, roundSpeed, endedTurn, fakeDead, fakeDeathTicks, deckVersion, battleDeckCount, effects);
+        return new BattleCombatantSnapshot(entityId, health, maxHealth, defense, energyLeft, maxEnergy, baseSpeed, roundSpeed, endedTurn, fakeDead, fakeDeathTicks, deckVersion, battleDeckCount, dynamicCombatant, effects);
     }
 }

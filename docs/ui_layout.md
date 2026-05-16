@@ -42,6 +42,7 @@ Moon Spire 的自定义界面底图都放在：
 | `effects/guard.png` | 守护效果图标 | 复制自原版抗性提升 `assets/minecraft/textures/mob_effect/resistance.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.GUARD` 通过 `iconTexturePath` 绑定贴图；守护点数显示在图标右下角，tooltip 按层数显示减伤百分比 |
 | `effects/undying.png` | 不死效果图标 | 复制自原版不死图腾 `assets/minecraft/textures/item/totem_of_undying.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.UNDYING` 通过 `iconTexturePath` 绑定贴图；不死层数显示在图标右下角，tooltip 显示死亡后 50% 最大生命复活和层数减少规则 |
 | `effects/summoned.png` | 召唤物效果图标 | 复制自原版山羊角 `assets/minecraft/textures/item/goat_horn.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.SUMMONED` 通过 `iconTexturePath` 绑定贴图；召唤物层数显示在图标右下角，tooltip 显示回合结束减少层数和 0 层死亡规则 |
+| `effects/split.png` | 分裂效果图标 | 复制自原版粘液球 `assets/minecraft/textures/item/slime_ball.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.SPLIT` 通过 `iconTexturePath` 绑定贴图；分裂层数显示在图标右下角，tooltip 显示死亡时分裂出两个更小且更弱的同类型个体，并让子体层数减少 1 |
 | `effects/glowing.png` | 发光效果图标 | 复制自原版发光 `assets/minecraft/textures/mob_effect/glowing.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.GLOWING` 通过 `iconTexturePath` 绑定贴图；发光层数显示在图标右下角，拥有该状态的实体同步启用原版发光视觉 |
 | `effects/wither.png` | 凋零效果图标 | 复制自原版凋零 `assets/minecraft/textures/mob_effect/wither.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.WITHER` 通过 `iconTexturePath` 绑定贴图；凋零层数显示在图标右下角，tooltip 显示降低战斗生命上限、最低 1 点和回合结束衰减规则 |
 | `effects/fuse.png` | 引信效果图标 | 复制自原版打火石 `assets/minecraft/textures/item/flint_and_steel.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.FUSE` 通过 `iconTexturePath` 绑定贴图；引信层数显示在图标右下角，tooltip 显示回合结束倒计时、当前自爆伤害和烧伤立即触发规则 |

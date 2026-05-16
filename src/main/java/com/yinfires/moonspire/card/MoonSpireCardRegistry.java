@@ -366,6 +366,16 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_terrifying_roar", "card.moonspire.monster.terrifying_roar.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.WEAKNESS, 2, CardTarget.ALL_ENEMIES),
                         new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:goat_horn", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_slime_bump", "card.moonspire.monster.slime_bump.name", "", 1, 4, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_sticky_slap", "card.moonspire.monster.sticky_slap.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_viscous_snare", "card.moonspire.monster.viscous_snare.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.SLOWNESS, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_gelatinous_body", "card.moonspire.monster.gelatinous_body.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:slime_block", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_splattering_pressure", "card.moonspire.monster.splattering_pressure.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

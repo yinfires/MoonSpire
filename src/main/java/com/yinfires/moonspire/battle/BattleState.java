@@ -39,7 +39,10 @@ import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
+import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.projectile.EvokerFangs;
 import net.minecraft.world.item.ItemStack;
@@ -116,6 +119,9 @@ public class BattleState {
     private static final double SUMMON_GROUND_SEARCH_UP = 3.0D;
     private static final double SUMMON_GROUND_SEARCH_DOWN = 4.0D;
     private static final double[] SUMMON_FORWARD_OFFSETS = {0.0D, -0.85D, 0.85D, -1.7D, 1.7D, -2.55D, 2.55D};
+    private static final float SPLIT_CHILD_VALUE_MULTIPLIER = 0.5F;
+    private static final float SPLIT_CHILD_SCALE_MULTIPLIER = 0.7F;
+    private static final int SPLIT_CHILD_COUNT = 2;
 
     private final UUID id = UUID.randomUUID();
     private final ServerPlayer leader;
@@ -128,6 +134,7 @@ public class BattleState {
     private final Map<Integer, MonsterTurnPlan> playerAllyTurnPlans = new HashMap<>();
     private final Map<Integer, EntityLock> locks = new HashMap<>();
     private final Map<Integer, KnockbackState> knockbackStates = new HashMap<>();
+    private final Set<Integer> splitHandledEntityIds = new LinkedHashSet<>();
     private final Vec3 cameraCenter;
     private BattlePhase phase = BattlePhase.PLAYER_TURN;
     private int round = 1;
@@ -215,7 +222,14 @@ public class BattleState {
     }
 
     private static void applyDefaultInitialEffects(CombatantState state) {
-        if (state != null && MonsterDeckProfile.hasAbundantArrowsByDefault(state.entity().getType())) {
+        if (state == null) {
+            return;
+        }
+        int slimeSplitStacks = MonsterDeckProfile.defaultSlimeSplitStacks(state.entity());
+        if (slimeSplitStacks > 0 && state.effectAmount(BattleEffectType.SPLIT) <= 0) {
+            state.addEffect(BattleEffectType.SPLIT, slimeSplitStacks);
+        }
+        if (MonsterDeckProfile.hasAbundantArrowsByDefault(state.entity().getType())) {
             state.addEffect(BattleEffectType.ABUNDANT_ARROWS, 1);
         }
     }
@@ -302,6 +316,7 @@ public class BattleState {
             return true;
         }
         tickFakeDeaths();
+        handlePendingSplits();
         if (endingAfterAnimations) {
             lockBattleEntities();
             return allFakeDeathAnimationsDone();
@@ -335,6 +350,7 @@ public class BattleState {
             beginRound();
             beginPlayerTurn();
         }
+        handlePendingSplits();
         if (hasWinner()) {
             if (finishDelayTicks > 0) {
                 finishDelayTicks--;
@@ -3015,6 +3031,187 @@ public class BattleState {
         markDirty();
     }
 
+    private void handlePendingSplits() {
+        List<CombatantState> pendingSplits = new ArrayList<>();
+        for (CombatantState state : allStates()) {
+            if (state.fakeDead()
+                    && state.entity().isAlive()
+                    && state.entity() instanceof Mob
+                    && !(state.entity() instanceof ServerPlayer)
+                    && state.effectAmount(BattleEffectType.SPLIT) > 0
+                    && !splitHandledEntityIds.contains(state.entity().getId())) {
+                pendingSplits.add(state);
+            }
+        }
+        for (CombatantState parent : pendingSplits) {
+            splitHandledEntityIds.add(parent.entity().getId());
+            splitCombatant(parent);
+        }
+    }
+
+    private void splitCombatant(CombatantState parent) {
+        if (parent == null || !(parent.entity().level() instanceof ServerLevel level)) {
+            return;
+        }
+        EntityType<?> childType = parent.entity().getType();
+        if (childType == EntityType.PLAYER) {
+            return;
+        }
+        int childSplitStacks = Math.max(0, parent.effectAmount(BattleEffectType.SPLIT) - 1);
+        Vec3 look = parent.entity().getLookAngle().multiply(1.0D, 0.0D, 1.0D);
+        if (look.lengthSqr() <= 0.0001D) {
+            look = new Vec3(0.0D, 0.0D, 1.0D);
+        } else {
+            look = look.normalize();
+        }
+        Vec3 right = new Vec3(-look.z, 0.0D, look.x);
+        List<CombatantState> side = sideOf(parent);
+        List<AABB> occupiedBoxes = splitOccupiedBoxes(parent);
+        for (int i = 0; i < SPLIT_CHILD_COUNT; i++) {
+            Entity entity = childType.create(level);
+            if (!(entity instanceof LivingEntity childEntity)) {
+                if (entity != null) {
+                    entity.discard();
+                }
+                continue;
+            }
+            applySplitChildSize(parent.entity(), childEntity);
+            Vec3 rawPos = summonPosition(parent, childEntity, childType, look, right, i, SPLIT_CHILD_COUNT, occupiedBoxes);
+            stabilizeSummonedEntity(childEntity, rawPos, parent.entity().getYRot());
+            Vec3 pos = rawPos;
+            BlockPos blockPos = BlockPos.containing(pos);
+            occupiedBoxes.add(childEntity.getBoundingBox().inflate(SUMMON_OCCUPANCY_MARGIN));
+            if (childEntity instanceof Mob mob) {
+                mob.finalizeSpawn(level, level.getCurrentDifficultyAt(blockPos), MobSpawnType.MOB_SUMMONED, null);
+                mob.setNoAi(true);
+            }
+            applySplitChildSize(parent.entity(), childEntity);
+            childEntity.setNoGravity(true);
+            childEntity.noPhysics = true;
+            stabilizeSummonedEntity(childEntity, pos, parent.entity().getYRot());
+            level.addFreshEntityWithPassengers(childEntity);
+            level.gameEvent(GameEvent.ENTITY_PLACE, blockPos, GameEvent.Context.of(parent.entity()));
+            CombatantState child = new CombatantState(
+                    childEntity,
+                    new BattleDeck(splitChildCards(parent), leader.getRandom()),
+                    weakenedPositiveInt(parent.maxEnergy()),
+                    weakenedPositiveFloat(parent.effectiveMaxBattleHealth()),
+                    weakenedPositiveInt(parent.baseSpeed()));
+            child.markBattleSummoned();
+            if (childSplitStacks > 0) {
+                child.addEffect(BattleEffectType.SPLIT, childSplitStacks);
+            }
+            side.add(child);
+            byEntityId.put(childEntity.getId(), child);
+            locks.put(childEntity.getId(), EntityLock.capture(childEntity));
+            BattleManager.registerDynamicCombatant(this, childEntity);
+            if (phase == BattlePhase.PLAYER_TURN && playerStates.contains(child)) {
+                child.deck().startTurn(leader.getRandom(), hungerDrawReduction(child));
+                predrawnPlayerAllyHands.add(child.entity().getId());
+                playerAllyTurnPlans.put(child.entity().getId(), createPlayerAllyTurnPlan(child));
+            } else if (phase != BattlePhase.MONSTER_TURN && enemyStates.contains(child) && enemyHandsPredrawnForCurrentTurn) {
+                child.deck().startTurn(leader.getRandom(), hungerDrawReduction(child));
+                monsterTurnPlans.put(child.entity().getId(), createMonsterTurnPlan(child));
+            }
+        }
+        markDirty();
+    }
+
+    private List<AABB> splitOccupiedBoxes(CombatantState parent) {
+        List<AABB> boxes = new ArrayList<>();
+        for (CombatantState state : allStates()) {
+            if (state == parent) {
+                boxes.add(state.entity().getBoundingBox().inflate(SUMMON_OCCUPANCY_MARGIN));
+                continue;
+            }
+            if (!state.fakeDead() && state.entity().isAlive()) {
+                boxes.add(state.entity().getBoundingBox().inflate(SUMMON_OCCUPANCY_MARGIN));
+            }
+        }
+        return boxes;
+    }
+
+    private void applySplitChildSize(LivingEntity parent, LivingEntity child) {
+        if (parent instanceof Slime parentSlime && child instanceof Slime childSlime) {
+            childSlime.setSize(Math.max(1, parentSlime.getSize() / 2), true);
+            childSlime.setHealth(childSlime.getMaxHealth());
+            return;
+        }
+        AttributeInstance parentScale = parent.getAttribute(Attributes.SCALE);
+        AttributeInstance childScale = child.getAttribute(Attributes.SCALE);
+        if (childScale != null) {
+            double baseScale = parentScale == null ? parent.getScale() : parentScale.getValue();
+            childScale.setBaseValue(Math.max(0.0625D, baseScale * SPLIT_CHILD_SCALE_MULTIPLIER));
+            child.refreshDimensions();
+        }
+    }
+
+    private List<CardInstance> splitChildCards(CombatantState parent) {
+        List<CardInstance> cards = new ArrayList<>();
+        for (CardInstance card : battleDeckCards(parent)) {
+            cards.add(weakenedCard(card));
+        }
+        return cards;
+    }
+
+    private CardInstance weakenedCard(CardInstance card) {
+        if (card == null) {
+            return null;
+        }
+        List<CardEffect> effects = new ArrayList<>();
+        for (CardEffect effect : card.effects()) {
+            int amount = effect.kind().usesAmount() ? weakenedNonZero(effect.amount()) : effect.amount();
+            effects.add(new CardEffect(effect.kind(), amount, effect.target(), effect.count(), effect.entityTypeId()));
+        }
+        return new CardInstance(
+                UUID.randomUUID(),
+                splitChildCardId(card),
+                card.sourceStack().copy(),
+                card.nameKey(),
+                card.descriptionKey(),
+                weakenedNonZero(card.attack()),
+                weakenedNonZero(card.defense()),
+                card.baseCost(),
+                card.battleCostReduction(),
+                effects,
+                card.sourceType(),
+                "",
+                card.artPath(),
+                card.artItemId(),
+                card.artX(),
+                card.artY(),
+                card.artScale(),
+                card.faceId());
+    }
+
+    private static String splitChildCardId(CardInstance card) {
+        String sourceId = card == null ? "" : card.cardId();
+        if (sourceId == null || sourceId.isBlank()) {
+            sourceId = "card";
+        }
+        return "dynamic_split_" + dynamicCardIdSuffix(sourceId);
+    }
+
+    private static String dynamicCardIdSuffix(String sourceId) {
+        String normalized = MoonSpireCardRegistry.normalizeId(sourceId);
+        if (normalized.isBlank()) {
+            return "card";
+        }
+        return normalized.replace(':', '_');
+    }
+
+    private static int weakenedNonZero(int value) {
+        return value <= 0 ? 0 : Math.max(1, (int) Math.ceil(value * SPLIT_CHILD_VALUE_MULTIPLIER));
+    }
+
+    private static int weakenedPositiveInt(int value) {
+        return Math.max(1, weakenedNonZero(value));
+    }
+
+    private static float weakenedPositiveFloat(float value) {
+        return Math.max(1.0F, (float) Math.ceil(Math.max(1.0F, value) * SPLIT_CHILD_VALUE_MULTIPLIER));
+    }
+
     private void stabilizeSummonedEntity(LivingEntity entity, Vec3 pos, float yRot) {
         entity.moveTo(pos.x, pos.y, pos.z, yRot, 0.0F);
         entity.setDeltaMovement(Vec3.ZERO);
@@ -3724,11 +3921,18 @@ public class BattleState {
                 } else {
                     entity.die(entity.damageSources().generic());
                 }
+                suppressVanillaSplitAfterBattleDeath(entity, state);
             } else {
                 entity.die(entity.damageSources().generic());
             }
         } finally {
             suppressDamageEvent = false;
+        }
+    }
+
+    private void suppressVanillaSplitAfterBattleDeath(LivingEntity entity, CombatantState state) {
+        if (entity instanceof Slime slime && state != null && state.effectAmount(BattleEffectType.SPLIT) > 0) {
+            slime.setSize(1, false);
         }
     }
 

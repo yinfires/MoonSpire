@@ -308,6 +308,7 @@ public class CombatantState {
                 fakeDeathTicks,
                 deck.version(),
                 Math.max(0, battleDeckCount),
+                battleSummoned,
                 effectSnapshots());
     }
 

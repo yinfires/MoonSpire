@@ -471,7 +471,7 @@ public final class ClientEvents {
         private static void stabilizeClientBattleSummon(Entity entity, BattleCombatantSnapshot combatant) {
             if (!(entity instanceof LivingEntity living)
                     || entity instanceof Vex
-                    || !hasSummonedEffect(combatant)
+                    || !hasDynamicBattleLock(combatant)
                     || ClientBattleState.visualMovement(living.getId())) {
                 return;
             }
@@ -490,10 +490,11 @@ public final class ClientEvents {
             living.yHeadRotO = living.yHeadRot;
         }
 
-        private static boolean hasSummonedEffect(BattleCombatantSnapshot combatant) {
+        private static boolean hasDynamicBattleLock(BattleCombatantSnapshot combatant) {
             return combatant != null
-                    && combatant.effects() != null
-                    && combatant.effects().stream().anyMatch(effect -> effect.type() == BattleEffectType.SUMMONED && effect.amount() > 0);
+                    && (combatant.dynamicCombatant()
+                    || (combatant.effects() != null
+                    && combatant.effects().stream().anyMatch(effect -> effect.type() == BattleEffectType.SUMMONED && effect.amount() > 0)));
         }
 
         private static void applyTemporaryMainHand(LivingEntity entity, ItemStack stack, boolean useItem) {

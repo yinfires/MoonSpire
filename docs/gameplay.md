@@ -14,6 +14,12 @@
 
 ## 战斗系统
 
+- 玩法描述：分裂是通用战斗状态，层数表示剩余分裂次数。拥有分裂的非玩家生物假死亡后、胜负判定前，会在同一场战斗中分裂出两个同类型、更小、更弱的子体；子体继承父体当前有效战斗牌库，攻击、防御和效果数值按 50% 向上取整且最低 1，费用不提高，最大生命、基础速度和最大能量也按父体战斗值削弱且最低 1。子体获得父体分裂层数减 1；层数为 0 的个体死亡后不再分裂。分裂子体会加入原阵营继续当前战斗，但不会加入战后奖励池，奖励仍只来自战斗开始时的敌人。
+  - 代码实现：`BattleEffectType.SPLIT` 定义状态与 `effects/split.png` 图标；`BattleState.tick()` 在 `tickFakeDeaths()` 后和胜负判定前调用 `handlePendingSplits()`，用 `splitCombatant(...)` 创建两个同类型实体并加入 `playerStates` 或 `enemyStates`。生成落点复用 `summonPosition(...)`、`safeSummonGroundPosition(...)`、`stabilizeSummonedEntity(...)` 和 `locks`，并用 `splitOccupiedBoxes(...)` 在既有召唤占位规则上额外避开父体与同批子体，同时把动态实体注册到 `BattleManager` 并通过 `BattleCombatantSnapshot.dynamicCombatant` 让客户端使用既有稳定逻辑。史莱姆使用原版 `Slime#setSize(...)` 降一级，其它生物调整 `Attributes.SCALE` 为父体当前缩放的 70%。`splitChildCards(...)` 复制父体手牌、抽牌堆、弃牌堆和结算中的牌并生成动态削弱副本；`startingEnemyRewardPools` 只在战斗开始时记录，不会追加分裂子体。
+  - 变更记录：新增通用“分裂”状态、死亡分裂结算、子体数值削弱、动态参战同步和不加入奖励池规则。
+- 玩法描述：史莱姆默认使用黏液控制风格怪物卡组，默认奖励池为这 5 张牌去重后的集合：`黏弹撞击` 1 费造成 4 点伤害；`黏液拍击` 1 费造成 3 点伤害并给予 1 层缓慢；`黏稠缠缚` 1 费给予 2 层缓慢；`凝胶身躯` 1 费获得 5 点格挡；`飞溅压迫` 2 费对全体敌方造成 3 点伤害并给予 1 层虚弱。默认牌组为黏弹撞击 3 张、黏液拍击 2 张、黏稠缠缚 2 张、凝胶身躯 2 张、飞溅压迫 1 张。自然进入战斗的大史莱姆拥有 2 层分裂并使用完整默认卡组和大史莱姆基准生命；中史莱姆拥有 1 层分裂，卡组和生命按大史莱姆基准削弱一次；小史莱姆没有分裂，卡组和生命按大史莱姆基准削弱两次。
+  - 代码实现：`MoonSpireCardRegistry` 注册 `builtin_monster_slime_bump`、`builtin_monster_sticky_slap`、`builtin_monster_viscous_snare`、`builtin_monster_gelatinous_body` 和 `builtin_monster_splattering_pressure`；`MonsterDeckProfile` 为 `EntityType.SLIME` 返回 `SLIME_DEFAULT_DECK`，按 `Slime#getSize()` 计算削弱次数、默认生命和 `defaultSlimeSplitStacks(...)`，并让默认奖励池固定为完整史莱姆牌组去重结果。`BattleState.applyDefaultInitialEffects(...)` 为自然史莱姆添加对应分裂层数。
+  - 变更记录：新增 5 张史莱姆怪物牌、史莱姆默认卡组、大小对应分裂层数和中/小史莱姆削弱规则。
 - 玩法描述：玩家方非本地友方单位在玩家回合就可以被查看意图；中央意图区卡牌默认不显示，只有 hover 或选中拥有意图的存活单位时才显示对应意图。玩家回合中新召唤出的友方单位也会立即拥有可查看的本轮意图。
   - 代码实现：`BattleState.beginPlayerTurn()` 为玩家方友方预抽本轮自动行动手牌并重建 `playerAllyTurnPlans`；`BattleState.summonEntities(...)` 在玩家回合中新建玩家方召唤物时同步预抽手牌并创建计划，`BattleScreen.currentIntentEntityId()` 只从 hover/selected 的有效意图单位读取中央意图卡。
   - 变更记录：修复玩家回合 hover/selected 友方单位时无法读取意图的问题，并明确中央意图区卡牌保持默认隐藏。
