@@ -160,6 +160,7 @@ public record CardInstance(
             hash = appendHash(hash, effect.amount());
             hash = appendHash(hash, effect.target().name());
             hash = appendHash(hash, effect.count());
+            hash = appendHash(hash, effect.entityTypeId());
         }
         return hash;
     }
@@ -203,6 +204,9 @@ public record CardInstance(
             effectTag.putInt("amount", effect.amount());
             effectTag.putString("target", effect.target().name());
             effectTag.putInt("count", effect.count());
+            if (!effect.entityTypeId().isBlank()) {
+                effectTag.putString("entityTypeId", effect.entityTypeId());
+            }
             effectTags.add(effectTag);
         }
         tag.put("effects", effectTags);
@@ -242,7 +246,8 @@ public record CardInstance(
                     kind,
                     Math.max(0, effectTag.getInt("amount")),
                     CardTarget.byName(effectTag.getString("target"), kind.defaultTarget()),
-                    effectTag.contains("count") ? effectTag.getInt("count") : 1));
+                    effectTag.contains("count") ? effectTag.getInt("count") : 1,
+                    effectTag.getString("entityTypeId")));
         }
         return new CardInstance(
                 tag.hasUUID("id") ? tag.getUUID("id") : UUID.randomUUID(),
@@ -497,6 +502,11 @@ public record CardInstance(
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";
             case "card.moonspire.monster.web.name" -> "builtin_monster_web";
             case "card.moonspire.monster.venom_fang.name" -> "builtin_monster_venom_fang";
+            case "card.moonspire.monster.nipping_bite.name" -> "builtin_monster_nipping_bite";
+            case "card.moonspire.monster.crackling_mandibles.name" -> "builtin_monster_crackling_mandibles";
+            case "card.moonspire.monster.stone_scuttle.name" -> "builtin_monster_stone_scuttle";
+            case "card.moonspire.monster.swarm_alarm.name" -> "builtin_monster_swarm_alarm";
+            case "card.moonspire.monster.infested_call.name" -> "builtin_monster_infested_call";
             case "card.moonspire.monster.light_fuse.name" -> "builtin_monster_light_fuse";
             case "card.moonspire.monster.hissing_advance.name" -> "builtin_monster_hissing_advance";
             case "card.moonspire.monster.powder_shell.name" -> "builtin_monster_powder_shell";

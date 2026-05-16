@@ -73,7 +73,7 @@ public record DeveloperCardDefinition(
         List<DeveloperCardEffect> normalizedEffects = normalizedEffects();
         List<CardEffect> effects = normalizedEffects.stream()
                 .filter(effect -> effect.amount() > 0 || effect.kind().isKeyword())
-                .map(effect -> new CardEffect(cardEffectKind(effect.kind()), effect.amount(), effect.target(), effect.count()))
+                .map(effect -> new CardEffect(cardEffectKind(effect.kind()), effect.amount(), effect.target(), effect.count(), effect.entityTypeId()))
                 .toList();
         return new RegisteredCardDefinition(
                 registeredId,
@@ -107,7 +107,7 @@ public record DeveloperCardDefinition(
             case UNDYING -> CardEffectKind.UNDYING;
             case EVOKER_FANG_LINE -> CardEffectKind.EVOKER_FANG_LINE;
             case EVOKER_FANG_CIRCLE -> CardEffectKind.EVOKER_FANG_CIRCLE;
-            case SUMMON_VEX -> CardEffectKind.SUMMON_VEX;
+            case SUMMON, SUMMON_VEX, SUMMON_SILVERFISH -> CardEffectKind.SUMMON;
             case STRENGTH -> CardEffectKind.STRENGTH;
             case LOSE_STRENGTH -> CardEffectKind.LOSE_STRENGTH;
             case REGENERATION -> CardEffectKind.REGENERATION;

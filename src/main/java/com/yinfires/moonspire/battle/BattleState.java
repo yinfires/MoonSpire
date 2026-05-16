@@ -30,6 +30,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.LightningBolt;
@@ -110,6 +111,11 @@ public class BattleState {
     private static final double MONSTER_AI_CATEGORY_ATTACK_WEIGHT = 0.90D;
     private static final double MONSTER_AI_CATEGORY_DEFENSE_WEIGHT = 0.90D;
     private static final int SELF_DESTRUCT_ANIMATION_TICKS = 30;
+    private static final double SUMMON_SIDE_CLEARANCE = 0.45D;
+    private static final double SUMMON_OCCUPANCY_MARGIN = 0.08D;
+    private static final double SUMMON_GROUND_SEARCH_UP = 3.0D;
+    private static final double SUMMON_GROUND_SEARCH_DOWN = 4.0D;
+    private static final double[] SUMMON_FORWARD_OFFSETS = {0.0D, -0.85D, 0.85D, -1.7D, 1.7D, -2.55D, 2.55D};
 
     private final UUID id = UUID.randomUUID();
     private final ServerPlayer leader;
@@ -1321,7 +1327,9 @@ public class BattleState {
                 || kind == CardEffectKind.GLOWING
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.UNDYING
+                || kind == CardEffectKind.SUMMON
                 || kind == CardEffectKind.SUMMON_VEX
+                || kind == CardEffectKind.SUMMON_SILVERFISH
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.LOSE_STRENGTH
                 || kind == CardEffectKind.REGENERATION
@@ -1507,7 +1515,7 @@ public class BattleState {
             case GLOWING -> scoreNegativeStatus(totalAmount, target, BattleEffectType.GLOWING, 2.8D, MONSTER_AI_STATUS_SOFT_CAP);
             case GUARD -> scorePositiveStatus(totalAmount, target, BattleEffectType.GUARD, 3.0D, MONSTER_AI_STATUS_SOFT_CAP);
             case UNDYING -> scorePositiveStatus(totalAmount, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
-            case SUMMON_VEX -> Math.max(0, totalAmount) * 3.4D + MONSTER_AI_STATUS_PLAY_BONUS;
+            case SUMMON, SUMMON_VEX, SUMMON_SILVERFISH -> Math.max(0, totalAmount) * 3.4D + MONSTER_AI_STATUS_PLAY_BONUS;
             case STRENGTH -> scorePositiveStatus(totalAmount, target, BattleEffectType.STRENGTH, 3.2D, MONSTER_AI_STATUS_SOFT_CAP);
             case LOSE_STRENGTH -> scoreLoseStrength(totalAmount, target);
             case REGENERATION -> scorePositiveStatus(totalAmount, target, BattleEffectType.REGENERATION, 2.6D, MONSTER_AI_LONG_STATUS_SOFT_CAP);
@@ -1718,7 +1726,7 @@ public class BattleState {
         if (kind == CardEffectKind.UNDYING) {
             return scorePositiveStatus(amount * count, target, BattleEffectType.UNDYING, 2.4D, MONSTER_AI_STATUS_SOFT_CAP);
         }
-        if (kind == CardEffectKind.SUMMON_VEX) {
+        if (CardEffect.isSummonKind(kind)) {
             return Math.max(0, amount * count) * 3.4D + MONSTER_AI_STATUS_PLAY_BONUS;
         }
         if (kind == CardEffectKind.WEAKNESS) {
@@ -1753,7 +1761,9 @@ public class BattleState {
                 || kind == CardEffectKind.HEAL
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.UNDYING
+                || kind == CardEffectKind.SUMMON
                 || kind == CardEffectKind.SUMMON_VEX
+                || kind == CardEffectKind.SUMMON_SILVERFISH
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE
@@ -1849,7 +1859,7 @@ public class BattleState {
             case GLOWING -> target.addEffect(BattleEffectType.GLOWING, amount);
             case GUARD -> target.addEffect(BattleEffectType.GUARD, amount);
             case UNDYING -> target.addEffect(BattleEffectType.UNDYING, amount);
-            case SUMMON_VEX -> {
+            case SUMMON, SUMMON_VEX, SUMMON_SILVERFISH -> {
             }
             case STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, amount);
             case LOSE_STRENGTH -> target.addEffect(BattleEffectType.STRENGTH, -amount);
@@ -1958,13 +1968,13 @@ public class BattleState {
         for (int repeat = 0; repeat < maxCount; repeat++) {
             List<PendingEffect> batchEffects = new ArrayList<>();
             for (CardEffect effect : effects) {
-                int repeatCount = effect.kind() == CardEffectKind.SUMMON_VEX ? 1 : effect.count();
+                int repeatCount = isSummonEffect(effect.kind()) ? 1 : effect.count();
                 if (!effect.kind().isResolvedEffect() || effect.amount() <= 0 || repeatCount <= repeat) {
                     continue;
                 }
                 for (CombatantState effectTarget : targetsForEffect(effect, user, selectedTarget)) {
                     int amount = adjustedAttackDamageAmount(effect, paralyzedAttack);
-                    batchEffects.add(new PendingEffect(effect.kind(), amount, effectTarget, false, remoteDamage && effect.kind() == CardEffectKind.DAMAGE, effect.count()));
+                    batchEffects.add(new PendingEffect(effect.kind(), amount, effectTarget, false, remoteDamage && effect.kind() == CardEffectKind.DAMAGE, effect.count(), effect.entityTypeId()));
                 }
             }
             if (!batchEffects.isEmpty()) {
@@ -1980,9 +1990,13 @@ public class BattleState {
         return effect.amount();
     }
 
+    private boolean isSummonEffect(CardEffectKind kind) {
+        return CardEffect.isSummonKind(kind);
+    }
+
     private CardEffect adjustedMonsterAiEffect(CardEffect effect, boolean paralyzedAttack) {
         int amount = adjustedAttackDamageAmount(effect, paralyzedAttack);
-        return amount == effect.amount() ? effect : new CardEffect(effect.kind(), amount, effect.target(), effect.count());
+        return amount == effect.amount() ? effect : new CardEffect(effect.kind(), amount, effect.target(), effect.count(), effect.entityTypeId());
     }
 
     private void addConsumeArrowStep(CombatantState user, CombatantState selectedTarget, CardInstance card, CardEffect effect, boolean paralyzedAttack) {
@@ -2507,7 +2521,7 @@ public class BattleState {
     }
 
     private boolean hasSummonVexEffect(PendingCardBatch batch) {
-        return batch != null && batch.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.SUMMON_VEX);
+        return batch != null && batch.effects().stream().anyMatch(effect -> CardEffect.isSummonKind(effect.kind()) && summonEntityType(effect.entityTypeId()) == EntityType.VEX);
     }
 
     private boolean hasEvokerFangLineEffect(PendingCardBatch batch) {
@@ -2691,8 +2705,8 @@ public class BattleState {
             } else if (effect.kind() == CardEffectKind.UNDYING) {
                 effect.target().addEffect(BattleEffectType.UNDYING, effect.amount());
                 effectOnlyTargets.add(effect.target());
-            } else if (effect.kind() == CardEffectKind.SUMMON_VEX) {
-                summonVexes(effect.target(), effect.amount(), effect.count());
+            } else if (CardEffect.isSummonKind(effect.kind())) {
+                summonEntities(effect.target(), effect.amount(), effect.count(), effect.entityTypeId());
                 effectOnlyTargets.add(effect.target());
             } else if (effect.kind() == CardEffectKind.STRENGTH) {
                 effect.target().addEffect(BattleEffectType.STRENGTH, effect.amount());
@@ -2929,12 +2943,15 @@ public class BattleState {
                 || "builtin_monster_frenzied_dive".equals(card.cardId());
     }
 
-    private void summonVexes(CombatantState caster, int amount, int lifetimeTurns) {
+    private void summonEntities(CombatantState caster, int amount, int lifetimeTurns, String entityTypeId) {
         if (caster == null || caster.fakeDead() || amount <= 0 || !(caster.entity().level() instanceof ServerLevel level)) {
             return;
         }
+        EntityType<?> summonType = summonEntityType(entityTypeId);
+        if (summonType == null || summonType == EntityType.PLAYER) {
+            return;
+        }
         int count = Math.max(0, amount);
-        Vec3 center = caster.entity().position().add(0.0D, caster.entity().getBbHeight() + 0.45D, 0.0D);
         Vec3 look = caster.entity().getLookAngle().multiply(1.0D, 0.0D, 1.0D);
         if (look.lengthSqr() <= 0.0001D) {
             look = new Vec3(0.0D, 0.0D, 1.0D);
@@ -2943,36 +2960,52 @@ public class BattleState {
         }
         Vec3 right = new Vec3(-look.z, 0.0D, look.x);
         List<CombatantState> side = sideOf(caster);
+        List<AABB> occupiedBoxes = summonOccupiedBoxes();
         for (int i = 0; i < count; i++) {
-            Vex vex = EntityType.VEX.create(level);
-            if (vex == null) {
+            Entity entity = summonType.create(level);
+            if (!(entity instanceof LivingEntity summonedEntity)) {
+                if (entity != null) {
+                    entity.discard();
+                }
                 continue;
             }
-            double offset = (i - (count - 1) / 2.0D) * 0.85D;
-            Vec3 pos = center.add(right.scale(offset));
+            Vec3 rawPos = summonPosition(caster, summonedEntity, summonType, look, right, i, count, occupiedBoxes);
+            stabilizeSummonedEntity(summonedEntity, rawPos, caster.entity().getYRot());
+            Vec3 pos = rawPos;
             BlockPos blockPos = BlockPos.containing(pos);
-            vex.moveTo(pos.x, pos.y, pos.z, caster.entity().getYRot(), 0.0F);
-            vex.finalizeSpawn(level, level.getCurrentDifficultyAt(blockPos), MobSpawnType.MOB_SUMMONED, null);
-            if (caster.entity() instanceof Mob owner) {
+            occupiedBoxes.add(summonedEntity.getBoundingBox().inflate(SUMMON_OCCUPANCY_MARGIN));
+            if (summonedEntity instanceof Mob mob) {
+                mob.finalizeSpawn(level, level.getCurrentDifficultyAt(blockPos), MobSpawnType.MOB_SUMMONED, null);
+                mob.setNoAi(true);
+            }
+            if (summonedEntity instanceof Vex vex && caster.entity() instanceof Mob owner) {
                 vex.setOwner(owner);
             }
-            vex.setBoundOrigin(blockPos);
-            vex.setNoAi(true);
-            vex.setNoGravity(true);
-            level.addFreshEntityWithPassengers(vex);
+            if (summonedEntity instanceof Vex vex) {
+                vex.setBoundOrigin(blockPos);
+                vex.setNoGravity(true);
+            } else {
+                summonedEntity.setNoGravity(true);
+                summonedEntity.noPhysics = true;
+            }
+            stabilizeSummonedEntity(summonedEntity, pos, caster.entity().getYRot());
+            level.addFreshEntityWithPassengers(summonedEntity);
             level.gameEvent(GameEvent.ENTITY_PLACE, blockPos, GameEvent.Context.of(caster.entity()));
+            DeveloperMonsterDefinition monsterOverride = DeveloperDataManager.monsterOverride(summonedEntity).orElse(null);
             CombatantState summoned = new CombatantState(
-                    vex,
-                    new BattleDeck(MonsterDeckProfile.createDefaultDeck(vex), leader.getRandom()),
-                    CardBalance.fixedEnergy(),
-                    MonsterDeckProfile.defaultMaxBattleHealth(vex),
-                    MonsterDeckProfile.defaultBaseSpeed(vex));
+                    summonedEntity,
+                    new BattleDeck(MonsterDeckProfile.createDeck(summonedEntity), leader.getRandom()),
+                    monsterOverride != null && monsterOverride.hasEnergyOverride() ? monsterOverride.energy() : CardBalance.fixedEnergy(),
+                    monsterOverride != null && monsterOverride.hasHealthOverride() ? monsterOverride.maxHealth() : MonsterDeckProfile.defaultMaxBattleHealth(summonedEntity),
+                    monsterOverride != null && monsterOverride.hasSpeedOverride() ? monsterOverride.speed() : MonsterDeckProfile.defaultBaseSpeed(summonedEntity));
+            applyInitialEffects(summoned, monsterOverride);
+            applyDefaultInitialEffects(summoned);
             summoned.markBattleSummoned();
             summoned.addEffect(BattleEffectType.SUMMONED, Math.max(1, lifetimeTurns));
             side.add(summoned);
-            byEntityId.put(vex.getId(), summoned);
-            locks.put(vex.getId(), EntityLock.capture(vex));
-            BattleManager.registerDynamicCombatant(this, vex);
+            byEntityId.put(summonedEntity.getId(), summoned);
+            locks.put(summonedEntity.getId(), EntityLock.capture(summonedEntity));
+            BattleManager.registerDynamicCombatant(this, summonedEntity);
             if (phase == BattlePhase.PLAYER_TURN && playerStates.contains(summoned)) {
                 summoned.deck().startTurn(leader.getRandom(), hungerDrawReduction(summoned));
                 predrawnPlayerAllyHands.add(summoned.entity().getId());
@@ -2980,6 +3013,114 @@ public class BattleState {
             }
         }
         markDirty();
+    }
+
+    private void stabilizeSummonedEntity(LivingEntity entity, Vec3 pos, float yRot) {
+        entity.moveTo(pos.x, pos.y, pos.z, yRot, 0.0F);
+        entity.setDeltaMovement(Vec3.ZERO);
+        entity.resetFallDistance();
+        entity.xxa = 0.0F;
+        entity.yya = 0.0F;
+        entity.zza = 0.0F;
+        entity.setJumping(false);
+        entity.hasImpulse = false;
+        entity.setOldPosAndRot();
+    }
+
+    private boolean usesFloatingSummonPhysics(LivingEntity entity) {
+        return entity instanceof Vex;
+    }
+
+    private List<AABB> summonOccupiedBoxes() {
+        List<AABB> boxes = new ArrayList<>();
+        for (CombatantState state : allStates()) {
+            if (!state.fakeDead() && state.entity().isAlive()) {
+                boxes.add(state.entity().getBoundingBox().inflate(SUMMON_OCCUPANCY_MARGIN));
+            }
+        }
+        return boxes;
+    }
+
+    private EntityType<?> summonEntityType(String entityTypeId) {
+        String normalized = CardEffect.defaultEntityTypeId(CardEffectKind.SUMMON, entityTypeId);
+        try {
+            ResourceLocation id = ResourceLocation.parse(normalized);
+            return BuiltInRegistries.ENTITY_TYPE.containsKey(id) ? BuiltInRegistries.ENTITY_TYPE.get(id) : EntityType.VEX;
+        } catch (RuntimeException ignored) {
+            return EntityType.VEX;
+        }
+    }
+
+    private Vec3 summonPosition(CombatantState caster, LivingEntity summonedEntity, EntityType<?> summonType, Vec3 look, Vec3 right, int index, int count, List<AABB> occupiedBoxes) {
+        if (summonType == EntityType.VEX) {
+            double offset = (index - (count - 1) / 2.0D) * 0.85D;
+            return caster.entity().position().add(0.0D, caster.entity().getBbHeight() + 0.45D, 0.0D).add(right.scale(offset));
+        }
+        Vec3 fallback = caster.entity().position().add(right.scale(sideSummonOffset(caster.entity(), summonedEntity, index))).add(look.scale(-0.85D));
+        int sideSlotCount = Math.min(64, Math.max(count + occupiedBoxes.size() + 4, 8));
+        for (int forwardIndex = 0; forwardIndex < SUMMON_FORWARD_OFFSETS.length; forwardIndex++) {
+            double forwardOffset = SUMMON_FORWARD_OFFSETS[forwardIndex];
+            for (int slot = 0; slot < sideSlotCount; slot++) {
+                int candidateIndex = index + slot;
+                double sideOffset = sideSummonOffset(caster.entity(), summonedEntity, candidateIndex);
+                Vec3 horizontal = caster.entity().position()
+                        .add(right.scale(sideOffset))
+                        .add(look.scale(forwardOffset));
+                Vec3 candidate = safeSummonGroundPosition(summonedEntity, horizontal, occupiedBoxes);
+                if (candidate == null) {
+                    continue;
+                }
+                if (!summonPositionIntersects(summonedEntity, candidate, occupiedBoxes)) {
+                    return candidate;
+                }
+            }
+        }
+        return safeReturnPosition(summonedEntity, fallback);
+    }
+
+    private double sideSummonOffset(LivingEntity caster, LivingEntity summonedEntity, int index) {
+        int pair = index / 2;
+        double sign = index % 2 == 0 ? -1.0D : 1.0D;
+        double minimum = caster.getBbWidth() * 0.5D + summonedEntity.getBbWidth() * 0.5D + SUMMON_SIDE_CLEARANCE;
+        return sign * (minimum + pair * Math.max(0.85D, summonedEntity.getBbWidth() + SUMMON_SIDE_CLEARANCE));
+    }
+
+    private Vec3 safeSummonGroundPosition(LivingEntity summonedEntity, Vec3 horizontal, List<AABB> occupiedBoxes) {
+        if (!(summonedEntity.level() instanceof ServerLevel level)) {
+            return null;
+        }
+        double startY = horizontal.y + SUMMON_GROUND_SEARCH_UP;
+        double minY = horizontal.y - SUMMON_GROUND_SEARCH_DOWN;
+        for (double y = startY; y >= minY; y -= 0.25D) {
+            Vec3 candidate = new Vec3(horizontal.x, y, horizontal.z);
+            AABB box = boxAt(summonedEntity, candidate);
+            if (!level.noCollision(summonedEntity, box) || intersectsAny(box, occupiedBoxes)) {
+                continue;
+            }
+            AABB below = box.move(0.0D, -0.08D, 0.0D);
+            if (!level.noCollision(summonedEntity, below)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean summonPositionIntersects(LivingEntity summonedEntity, Vec3 candidate, List<AABB> occupiedBoxes) {
+        return intersectsAny(boxAt(summonedEntity, candidate), occupiedBoxes);
+    }
+
+    private AABB boxAt(LivingEntity entity, Vec3 position) {
+        return entity.getBoundingBox().move(position.subtract(entity.position()));
+    }
+
+    private boolean intersectsAny(AABB box, List<AABB> occupiedBoxes) {
+        AABB inflated = box.inflate(SUMMON_OCCUPANCY_MARGIN);
+        for (AABB occupied : occupiedBoxes) {
+            if (inflated.intersects(occupied)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static BattleDamageResult mergeDamageResult(BattleDamageResult first, BattleDamageResult second) {
@@ -3388,21 +3529,33 @@ public class BattleState {
             }
             return nextLockedPos;
         }
-        Vec3 movement = applyNoAiBattleFall(entity, entity.getDeltaMovement());
-        entity.setDeltaMovement(0.0D, movement.y, 0.0D);
+        CombatantState state = byEntityId.get(entity.getId());
+        boolean stableBattleSummon = state != null && state.battleSummoned() && !usesFloatingSummonPhysics(entity);
+        Vec3 movement = stableBattleSummon ? Vec3.ZERO : applyNoAiBattleFall(entity, entity.getDeltaMovement());
+        entity.setDeltaMovement(0.0D, stableBattleSummon ? 0.0D : movement.y, 0.0D);
         entity.xxa = 0.0F;
         entity.yya = 0.0F;
         entity.zza = 0.0F;
         entity.setJumping(false);
+        if (stableBattleSummon) {
+            entity.setNoGravity(true);
+            entity.noPhysics = true;
+        }
         Vec3 nextLockedPos = lockedPos;
-        if (entity.onGround()) {
+        if (stableBattleSummon) {
+            nextLockedPos = lockedPos;
+        } else if (entity.onGround()) {
             nextLockedPos = new Vec3(lockedPos.x, entity.getY(), lockedPos.z);
         }
         double dx = entity.getX() - nextLockedPos.x;
+        double dy = stableBattleSummon ? entity.getY() - nextLockedPos.y : 0.0D;
         double dz = entity.getZ() - nextLockedPos.z;
-        if (dx * dx + dz * dz > 0.0004D) {
-            entity.teleportTo(nextLockedPos.x, entity.getY(), nextLockedPos.z);
+        if (dx * dx + dy * dy + dz * dz > 0.0004D) {
+            entity.teleportTo(nextLockedPos.x, stableBattleSummon ? nextLockedPos.y : entity.getY(), nextLockedPos.z);
             entity.setOldPosAndRot();
+        }
+        if (stableBattleSummon) {
+            entity.resetFallDistance();
         }
         if (entity instanceof Mob mob) {
             mob.getNavigation().stop();
@@ -3820,7 +3973,15 @@ public class BattleState {
         }
     }
 
-    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage, int count) {
+    private record PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage, int count, String entityTypeId) {
+        private PendingEffect {
+            entityTypeId = CardEffect.defaultEntityTypeId(kind, entityTypeId);
+        }
+
+        private PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage, int count) {
+            this(kind, amount, target, effectDamage, remoteDamage, count, "");
+        }
+
         private PendingEffect(CardEffectKind kind, int amount, CombatantState target, boolean effectDamage, boolean remoteDamage) {
             this(kind, amount, target, effectDamage, remoteDamage, 1);
         }

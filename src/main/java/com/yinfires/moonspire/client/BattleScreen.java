@@ -2562,7 +2562,7 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.GAIN_ENERGY
                 || kind == CardEffectKind.GUARD
                 || kind == CardEffectKind.UNDYING
-                || kind == CardEffectKind.SUMMON_VEX
+                || CardEffect.isSummonKind(kind)
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE

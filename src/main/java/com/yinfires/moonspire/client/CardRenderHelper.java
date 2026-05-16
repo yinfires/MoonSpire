@@ -647,8 +647,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(guardDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.guard.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.UNDYING) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "undying", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.undying.name"))), effect.count());
-            } else if (effect.kind() == CardEffectKind.SUMMON_VEX) {
-                addEffectLine(lines, Component.translatable("card.moonspire.effect.summon", effect.amount(), effect.count(), keyword(Component.translatable("entity.minecraft.vex"))));
+            } else if (CardEffect.isSummonKind(effect.kind())) {
+                addEffectLine(lines, Component.translatable("card.moonspire.effect.summon", effect.amount(), effect.count(), keyword(summonEntityName(effect.entityTypeId()))));
             } else if (effect.kind() == CardEffectKind.STRENGTH) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "strength", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.strength.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH) {
@@ -914,7 +914,7 @@ public final class CardRenderHelper {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description"), x, tipY);
             } else if (effect.kind() == CardEffectKind.UNDYING && renderedTips.add("undying")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.undying.name"), Component.translatable("effect.moonspire.undying.description"), x, tipY);
-            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && renderedTips.add("summoned")) {
+            } else if (CardEffect.isSummonKind(effect.kind()) && renderedTips.add("summoned")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.summoned.name"), Component.translatable("effect.moonspire.summoned.description"), x, tipY);
             } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
                 tipY = renderTip(graphics, font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description"), x, tipY);
@@ -1036,7 +1036,7 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.guard.name"), Component.translatable("effect.moonspire.guard.description")) + 4;
             } else if (effect.kind() == CardEffectKind.UNDYING && renderedTips.add("undying")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.undying.name"), Component.translatable("effect.moonspire.undying.description")) + 4;
-            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && renderedTips.add("summoned")) {
+            } else if (CardEffect.isSummonKind(effect.kind()) && renderedTips.add("summoned")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.summoned.name"), Component.translatable("effect.moonspire.summoned.description")) + 4;
             } else if ((effect.kind() == CardEffectKind.STRENGTH || effect.kind() == CardEffectKind.LOSE_STRENGTH) && renderedTips.add("strength")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.strength.name"), Component.translatable("effect.moonspire.strength.description")) + 4;
@@ -1966,6 +1966,18 @@ public final class CardRenderHelper {
 
     private static Component keyword(Component component) {
         return component.copy().withStyle(style -> style.withColor(TextColor.fromRgb(KEYWORD_TEXT_COLOR)));
+    }
+
+    private static Component summonEntityName(String entityTypeId) {
+        String normalized = CardEffect.defaultEntityTypeId(CardEffectKind.SUMMON, entityTypeId);
+        try {
+            ResourceLocation id = ResourceLocation.parse(normalized);
+            if (BuiltInRegistries.ENTITY_TYPE.containsKey(id)) {
+                return BuiltInRegistries.ENTITY_TYPE.get(id).getDescription();
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse(CardEffect.DEFAULT_SUMMON_ENTITY_TYPE_ID)).getDescription();
     }
 
     private static Component statNumber(int originalValue, int finalValue) {

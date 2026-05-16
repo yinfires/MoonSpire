@@ -4,6 +4,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.yinfires.moonspire.MoonSpire;
+import com.yinfires.moonspire.battle.BattleCombatantSnapshot;
+import com.yinfires.moonspire.battle.BattleEffectType;
 import com.yinfires.moonspire.battle.BattlePhase;
 import com.yinfires.moonspire.battle.MonsterDeckProfile;
 import com.yinfires.moonspire.battle.BattleVisualEvent;
@@ -190,6 +192,7 @@ public final class ClientEvents {
             if (ClientBattleState.active()) {
                 ClientBattleState.tickClientLogic();
                 freezeLocalPlayer(minecraft);
+                stabilizeClientBattleSummons(minecraft);
                 clearNonVisualUseStates(minecraft);
                 ClientBattleState.updateCameraAnchor(minecraft);
                 if (minecraft.screen == null) {
@@ -451,6 +454,46 @@ public final class ClientEvents {
             minecraft.player.yya = 0.0F;
             minecraft.player.zza = 0.0F;
             minecraft.player.setJumping(false);
+        }
+
+        private static void stabilizeClientBattleSummons(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                return;
+            }
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                stabilizeClientBattleSummon(minecraft.level.getEntity(combatant.entityId()), combatant);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                stabilizeClientBattleSummon(minecraft.level.getEntity(combatant.entityId()), combatant);
+            }
+        }
+
+        private static void stabilizeClientBattleSummon(Entity entity, BattleCombatantSnapshot combatant) {
+            if (!(entity instanceof LivingEntity living)
+                    || entity instanceof Vex
+                    || !hasSummonedEffect(combatant)
+                    || ClientBattleState.visualMovement(living.getId())) {
+                return;
+            }
+            living.setNoGravity(true);
+            living.noPhysics = true;
+            living.setDeltaMovement(Vec3.ZERO);
+            living.xxa = 0.0F;
+            living.yya = 0.0F;
+            living.zza = 0.0F;
+            living.setJumping(false);
+            living.resetFallDistance();
+            living.hasImpulse = false;
+            living.walkAnimation.update(0.0F, 1.0F);
+            living.setOldPosAndRot();
+            living.yBodyRotO = living.yBodyRot;
+            living.yHeadRotO = living.yHeadRot;
+        }
+
+        private static boolean hasSummonedEffect(BattleCombatantSnapshot combatant) {
+            return combatant != null
+                    && combatant.effects() != null
+                    && combatant.effects().stream().anyMatch(effect -> effect.type() == BattleEffectType.SUMMONED && effect.amount() > 0);
         }
 
         private static void applyTemporaryMainHand(LivingEntity entity, ItemStack stack, boolean useItem) {

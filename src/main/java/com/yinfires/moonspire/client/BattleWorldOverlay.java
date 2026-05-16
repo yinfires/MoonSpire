@@ -350,6 +350,8 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.DRAW_CARDS
                 || kind == CardEffectKind.GAIN_ENERGY
                 || kind == CardEffectKind.GUARD
+                || kind == CardEffectKind.UNDYING
+                || CardEffect.isSummonKind(kind)
                 || kind == CardEffectKind.STRENGTH
                 || kind == CardEffectKind.REGENERATION
                 || kind == CardEffectKind.HASTE

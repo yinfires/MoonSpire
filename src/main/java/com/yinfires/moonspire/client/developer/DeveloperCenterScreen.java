@@ -1,6 +1,7 @@
 package com.yinfires.moonspire.client.developer;
 
 import com.yinfires.moonspire.card.CardBalance;
+import com.yinfires.moonspire.card.CardEffect;
 import com.yinfires.moonspire.card.CardEffectKind;
 import com.yinfires.moonspire.card.CardEffectOrder;
 import com.yinfires.moonspire.card.CardSourceType;
@@ -114,6 +115,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private static final int CARD_LIST_TOGGLE_H = 56;
     private static final int EFFECT_INSET = 10;
     private static final int EFFECT_TARGET_W = 40;
+    private static final int EFFECT_ENTITY_W = 48;
+    private static final int EFFECT_ENTITY_MIN_W = 40;
+    private static final int EFFECT_SUMMON_NAME_MIN_W = 36;
     private static final int EFFECT_AMOUNT_W = 26;
     private static final int EFFECT_COUNT_W = 26;
     private static final int EFFECT_AMOUNT_LABEL_W = 18;
@@ -152,6 +156,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private MoonSpireTextureButton cardIdCopyButton;
     private final List<EditBox> effectAmountBoxes = new ArrayList<>();
     private final List<EditBox> effectCountBoxes = new ArrayList<>();
+    private final List<EditBox> effectEntityBoxes = new ArrayList<>();
     private final List<EditBox> monsterEffectAmountBoxes = new ArrayList<>();
     private final List<FaceAreaKind> faceAreaKinds = List.of(FaceAreaKind.COST, FaceAreaKind.NAME, FaceAreaKind.ART, FaceAreaKind.TYPE, FaceAreaKind.DESCRIPTION);
     private String selectedCardId = "";
@@ -261,6 +266,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         clearWidgets();
         effectAmountBoxes.clear();
         effectCountBoxes.clear();
+        effectEntityBoxes.clear();
         monsterEffectAmountBoxes.clear();
         Layout layout = layout();
         searchBox = addBox(layout.searchX(tab), layout.searchBoxY(), layout.searchW(tab), Component.translatable("debug.moonspire.search"));
@@ -321,6 +327,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (effectPickerOpen || targetPickerOpen) {
             hideEffectAmountBoxes();
             hideEffectCountBoxes();
+            hideEffectEntityBoxes();
         }
         boolean modalOpen = confirmDelete || itemPickerOpen || effectPickerOpen || targetPickerOpen || monsterEffectPickerOpen;
         if (!modalOpen) {
@@ -347,6 +354,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         List<EditBox> effectBoxes = new ArrayList<>();
         effectBoxes.addAll(effectAmountBoxes);
         effectBoxes.addAll(effectCountBoxes);
+        effectBoxes.addAll(effectEntityBoxes);
         effectBoxes.addAll(monsterEffectAmountBoxes);
         List<Boolean> visible = effectBoxes.stream().map(box -> box.visible).toList();
         for (EditBox box : effectBoxes) {
@@ -376,6 +384,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             }
         }
         for (EditBox box : effectCountBoxes) {
+            if (box.visible) {
+                box.render(graphics, mouseX, mouseY, partialTick);
+            }
+        }
+        for (EditBox box : effectEntityBoxes) {
             if (box.visible) {
                 box.render(graphics, mouseX, mouseY, partialTick);
             }
@@ -728,6 +741,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             EditBox countBox = addBox(layout.formX() + layout.formW() - 58, rowY, EFFECT_COUNT_W, Component.translatable("debug.moonspire.effect_count"));
             countBox.setValue(Integer.toString(effects.get(i).count()));
             effectCountBoxes.add(countBox);
+            EditBox entityBox = addBox(layout.formX() + 40, rowY, 60, Component.translatable("debug.moonspire.effect_entity"));
+            entityBox.setValue(effects.get(i).entityTypeId());
+            effectEntityBoxes.add(entityBox);
         }
     }
 
@@ -817,6 +833,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         List<EditBox> boxes = new ArrayList<>(List.of(searchBox, idBox, nameKeyBox, costBox, artPathBox, entityIdBox, healthBox, speedBox, monsterEnergyBox, itemSearchBox, effectSearchBox, targetSearchBox));
         boxes.addAll(effectAmountBoxes);
         boxes.addAll(effectCountBoxes);
+        boxes.addAll(effectEntityBoxes);
         boxes.addAll(monsterEffectAmountBoxes);
         for (EditBox box : boxes) {
             if (box != null) {
@@ -843,6 +860,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             setVisible(box, false);
         }
         for (EditBox box : effectCountBoxes) {
+            setVisible(box, false);
+        }
+        for (EditBox box : effectEntityBoxes) {
             setVisible(box, false);
         }
         for (EditBox box : monsterEffectAmountBoxes) {
@@ -913,11 +933,15 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             if (i < effects.size()) {
                 DeveloperCardEffect effect = effects.get(i);
                 drawButtonLike(graphics, grid.viewX(), rowY, 20, 18, Component.translatable("debug.moonspire.remove_effect"));
-                drawTrimmed(graphics, effectName(effect.kind()), effectNameX(grid), rowY + 5, Math.max(1, effectNameWidth(grid)), 0xFFEDE8FF);
+                if (effect.isSummon()) {
+                    drawEffectName(graphics, effectName(effect.kind()), effectNameX(grid), rowY + 5, Math.max(1, effectNameWidth(grid, effect)), 0xFFEDE8FF);
+                } else {
+                    drawTrimmed(graphics, effectName(effect.kind()), effectNameX(grid), rowY + 5, Math.max(1, effectNameWidth(grid, effect)), 0xFFEDE8FF);
+                }
                 int targetX = effectTargetX(grid);
                 if (effect.canChangeTarget()) {
                     drawButtonLike(graphics, targetX, rowY, EFFECT_TARGET_W, 18, Component.translatable("debug.moonspire.target_picker"));
-                } else {
+                } else if (!effect.isSummon()) {
                     drawTrimmed(graphics, targetName(effect.target()), targetX, rowY + 5, EFFECT_TARGET_W, 0xFF8F879E);
                 }
                 if (effect.kind().usesAmount()) {
@@ -1149,6 +1173,23 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void drawTrimmed(GuiGraphics graphics, Component text, int x, int y, int width, int color) {
         graphics.drawString(font, font.substrByWidth(text, Math.max(0, width)).getString(), x, y, color, false);
+    }
+
+    private void drawEffectName(GuiGraphics graphics, Component text, int x, int y, int width, int color) {
+        String value = text.getString();
+        if (font.width(value) <= width) {
+            drawTrimmed(graphics, text, x, y, width, color);
+            return;
+        }
+        if (width <= 0) {
+            return;
+        }
+        float scale = Math.max(0.1F, width / (float) font.width(value));
+        graphics.pose().pushPose();
+        graphics.pose().translate(x, y, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, value, 0, 0, color, false);
+        graphics.pose().popPose();
     }
 
     private void drawWrapped(GuiGraphics graphics, Component text, int x, int y, int width, int color) {
@@ -1417,6 +1458,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
         hideEffectAmountBoxes();
         hideEffectCountBoxes();
+        hideEffectEntityBoxes();
     }
 
     private void applyFields() {
@@ -1800,8 +1842,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EVOKER_FANG_LINE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.EVOKER_FANG_CIRCLE && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.EVOKER_FANG_CIRCLE, effect.amount(), effect.target(), effect.count()));
-            } else if (effect.kind() == CardEffectKind.SUMMON_VEX && effect.amount() > 0) {
-                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.SUMMON_VEX, effect.amount(), effect.target(), effect.count()));
+            } else if (CardEffect.isSummonKind(effect.kind()) && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.SUMMON, effect.amount(), CardTarget.SELF, effect.count(), effect.entityTypeId()));
             } else if (effect.kind() == CardEffectKind.STRENGTH && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.STRENGTH, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.LOSE_STRENGTH && effect.amount() > 0) {
@@ -2356,7 +2398,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.UNDYING,
                         DeveloperCardEffect.Kind.EVOKER_FANG_LINE,
                         DeveloperCardEffect.Kind.EVOKER_FANG_CIRCLE,
-                        DeveloperCardEffect.Kind.SUMMON_VEX,
+                        DeveloperCardEffect.Kind.SUMMON,
                         DeveloperCardEffect.Kind.STRENGTH,
                         DeveloperCardEffect.Kind.LOSE_STRENGTH,
                         DeveloperCardEffect.Kind.REGENERATION,
@@ -2411,7 +2453,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             DeveloperCardEffect effect = fallback.get(i);
             int amount = i < effectAmountBoxes.size() && effect.kind().usesAmount() ? intValue(effectAmountBoxes.get(i), effect.amount()) : effect.amount();
             int count = i < effectCountBoxes.size() && effect.canChangeCount() ? positiveIntValue(effectCountBoxes.get(i), effect.count()) : effect.count();
-            effects.add(new DeveloperCardEffect(effect.kind(), amount, effect.target(), count));
+            String entityTypeId = effect.isSummon() && i < effectEntityBoxes.size() ? effectEntityBoxes.get(i).getValue() : effect.entityTypeId();
+            DeveloperCardEffect.Kind kind = effect.isSummon() ? DeveloperCardEffect.Kind.SUMMON : effect.kind();
+            CardTarget target = effect.isSummon() ? CardTarget.SELF : effect.target();
+            effects.add(new DeveloperCardEffect(kind, amount, target, count, entityTypeId));
         }
         return CardEffectOrder.orderedDeveloperEffects(effects);
     }
@@ -3759,11 +3804,13 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void syncEffectAmountBoxes(Layout layout, List<DeveloperCardEffect> effects, GridLayout grid) {
         String selectedId = selectedCard() == null ? "" : selectedCard().id();
-        if (!selectedId.equals(effectAmountBoxesCardId) || effectAmountBoxes.size() != effects.size() || effectCountBoxes.size() != effects.size()) {
+        if (!selectedId.equals(effectAmountBoxesCardId) || effectAmountBoxes.size() != effects.size() || effectCountBoxes.size() != effects.size() || effectEntityBoxes.size() != effects.size()) {
             hideEffectAmountBoxes();
             hideEffectCountBoxes();
+            hideEffectEntityBoxes();
             effectAmountBoxes.clear();
             effectCountBoxes.clear();
+            effectEntityBoxes.clear();
             effectAmountBoxesCardId = selectedId;
             for (int i = 0; i < effects.size(); i++) {
                 int rowY = layout.effectsY() + i * 24;
@@ -3773,6 +3820,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 EditBox countBox = addBox(layout.formX() + layout.formW() - 58, rowY, EFFECT_COUNT_W, Component.translatable("debug.moonspire.effect_count"));
                 countBox.setValue(Integer.toString(effects.get(i).count()));
                 effectCountBoxes.add(countBox);
+                EditBox entityBox = addBox(layout.formX() + 40, rowY, 60, Component.translatable("debug.moonspire.effect_entity"));
+                entityBox.setValue(effects.get(i).entityTypeId());
+                effectEntityBoxes.add(entityBox);
             }
         }
         for (int i = 0; i < effectAmountBoxes.size(); i++) {
@@ -3798,6 +3848,19 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 box.setX(effectCountX(grid));
                 box.setY(rowY);
                 box.setWidth(EFFECT_COUNT_W);
+            }
+            setVisible(box, visible);
+        }
+        for (int i = 0; i < effectEntityBoxes.size(); i++) {
+            EditBox box = effectEntityBoxes.get(i);
+            boolean visible = tab == Tab.CARDS && i < effects.size() && effects.get(i).isSummon();
+            if (visible) {
+                GridCell cell = cell(grid, i);
+                int rowY = cell.y();
+                visible = rowY + 18 > grid.viewY() && rowY < grid.viewY() + grid.viewH();
+                box.setX(effectEntityX(grid));
+                box.setY(rowY);
+                box.setWidth(effectEntityWidth(grid));
             }
             setVisible(box, visible);
         }
@@ -3843,6 +3906,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
     }
 
+    private void hideEffectEntityBoxes() {
+        for (EditBox box : effectEntityBoxes) {
+            setVisible(box, false);
+        }
+    }
+
     private void hideMonsterEffectAmountBoxes() {
         for (EditBox box : monsterEffectAmountBoxes) {
             setVisible(box, false);
@@ -3869,12 +3938,26 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         return effectAmountLabelX(grid) - EFFECT_CONTROL_GAP - EFFECT_TARGET_W;
     }
 
+    private int effectEntityX(GridLayout grid) {
+        return effectAmountLabelX(grid) - EFFECT_CONTROL_GAP - effectEntityWidth(grid);
+    }
+
+    private int effectEntityWidth(GridLayout grid) {
+        int maxWidth = effectAmountLabelX(grid) - EFFECT_CONTROL_GAP - effectNameX(grid) - EFFECT_NAME_TARGET_GAP - EFFECT_SUMMON_NAME_MIN_W;
+        return Math.max(EFFECT_ENTITY_MIN_W, Math.min(EFFECT_ENTITY_W, maxWidth));
+    }
+
     private int effectNameX(GridLayout grid) {
         return grid.viewX() + 30;
     }
 
     private int effectNameWidth(GridLayout grid) {
         return Math.max(1, effectTargetX(grid) - effectNameX(grid) - EFFECT_NAME_TARGET_GAP);
+    }
+
+    private int effectNameWidth(GridLayout grid, DeveloperCardEffect effect) {
+        int controlX = effect != null && effect.isSummon() ? effectEntityX(grid) : effectTargetX(grid);
+        return Math.max(1, controlX - effectNameX(grid) - EFFECT_NAME_TARGET_GAP);
     }
 
     private int monsterEffectRemoveX(GridLayout grid) {
@@ -3982,7 +4065,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 List<DeveloperCardEffect> next = new ArrayList<>(effects);
                 DeveloperCardEffect effect = next.get(targetPickerEffectIndex);
                 if (effect.canChangeTarget()) {
-                    next.set(targetPickerEffectIndex, new DeveloperCardEffect(effect.kind(), effect.amount(), targets.get(index), effect.count()));
+                    next.set(targetPickerEffectIndex, new DeveloperCardEffect(effect.kind(), effect.amount(), targets.get(index), effect.count(), effect.entityTypeId()));
                     closeTargetPicker();
                     updateEffects(next);
                     return true;

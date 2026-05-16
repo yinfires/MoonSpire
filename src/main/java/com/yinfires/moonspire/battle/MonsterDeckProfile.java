@@ -146,6 +146,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_web",
             "builtin_monster_venom_fang",
             "builtin_monster_venom_fang");
+    private static final List<String> SILVERFISH_DEFAULT_DECK = List.of(
+            "builtin_monster_nipping_bite",
+            "builtin_monster_nipping_bite",
+            "builtin_monster_nipping_bite",
+            "builtin_monster_crackling_mandibles",
+            "builtin_monster_crackling_mandibles",
+            "builtin_monster_stone_scuttle",
+            "builtin_monster_stone_scuttle",
+            "builtin_monster_swarm_alarm",
+            "builtin_monster_swarm_alarm",
+            "builtin_monster_infested_call");
     private static final List<String> CREEPER_DEFAULT_DECK = List.of(
             "builtin_monster_light_fuse",
             "builtin_monster_hissing_advance",
@@ -322,6 +333,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.SPIDER) {
             return cards(SPIDER_DEFAULT_DECK);
         }
+        if (type == EntityType.SILVERFISH) {
+            return cards(SILVERFISH_DEFAULT_DECK);
+        }
         if (type == EntityType.CREEPER) {
             return cards(CREEPER_DEFAULT_DECK);
         }
@@ -382,6 +396,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.SPIDER) {
             return SPIDER_DEFAULT_DECK;
+        }
+        if (type == EntityType.SILVERFISH) {
+            return SILVERFISH_DEFAULT_DECK;
         }
         if (type == EntityType.CREEPER) {
             return CREEPER_DEFAULT_DECK;

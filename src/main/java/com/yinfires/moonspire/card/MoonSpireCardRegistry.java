@@ -312,7 +312,7 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_fang_circle", "card.moonspire.monster.fang_circle.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.EVOKER_FANG_CIRCLE, 5, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:evoker_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_summon_vex", "card.moonspire.monster.summon_vex.name", "", 3, 0, 0, List.of(
-                        new CardEffect(CardEffectKind.SUMMON_VEX, 3, CardTarget.SELF, 3),
+                        new CardEffect(CardEffectKind.SUMMON, 3, CardTarget.SELF, 3, "minecraft:vex"),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:vex_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_totem_of_undying", "card.moonspire.monster.totem_of_undying.name", "", 3, 0, 0, List.of(
                         new CardEffect(CardEffectKind.UNDYING, 1, CardTarget.SELF),
@@ -375,6 +375,20 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_venom_fang", "card.moonspire.monster.venom_fang.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
                         new CardEffect(CardEffectKind.POISON, 5, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_nipping_bite", "card.moonspire.monster.nipping_bite.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:silverfish_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_crackling_mandibles", "card.moonspire.monster.crackling_mandibles.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 2, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:cracked_stone_bricks", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_stone_scuttle", "card.moonspire.monster.stone_scuttle.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 3, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:stone", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_swarm_alarm", "card.moonspire.monster.swarm_alarm.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 2, CardTarget.ALL_ALLIES),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:cobblestone", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_infested_call", "card.moonspire.monster.infested_call.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.SUMMON, 1, CardTarget.SELF, 2, "minecraft:silverfish"),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:silverfish_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_light_fuse", "card.moonspire.monster.light_fuse.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.INNATE, 1),
                         new CardEffect(CardEffectKind.FUSE, 2, CardTarget.SELF),

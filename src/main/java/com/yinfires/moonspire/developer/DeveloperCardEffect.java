@@ -1,14 +1,17 @@
 package com.yinfires.moonspire.developer;
 
 import com.yinfires.moonspire.card.CardTarget;
+import com.yinfires.moonspire.card.CardEffectKind;
+import com.yinfires.moonspire.card.CardEffect;
 import java.util.Locale;
 
-public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int count) {
+public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int count, String entityTypeId) {
     public DeveloperCardEffect {
         kind = kind == null ? Kind.DAMAGE : kind;
         amount = Math.max(0, amount);
         target = target == null ? defaultTarget(kind) : target;
         count = Math.max(1, count);
+        entityTypeId = defaultEntityTypeId(kind, entityTypeId);
     }
 
     public DeveloperCardEffect(Kind kind, int amount) {
@@ -17,6 +20,10 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
 
     public DeveloperCardEffect(Kind kind, int amount, CardTarget target) {
         this(kind, amount, target, 1);
+    }
+
+    public DeveloperCardEffect(Kind kind, int amount, CardTarget target, int count) {
+        this(kind, amount, target, count, "");
     }
 
     public static DeveloperCardEffect damage(int amount) {
@@ -43,7 +50,9 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
                 || kind == Kind.HEAL
                 || kind == Kind.GUARD
                 || kind == Kind.UNDYING
+                || kind == Kind.SUMMON
                 || kind == Kind.SUMMON_VEX
+                || kind == Kind.SUMMON_SILVERFISH
                 || kind == Kind.STRENGTH
                 || kind == Kind.REGENERATION
                 || kind == Kind.HASTE
@@ -67,11 +76,24 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
     }
 
     public boolean canChangeTarget() {
-        return kind.usesTarget() && amount > 0;
+        return kind.usesTarget() && amount > 0 && !isSummon();
     }
 
     public boolean canChangeCount() {
         return kind.usesAmount() && !kind.isHandSelection() && amount > 0;
+    }
+
+    public boolean isSummon() {
+        return kind == Kind.SUMMON || kind == Kind.SUMMON_VEX || kind == Kind.SUMMON_SILVERFISH;
+    }
+
+    private static String defaultEntityTypeId(Kind kind, String entityTypeId) {
+        return switch (kind) {
+            case SUMMON -> CardEffect.defaultEntityTypeId(CardEffectKind.SUMMON, entityTypeId);
+            case SUMMON_VEX -> CardEffect.defaultEntityTypeId(CardEffectKind.SUMMON_VEX, entityTypeId);
+            case SUMMON_SILVERFISH -> CardEffect.defaultEntityTypeId(CardEffectKind.SUMMON_SILVERFISH, entityTypeId);
+            default -> "";
+        };
     }
 
     public enum Kind {
@@ -87,7 +109,9 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         UNDYING,
         EVOKER_FANG_LINE,
         EVOKER_FANG_CIRCLE,
+        SUMMON,
         SUMMON_VEX,
+        SUMMON_SILVERFISH,
         STRENGTH,
         LOSE_STRENGTH,
         REGENERATION,
