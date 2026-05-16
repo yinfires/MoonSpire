@@ -18,6 +18,13 @@
 - Prefer a small complete patch once enough context is known, then compile or run the narrowest useful verification.
 - If exploration takes more than a couple of tool calls, give a short status update before continuing.
 - Do not wait until every detail is understood before making low-risk layout, documentation, or narrowly scoped changes.
+- Use a token-aware exploration flow: build a repository map with `rg --files` or directory/file-type counts, then narrow searches with `rg -n` before reading source or docs.
+- Treat directory listings as an index only. They reduce wasted reading, but do not replace targeted searches and small line-range reads around relevant matches.
+- Avoid loading very large files wholesale unless the user explicitly asks. For this project, especially inspect only focused ranges of `BattleState.java`, `BattleScreen.java`, `DeveloperCenterScreen.java`, `CardRenderHelper.java`, `docs/gameplay.md`, and `docs/ui_layout.md`.
+- Prefer scoped commands such as `rg -n "methodName|ClassName" src/main/java`, `rg -n -C 2 "keyword" path`, and structure scans like `rg -n "class |record |enum |void |public |private " LargeFile.java` before opening large files.
+- For UI tasks, read only the relevant `docs/ui_layout.md` section first, then search `BattleScreen`, `CardRenderHelper`, and `client/ui`. For gameplay tasks, search the card/battle/status code first, then update the matching `docs/gameplay.md` category. For language tasks, read `docs/language_categories.md` first, then search exact keys in `en_us.json` and `zh_cn.json`.
+- When Chinese text matters, read the narrowed file or line range with explicit UTF-8 decoding before judging whether terminal output is garbled.
+- Keep verification output concise: preserve the failing Gradle/compiler summary and key error lines instead of pasting entire logs.
 - When preparing a release changelog, first check the current version in project metadata such as `gradle.properties`, then review the recent commits since the previous release; version bumps are often only hinted at by those commits rather than a dedicated release commit.
 - Release changelog entries do not use a `Release Summary` / `发布摘要` section; start directly with concrete categories such as Added, Changed, Fixed, Gameplay, or their Chinese counterparts.
 - When investigating battle confirmation or synchronization delays, do not stop at client-side modal visibility or local animations. Check the authoritative server chain and sync cadence first: payload handler thread, `BattleManager` mutation, `BattleState` pending flags, snapshot size/frequency, and stale snapshot ordering. Large `BattleSnapshot` payloads must not be sent every tick while a pending player choice is idle; repeated old pending snapshots can queue ahead of the confirmation result and look like delayed server resolution.
@@ -93,6 +100,8 @@
 
 - Every player-facing string must use a translation key.
 - Do not use `Component.literal(...)` or direct English/Chinese UI text for names, descriptions, HUD labels, messages, buttons, phases, card stats, or card text.
+- In translation strings that contain `%s` arguments and a literal percent sign, escape the literal percent as `%%` (for example `50%%`) as with Undying's active description.
+- When Simplified Chinese battle status descriptions describe single-card multi-hit attack-damage triggers, phrase them as "每次受到攻击伤害时" or "每次造成攻击伤害时", not "每段卡牌直接攻击".
 - Store card display text as translation keys (`nameKey`, `descriptionKey`) and render them with `Component.translatable(...)`.
 - Card effect description lines default to ending punctuation through the shared card description builder; new effect description branches should use the shared helper instead of adding raw lines without punctuation.
 - In Simplified Chinese card effect descriptions, keep the existing wording "造成伤害" for damage dealt by cards; use "攻击伤害" for direct damage only in combat status, intent, shield/block resolution, and similar non-card-description contexts.

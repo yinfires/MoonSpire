@@ -647,7 +647,7 @@ public final class CardRenderHelper {
             } else if (effect.kind() == CardEffectKind.BLEED) {
                 addEffectLine(lines, Component.translatable(bleedDescriptionKey(effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.bleed.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GAZE) {
-                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.gaze.name"))), effect.count());
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "gaze", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.gaze.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GLOWING) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "glowing", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.glowing.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.GUARD) {
@@ -665,7 +665,7 @@ public final class CardRenderHelper {
             } else if (effect.kind() == CardEffectKind.HASTE) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "haste", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.haste.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.PHASE) {
-                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "haste", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.phase.name"))), effect.count());
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "phase", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.phase.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.POISON) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "poison", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.poison.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.BURN) {
