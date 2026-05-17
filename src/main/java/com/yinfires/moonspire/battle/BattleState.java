@@ -235,9 +235,9 @@ public class BattleState {
         if (state == null) {
             return;
         }
-        int slimeSplitStacks = MonsterDeckProfile.defaultSlimeSplitStacks(state.entity());
-        if (slimeSplitStacks > 0 && state.effectAmount(BattleEffectType.SPLIT) <= 0) {
-            state.addEffect(BattleEffectType.SPLIT, slimeSplitStacks);
+        int splitStacks = MonsterDeckProfile.defaultSlimeSplitStacks(state.entity());
+        if (splitStacks > 0 && state.effectAmount(BattleEffectType.SPLIT) <= 0) {
+            state.addEffect(BattleEffectType.SPLIT, splitStacks);
         }
         if (MonsterDeckProfile.hasAbundantArrowsByDefault(state.entity().getType())) {
             state.addEffect(BattleEffectType.ABUNDANT_ARROWS, 1);
@@ -3160,6 +3160,11 @@ public class BattleState {
         }
         return "builtin_monster_gilded_cut".equals(card.cardId())
                 || "builtin_monster_gold_guard".equals(card.cardId())
+                || "builtin_monster_vengeful_gold_cut".equals(card.cardId())
+                || "builtin_monster_rotten_gold_guard".equals(card.cardId())
+                || "builtin_monster_zombified_lunge".equals(card.cardId())
+                || "builtin_monster_cursed_gold_stance".equals(card.cardId())
+                || "builtin_monster_restless_revenge".equals(card.cardId())
                 || "builtin_monster_brute_chop".equals(card.cardId())
                 || "builtin_monster_brute_cleave".equals(card.cardId())
                 || "builtin_monster_brute_pressure".equals(card.cardId())
@@ -3172,8 +3177,8 @@ public class BattleState {
             return ItemStack.EMPTY;
         }
         return switch (card.cardId()) {
-            case "builtin_monster_gilded_cut" -> new ItemStack(Items.GOLDEN_SWORD);
-            case "builtin_monster_gold_guard", "builtin_monster_brute_gold_plate" -> new ItemStack(Items.GOLDEN_CHESTPLATE);
+            case "builtin_monster_gilded_cut", "builtin_monster_vengeful_gold_cut", "builtin_monster_zombified_lunge", "builtin_monster_restless_revenge" -> new ItemStack(Items.GOLDEN_SWORD);
+            case "builtin_monster_gold_guard", "builtin_monster_rotten_gold_guard", "builtin_monster_cursed_gold_stance", "builtin_monster_brute_gold_plate" -> new ItemStack(Items.GOLDEN_CHESTPLATE);
             case "builtin_monster_brute_chop", "builtin_monster_brute_cleave", "builtin_monster_brute_pressure", "builtin_monster_brute_fury" -> new ItemStack(Items.GOLDEN_AXE);
             default -> ItemStack.EMPTY;
         };

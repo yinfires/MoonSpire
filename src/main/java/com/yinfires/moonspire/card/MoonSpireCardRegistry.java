@@ -375,6 +375,16 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_gilded_cut", "card.moonspire.monster.gilded_cut.name", "", 1, 5, 0, List.of(
                         new CardEffect(CardEffectKind.BLEED, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_sword", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_gold_guard", "card.moonspire.monster.gold_guard.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_chestplate", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_vengeful_gold_cut", "card.moonspire.monster.vengeful_gold_cut.name", "", 1, 5, 0, List.of(
+                        new CardEffect(CardEffectKind.BLEED, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_rotten_gold_guard", "card.moonspire.monster.rotten_gold_guard.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_chestplate", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_zombified_lunge", "card.moonspire.monster.zombified_lunge.name", "", 2, 8, 0, List.of(
+                        new CardEffect(CardEffectKind.WITHER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_cursed_gold_stance", "card.moonspire.monster.cursed_gold_stance.name", "", 2, 0, 6, List.of(
+                        new CardEffect(CardEffectKind.STRENGTH, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:golden_chestplate", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_restless_revenge", "card.moonspire.monster.restless_revenge.name", "", 1, 4, 0, List.of(
+                        new CardEffect(CardEffectKind.WITHER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_sword", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_brute_chop", "card.moonspire.monster.brute_chop.name", "", 1, 8, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_brute_cleave", "card.moonspire.monster.brute_cleave.name", "", 2, 12, 0, List.of(
                         new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
@@ -443,6 +453,17 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_splattering_pressure", "card.moonspire.monster.splattering_pressure.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
                         new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:slime_ball", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_magma_bump", "card.moonspire.monster.magma_bump.name", "", 1, 4, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:magma_cream", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_scorching_slap", "card.moonspire.monster.scorching_slap.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:magma_cream", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_cinder_cling", "card.moonspire.monster.cinder_cling.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BURN, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:magma_cream", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_igneous_body", "card.moonspire.monster.igneous_body.name", "", 1, 0, 5, List.of(
+                        new CardEffect(CardEffectKind.THORNS, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:magma_block", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_eruptive_pressure", "card.moonspire.monster.eruptive_pressure.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:magma_cream", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_ender_stare", "card.moonspire.monster.ender_stare.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.GAZE, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_blink_step", "card.moonspire.monster.blink_step.name", "", 1, 0, 0, List.of(

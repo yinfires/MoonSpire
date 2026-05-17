@@ -154,6 +154,17 @@ public final class MonsterDeckProfile {
             "item_minecraft_arrow",
             "item_minecraft_arrow",
             "item_minecraft_arrow");
+    private static final List<String> ZOMBIFIED_PIGLIN_DEFAULT_DECK = List.of(
+            "builtin_monster_vengeful_gold_cut",
+            "builtin_monster_vengeful_gold_cut",
+            "builtin_monster_vengeful_gold_cut",
+            "builtin_monster_rotten_gold_guard",
+            "builtin_monster_rotten_gold_guard",
+            "builtin_monster_zombified_lunge",
+            "builtin_monster_zombified_lunge",
+            "builtin_monster_cursed_gold_stance",
+            "builtin_monster_restless_revenge",
+            "builtin_monster_restless_revenge");
     private static final List<String> PIGLIN_BRUTE_DEFAULT_DECK = List.of(
             "builtin_monster_brute_chop",
             "builtin_monster_brute_chop",
@@ -316,6 +327,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_gelatinous_body",
             "builtin_monster_gelatinous_body",
             "builtin_monster_splattering_pressure");
+    private static final List<String> MAGMA_CUBE_DEFAULT_DECK = List.of(
+            "builtin_monster_magma_bump",
+            "builtin_monster_magma_bump",
+            "builtin_monster_magma_bump",
+            "builtin_monster_scorching_slap",
+            "builtin_monster_scorching_slap",
+            "builtin_monster_cinder_cling",
+            "builtin_monster_cinder_cling",
+            "builtin_monster_igneous_body",
+            "builtin_monster_igneous_body",
+            "builtin_monster_eruptive_pressure");
     private static final List<String> ENDERMAN_DEFAULT_DECK = List.of(
             "builtin_monster_ender_stare",
             "builtin_monster_ender_stare",
@@ -372,6 +394,9 @@ public final class MonsterDeckProfile {
         if (monster != null && monster.getType() == EntityType.SLIME && (override.isEmpty() || !override.get().hasDeckOverride())) {
             return uniqueResolvableIds(SLIME_DEFAULT_DECK);
         }
+        if (monster != null && monster.getType() == EntityType.MAGMA_CUBE && (override.isEmpty() || !override.get().hasDeckOverride())) {
+            return uniqueResolvableIds(MAGMA_CUBE_DEFAULT_DECK);
+        }
         return uniqueCardIds(battleStartDeck);
     }
 
@@ -401,6 +426,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.SLIME) {
             return slimeCards(monster);
         }
+        if (type == EntityType.MAGMA_CUBE) {
+            return magmaCubeCards(monster);
+        }
         if (type == EntityType.ENDERMAN) {
             return cards(ENDERMAN_DEFAULT_DECK);
         }
@@ -421,6 +449,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.VINDICATOR) {
             return cards(VINDICATOR_DEFAULT_DECK);
+        }
+        if (type == EntityType.ZOMBIFIED_PIGLIN) {
+            return cards(ZOMBIFIED_PIGLIN_DEFAULT_DECK);
         }
         if (isZombieFamily(type)) {
             return cards(ZOMBIE_DEFAULT_DECK);
@@ -489,6 +520,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.SLIME) {
             return SLIME_DEFAULT_DECK;
         }
+        if (type == EntityType.MAGMA_CUBE) {
+            return MAGMA_CUBE_DEFAULT_DECK;
+        }
         if (type == EntityType.ENDERMAN) {
             return ENDERMAN_DEFAULT_DECK;
         }
@@ -509,6 +543,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.VINDICATOR) {
             return VINDICATOR_DEFAULT_DECK;
+        }
+        if (type == EntityType.ZOMBIFIED_PIGLIN) {
+            return ZOMBIFIED_PIGLIN_DEFAULT_DECK;
         }
         if (isZombieFamily(type)) {
             return ZOMBIE_DEFAULT_DECK;
@@ -575,7 +612,7 @@ public final class MonsterDeckProfile {
     }
 
     public static int defaultSlimeSplitStacks(LivingEntity entity) {
-        if (entity instanceof Slime slime && entity.getType() == EntityType.SLIME) {
+        if (entity instanceof Slime slime && isSlimeFamily(entity.getType())) {
             int size = slime.getSize();
             if (size >= 4) {
                 return 2;
@@ -605,7 +642,7 @@ public final class MonsterDeckProfile {
         if (entity.getType() == EntityType.EVOKER) {
             return 60.0F;
         }
-        if (entity instanceof Slime slime && entity.getType() == EntityType.SLIME) {
+        if (entity instanceof Slime slime && isSlimeFamily(entity.getType())) {
             int reductions = slimeWeakeningSteps(slime);
             if (reductions > 0) {
                 return weakenedPositiveFloat(SLIME_LARGE_BASE_HEALTH, reductions);
@@ -617,8 +654,11 @@ public final class MonsterDeckProfile {
     private static boolean isZombieFamily(EntityType<?> type) {
         return type == EntityType.ZOMBIE
                 || type == EntityType.HUSK
-                || type == EntityType.ZOMBIE_VILLAGER
-                || type == EntityType.ZOMBIFIED_PIGLIN;
+                || type == EntityType.ZOMBIE_VILLAGER;
+    }
+
+    private static boolean isSlimeFamily(EntityType<?> type) {
+        return type == EntityType.SLIME || type == EntityType.MAGMA_CUBE;
     }
 
     private static List<CardInstance> fallback(LivingEntity monster) {
@@ -633,11 +673,19 @@ public final class MonsterDeckProfile {
     }
 
     private static List<CardInstance> slimeCards(LivingEntity monster) {
-        List<CardInstance> cards = cards(SLIME_DEFAULT_DECK);
+        return sizedSlimeFamilyCards(SLIME_DEFAULT_DECK, monster, "dynamic_slime_weakened_");
+    }
+
+    private static List<CardInstance> magmaCubeCards(LivingEntity monster) {
+        return sizedSlimeFamilyCards(MAGMA_CUBE_DEFAULT_DECK, monster, "dynamic_magma_cube_weakened_");
+    }
+
+    private static List<CardInstance> sizedSlimeFamilyCards(List<String> defaultDeck, LivingEntity monster, String weakenedIdPrefix) {
+        List<CardInstance> cards = cards(defaultDeck);
         if (monster instanceof Slime slime) {
             int reductions = slimeWeakeningSteps(slime);
             for (int i = 0; i < reductions; i++) {
-                cards = weakenedCards(cards);
+                cards = weakenedCards(cards, weakenedIdPrefix);
             }
         }
         return cards;
@@ -654,15 +702,15 @@ public final class MonsterDeckProfile {
         return 2;
     }
 
-    private static List<CardInstance> weakenedCards(List<CardInstance> sourceCards) {
+    private static List<CardInstance> weakenedCards(List<CardInstance> sourceCards, String weakenedIdPrefix) {
         List<CardInstance> cards = new ArrayList<>();
         for (CardInstance card : sourceCards) {
-            cards.add(weakenedCard(card));
+            cards.add(weakenedCard(card, weakenedIdPrefix));
         }
         return cards;
     }
 
-    private static CardInstance weakenedCard(CardInstance card) {
+    private static CardInstance weakenedCard(CardInstance card, String weakenedIdPrefix) {
         List<CardEffect> effects = new ArrayList<>();
         for (CardEffect effect : card.effects()) {
             int amount = effect.kind().usesAmount() ? weakenedNonZero(effect.amount()) : effect.amount();
@@ -670,7 +718,7 @@ public final class MonsterDeckProfile {
         }
         return new CardInstance(
                 UUID.randomUUID(),
-                slimeWeakenedCardId(card),
+                weakenedCardId(card, weakenedIdPrefix),
                 card.sourceStack().copy(),
                 card.nameKey(),
                 card.descriptionKey(),
@@ -689,12 +737,12 @@ public final class MonsterDeckProfile {
                 card.faceId());
     }
 
-    private static String slimeWeakenedCardId(CardInstance card) {
+    private static String weakenedCardId(CardInstance card, String prefix) {
         String sourceId = card == null ? "" : card.cardId();
         if (sourceId == null || sourceId.isBlank()) {
             sourceId = "card";
         }
-        return "dynamic_slime_weakened_" + dynamicCardIdSuffix(sourceId);
+        return prefix + dynamicCardIdSuffix(sourceId);
     }
 
     private static String dynamicCardIdSuffix(String sourceId) {

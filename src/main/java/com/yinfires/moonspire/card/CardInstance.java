@@ -507,6 +507,11 @@ public record CardInstance(
             case "card.moonspire.monster.viscous_snare.name" -> "builtin_monster_viscous_snare";
             case "card.moonspire.monster.gelatinous_body.name" -> "builtin_monster_gelatinous_body";
             case "card.moonspire.monster.splattering_pressure.name" -> "builtin_monster_splattering_pressure";
+            case "card.moonspire.monster.magma_bump.name" -> "builtin_monster_magma_bump";
+            case "card.moonspire.monster.scorching_slap.name" -> "builtin_monster_scorching_slap";
+            case "card.moonspire.monster.cinder_cling.name" -> "builtin_monster_cinder_cling";
+            case "card.moonspire.monster.igneous_body.name" -> "builtin_monster_igneous_body";
+            case "card.moonspire.monster.eruptive_pressure.name" -> "builtin_monster_eruptive_pressure";
             case "card.moonspire.monster.pounce.name" -> "builtin_monster_pounce";
             case "card.moonspire.monster.skitter.name" -> "builtin_monster_skitter";
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";
