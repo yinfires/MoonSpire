@@ -44,6 +44,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.monster.Vex;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.projectile.EvokerFangs;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -80,6 +81,10 @@ public class BattleState {
     private static final int RAVAGER_HEAD_RAM_APPROACH_TICKS = 8;
     private static final int RAVAGER_HEAD_RAM_STRIKE_TICKS = 2;
     private static final int RAVAGER_HEAD_RAM_RECOVER_TICKS = 6;
+    private static final int PIGLIN_MELEE_RAISE_TICKS = 8;
+    private static final int PIGLIN_MELEE_APPROACH_TICKS = 8;
+    private static final int PIGLIN_MELEE_STRIKE_TICKS = 1;
+    private static final int PIGLIN_MELEE_RECOVER_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
@@ -2373,6 +2378,17 @@ public class BattleState {
                 || "builtin_monster_trampling_pressure".equals(batch.card().cardId());
     }
 
+    private boolean isPiglinMeleeAttack(PendingCardBatch batch) {
+        if (batch == null || batch.card() == null || batch.user() == null || !(batch.user().entity() instanceof AbstractPiglin)) {
+            return false;
+        }
+        if (batch.card().hasEffect(CardEffectKind.REMOTE)) {
+            return false;
+        }
+        return batch.effects().stream()
+                .anyMatch(effect -> isDirectAttackEffect(effect.kind()) && !effect.effectDamage() && effect.amount() > 0);
+    }
+
     private LungeStyle lungeStyle(PendingCardBatch batch) {
         if (isVindicatorAxeAttack(batch)) {
             return LungeStyle.VINDICATOR_AXE;
@@ -2382,6 +2398,9 @@ public class BattleState {
         }
         if (isRavagerHeadRamAttack(batch)) {
             return LungeStyle.RAVAGER_HEAD_RAM;
+        }
+        if (isPiglinMeleeAttack(batch)) {
+            return LungeStyle.PIGLIN_MELEE;
         }
         return LungeStyle.NORMAL;
     }
@@ -3083,6 +3102,9 @@ public class BattleState {
         if (batch.card() != null && "builtin_monster_bow_strike".equals(batch.card().cardId())) {
             return new ItemStack(Items.BOW);
         }
+        if (batch.card() != null && isPiglinCard(batch.card())) {
+            return piglinVisualStack(batch.card());
+        }
         return batch.stack();
     }
 
@@ -3106,6 +3128,31 @@ public class BattleState {
                 || "builtin_monster_phase_stab".equals(card.cardId())
                 || "builtin_monster_evasive_flicker".equals(card.cardId())
                 || "builtin_monster_frenzied_dive".equals(card.cardId());
+    }
+
+    private static boolean isPiglinCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_gilded_cut".equals(card.cardId())
+                || "builtin_monster_gold_guard".equals(card.cardId())
+                || "builtin_monster_brute_chop".equals(card.cardId())
+                || "builtin_monster_brute_cleave".equals(card.cardId())
+                || "builtin_monster_brute_pressure".equals(card.cardId())
+                || "builtin_monster_brute_gold_plate".equals(card.cardId())
+                || "builtin_monster_brute_fury".equals(card.cardId());
+    }
+
+    private static ItemStack piglinVisualStack(CardInstance card) {
+        if (card == null) {
+            return ItemStack.EMPTY;
+        }
+        return switch (card.cardId()) {
+            case "builtin_monster_gilded_cut" -> new ItemStack(Items.GOLDEN_SWORD);
+            case "builtin_monster_gold_guard", "builtin_monster_brute_gold_plate" -> new ItemStack(Items.GOLDEN_CHESTPLATE);
+            case "builtin_monster_brute_chop", "builtin_monster_brute_cleave", "builtin_monster_brute_pressure", "builtin_monster_brute_fury" -> new ItemStack(Items.GOLDEN_AXE);
+            default -> ItemStack.EMPTY;
+        };
     }
 
     private void summonEntities(CombatantState caster, int amount, int lifetimeTurns, String entityTypeId) {
@@ -4974,10 +5021,11 @@ public class BattleState {
         NORMAL,
         VINDICATOR_AXE,
         VEX_CHARGE,
-        RAVAGER_HEAD_RAM;
+        RAVAGER_HEAD_RAM,
+        PIGLIN_MELEE;
 
         private boolean hasPrepare() {
-            return this == VINDICATOR_AXE || this == VEX_CHARGE || this == RAVAGER_HEAD_RAM;
+            return this == VINDICATOR_AXE || this == VEX_CHARGE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE;
         }
 
         private int prepareTicks() {
@@ -4985,6 +5033,7 @@ public class BattleState {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_RAISE_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_RAISE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RAISE_TICKS;
+                case PIGLIN_MELEE -> PIGLIN_MELEE_RAISE_TICKS;
                 case NORMAL -> 0;
             };
         }
@@ -4994,18 +5043,20 @@ public class BattleState {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_APPROACH_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_APPROACH_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_APPROACH_TICKS;
+                case PIGLIN_MELEE -> PIGLIN_MELEE_APPROACH_TICKS;
                 case NORMAL -> MELEE_LUNGE_TICKS;
             };
         }
 
         private boolean hasStrike() {
-            return this == VINDICATOR_AXE || this == RAVAGER_HEAD_RAM;
+            return this == VINDICATOR_AXE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE;
         }
 
         private int strikeTicks() {
             return switch (this) {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_STRIKE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_STRIKE_TICKS;
+                case PIGLIN_MELEE -> PIGLIN_MELEE_STRIKE_TICKS;
                 case NORMAL, VEX_CHARGE -> 0;
             };
         }
@@ -5015,6 +5066,7 @@ public class BattleState {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_RECOVER_TICKS;
                 case VEX_CHARGE -> VEX_CHARGE_HIT_PAUSE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RECOVER_TICKS;
+                case PIGLIN_MELEE -> PIGLIN_MELEE_RECOVER_TICKS;
                 case NORMAL -> MELEE_HIT_PAUSE_TICKS;
             };
         }
@@ -5028,6 +5080,7 @@ public class BattleState {
                 case VINDICATOR_AXE -> BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING;
                 case VEX_CHARGE -> BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
                 case RAVAGER_HEAD_RAM -> BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM;
+                case PIGLIN_MELEE -> BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING;
                 case NORMAL -> BattleVisualEvent.AnimationType.MELEE_LUNGE;
             };
         }

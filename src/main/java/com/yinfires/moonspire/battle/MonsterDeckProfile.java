@@ -138,6 +138,33 @@ public final class MonsterDeckProfile {
             "item_minecraft_arrow",
             "item_minecraft_arrow",
             "item_minecraft_arrow");
+    private static final List<String> PIGLIN_DEFAULT_DECK = List.of(
+            "builtin_monster_piglin_bolt",
+            "builtin_monster_piglin_bolt",
+            "builtin_monster_piglin_bolt",
+            "builtin_monster_piglin_bolt",
+            "builtin_monster_gilded_cut",
+            "builtin_monster_gilded_cut",
+            "builtin_monster_gilded_cut",
+            "builtin_monster_gold_guard",
+            "builtin_monster_gold_guard",
+            "builtin_monster_gold_guard",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow",
+            "item_minecraft_arrow");
+    private static final List<String> PIGLIN_BRUTE_DEFAULT_DECK = List.of(
+            "builtin_monster_brute_chop",
+            "builtin_monster_brute_chop",
+            "builtin_monster_brute_chop",
+            "builtin_monster_brute_cleave",
+            "builtin_monster_brute_cleave",
+            "builtin_monster_brute_pressure",
+            "builtin_monster_brute_pressure",
+            "builtin_monster_brute_gold_plate",
+            "builtin_monster_brute_gold_plate",
+            "builtin_monster_brute_fury");
     private static final List<String> SPIDER_DEFAULT_DECK = List.of(
             "builtin_monster_pounce",
             "builtin_monster_skitter",
@@ -391,6 +418,12 @@ public final class MonsterDeckProfile {
         if (type == EntityType.PILLAGER) {
             return cards(PILLAGER_DEFAULT_DECK);
         }
+        if (type == EntityType.PIGLIN) {
+            return cards(PIGLIN_DEFAULT_DECK);
+        }
+        if (type == EntityType.PIGLIN_BRUTE) {
+            return cards(PIGLIN_BRUTE_DEFAULT_DECK);
+        }
         if (type == EntityType.CAVE_SPIDER) {
             return cards(CAVE_SPIDER_DEFAULT_DECK);
         }
@@ -467,6 +500,12 @@ public final class MonsterDeckProfile {
         if (type == EntityType.PILLAGER) {
             return PILLAGER_DEFAULT_DECK;
         }
+        if (type == EntityType.PIGLIN) {
+            return PIGLIN_DEFAULT_DECK;
+        }
+        if (type == EntityType.PIGLIN_BRUTE) {
+            return PIGLIN_BRUTE_DEFAULT_DECK;
+        }
         if (type == EntityType.CAVE_SPIDER) {
             return CAVE_SPIDER_DEFAULT_DECK;
         }
@@ -498,7 +537,7 @@ public final class MonsterDeckProfile {
     }
 
     public static boolean hasAbundantArrowsByDefault(EntityType<?> type) {
-        return isSkeletonFamily(type) || type == EntityType.PILLAGER;
+        return isSkeletonFamily(type) || type == EntityType.PILLAGER || type == EntityType.PIGLIN;
     }
 
     public static int defaultSlimeSplitStacks(LivingEntity entity) {

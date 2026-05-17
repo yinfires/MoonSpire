@@ -160,6 +160,7 @@ public record BattleVisualEvent(
         RAVAGER_HEAD_RAM,
         POTION_THROW,
         POTION_DRINK,
-        WIND_CHARGE
+        WIND_CHARGE,
+        PIGLIN_MELEE_SWING
     }
 }

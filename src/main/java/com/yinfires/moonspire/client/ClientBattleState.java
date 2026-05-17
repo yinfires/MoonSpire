@@ -53,6 +53,10 @@ public final class ClientBattleState {
     private static final int RAVAGER_HEAD_RAM_APPROACH_TICKS = 8;
     private static final int RAVAGER_HEAD_RAM_STRIKE_TICKS = 2;
     private static final int RAVAGER_HEAD_RAM_RECOVER_TICKS = 6;
+    private static final int PIGLIN_MELEE_RAISE_TICKS = 8;
+    private static final int PIGLIN_MELEE_APPROACH_TICKS = 8;
+    private static final int PIGLIN_MELEE_STRIKE_TICKS = 1;
+    private static final int PIGLIN_MELEE_RECOVER_TICKS = 6;
     private static final int RAVAGER_HEAD_ATTACK_TICKS = 10;
     static final int RIPTIDE_CHARGE_TICKS = 16;
     private static final int RIPTIDE_RUSH_TICKS = 10;
@@ -550,6 +554,11 @@ public final class ClientBattleState {
         return state != null && state.vexCharging();
     }
 
+    public static boolean visualPiglinMeleeRaised(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.piglinMeleeRaised();
+    }
+
     public static int visualRavagerAttackTick(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? 0 : state.ravagerAttackTick();
@@ -1019,7 +1028,8 @@ public final class ClientBattleState {
                 || animationType == BattleVisualEvent.AnimationType.RIPTIDE_RUSH
                 || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
                 || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
-                || animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM;
+                || animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
+                || animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING;
     }
 
     public static final class GuardianBeamAnimation {
@@ -1323,6 +1333,8 @@ public final class ClientBattleState {
                         ? VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS + VEX_CHARGE_HIT_PAUSE_TICKS
                         : nextType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
                         ? RAVAGER_HEAD_RAM_RAISE_TICKS + RAVAGER_HEAD_RAM_APPROACH_TICKS + RAVAGER_HEAD_RAM_STRIKE_TICKS + RAVAGER_HEAD_RAM_RECOVER_TICKS
+                        : nextType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
+                        ? PIGLIN_MELEE_RAISE_TICKS + PIGLIN_MELEE_APPROACH_TICKS + PIGLIN_MELEE_STRIKE_TICKS + PIGLIN_MELEE_RECOVER_TICKS
                         : MELEE_LUNGE_TICKS + MELEE_HIT_PAUSE_TICKS;
                 lungeTicks = Math.max(1, Math.max(minimumTicks, animationTicks));
                 lungeAge = 0;
@@ -1439,6 +1451,16 @@ public final class ClientBattleState {
                 }
                 return lungeStrike;
             }
+            if (animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING) {
+                if (age <= PIGLIN_MELEE_RAISE_TICKS) {
+                    return lungeStart;
+                }
+                age -= PIGLIN_MELEE_RAISE_TICKS;
+                if (age <= PIGLIN_MELEE_APPROACH_TICKS) {
+                    return lungePosition(age / PIGLIN_MELEE_APPROACH_TICKS);
+                }
+                return lungeStrike;
+            }
             if (age <= MELEE_LUNGE_TICKS) {
                 return lungePosition(age / MELEE_LUNGE_TICKS);
             }
@@ -1536,6 +1558,12 @@ public final class ClientBattleState {
             return animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
                     && lungeTicks > 0
                     && lungeAge <= VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS;
+        }
+
+        private boolean piglinMeleeRaised() {
+            return animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
+                    && lungeTicks > 0
+                    && lungeAge <= PIGLIN_MELEE_RAISE_TICKS + PIGLIN_MELEE_APPROACH_TICKS;
         }
 
         private int ravagerAttackTick() {

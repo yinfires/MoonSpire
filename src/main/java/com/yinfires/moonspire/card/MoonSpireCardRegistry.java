@@ -369,6 +369,21 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_grazing_cut", "card.moonspire.monster.grazing_cut.name", "", 1, 3, 0, List.of(
                         new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_reload_cover", "card.moonspire.monster.reload_cover.name", "", 1, 0, 4, List.of(), CardSourceType.MONSTER, "", "minecraft:crossbow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_piglin_bolt", "card.moonspire.monster.piglin_bolt.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.CONSUME_ARROW, 7, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:crossbow", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_gilded_cut", "card.moonspire.monster.gilded_cut.name", "", 1, 5, 0, List.of(
+                        new CardEffect(CardEffectKind.BLEED, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_sword", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_gold_guard", "card.moonspire.monster.gold_guard.name", "", 1, 0, 5, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_chestplate", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_brute_chop", "card.moonspire.monster.brute_chop.name", "", 1, 8, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_brute_cleave", "card.moonspire.monster.brute_cleave.name", "", 2, 12, 0, List.of(
+                        new CardEffect(CardEffectKind.BLEED, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_brute_pressure", "card.moonspire.monster.brute_pressure.name", "", 2, 9, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_brute_gold_plate", "card.moonspire.monster.brute_gold_plate.name", "", 1, 0, 7, List.of(), CardSourceType.MONSTER, "", "minecraft:golden_chestplate", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_brute_fury", "card.moonspire.monster.brute_fury.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.STRENGTH, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_hungry_lunge", "card.moonspire.monster.hungry_lunge.name", "", 2, 8, 0, List.of(
                         new CardEffect(CardEffectKind.HUNGER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_goring_headbutt", "card.moonspire.monster.goring_headbutt.name", "", 1, 8, 0, List.of(
