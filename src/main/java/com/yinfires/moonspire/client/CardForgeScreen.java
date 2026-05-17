@@ -3,6 +3,7 @@ package com.yinfires.moonspire.client;
 import com.yinfires.moonspire.card.CardFactory;
 import com.yinfires.moonspire.card.CardInstance;
 import com.yinfires.moonspire.client.ui.MoonSpireTextureButton;
+import com.yinfires.moonspire.client.ui.MoonSpireScreenLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.network.ConvertSlotPayload;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ public class CardForgeScreen extends NoBlurScreen {
     private static final int SCROLLBAR_WIDTH = 7;
     private static final int SCROLLBAR_HIT_WIDTH = 20;
     private static final int SCROLL_STEP = 24;
+    private static final float MIN_PREVIEW_SCALE = 0.55F;
 
     private final BlockPos forgePos;
     private double scrollOffset;
@@ -58,12 +60,12 @@ public class CardForgeScreen extends NoBlurScreen {
                 continue;
             }
             ForgeSlotEntry entry = entries.get(i);
-            MoonSpireUiTextures.drawForgeSlot(graphics, layout.contentX(), y, SLOT_WIDTH, SLOT_HEIGHT);
+            MoonSpireUiTextures.drawForgeSlot(graphics, layout.contentX(), y, layout.slotW(), SLOT_HEIGHT);
             if (i == hoveredIndex) {
-                drawRowHighlight(graphics, layout.contentX(), y);
+                drawRowHighlight(graphics, layout.contentX(), y, layout.slotW());
             }
             graphics.renderFakeItem(entry.stack(), layout.contentX() + 5, y + 5);
-            graphics.drawString(font, entry.stack().getHoverName(), layout.contentX() + 28, y + 5, 0xFFEDE8FF, false);
+            graphics.drawString(font, font.substrByWidth(entry.stack().getHoverName(), Math.max(1, layout.slotW() - 34)).getString(), layout.contentX() + 28, y + 5, 0xFFEDE8FF, false);
             graphics.drawString(font, Component.translatable("screen.moonspire.slot", entry.slot()), layout.contentX() + 28, y + 16, 0xFFC9C2DD, false);
         }
         graphics.disableScissor();
@@ -157,17 +159,24 @@ public class CardForgeScreen extends NoBlurScreen {
 
     private ForgeLayout layout(int entryCount) {
         int totalW = SLOT_WIDTH + SCROLLBAR_HIT_WIDTH + 8 + PREVIEW_GAP + CardRenderHelper.CARD_WIDTH;
-        int viewX = Math.max(SCREEN_PADDING, (width - totalW) / 2);
+        boolean compact = width < totalW + SCREEN_PADDING * 2;
+        float previewScale = compact ? MoonSpireScreenLayout.fitScale(CardRenderHelper.CARD_WIDTH, CardRenderHelper.CARD_HEIGHT, Math.max(1, width / 3), Math.max(1, height - VIEW_TOP - VIEW_BOTTOM_RESERVE), MIN_PREVIEW_SCALE) : 1.0F;
+        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewScale);
+        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewScale);
+        int preferredSlotW = compact ? Math.max(112, width - SCREEN_PADDING * 2 - SCROLLBAR_HIT_WIDTH - 8 - PREVIEW_GAP - previewW) : SLOT_WIDTH;
+        int slotW = Math.min(SLOT_WIDTH, Math.max(112, preferredSlotW));
+        int actualTotalW = slotW + SCROLLBAR_HIT_WIDTH + 8 + PREVIEW_GAP + previewW;
+        int viewX = Math.max(SCREEN_PADDING, (width - actualTotalW) / 2);
         int viewY = VIEW_TOP;
         int viewH = Math.max(SLOT_HEIGHT, height - VIEW_TOP - VIEW_BOTTOM_RESERVE);
-        int viewW = SLOT_WIDTH + SCROLLBAR_HIT_WIDTH + 8;
+        int viewW = slotW + SCROLLBAR_HIT_WIDTH + 8;
         int contentH = entryCount <= 0 ? 0 : entryCount * (SLOT_HEIGHT + SLOT_GAP) - SLOT_GAP;
-        int scrollbarX = viewX + SLOT_WIDTH + 10;
-        int previewX = Math.min(width - SCREEN_PADDING - CardRenderHelper.CARD_WIDTH, viewX + viewW + PREVIEW_GAP);
-        previewX = Math.max(viewX + SLOT_WIDTH + 4, previewX);
-        int previewY = Math.max(viewY, viewY + (viewH - CardRenderHelper.CARD_HEIGHT) / 2);
-        previewY = Math.min(height - VIEW_BOTTOM_RESERVE - CardRenderHelper.CARD_HEIGHT, previewY);
-        return new ForgeLayout(viewX, viewY, viewW, viewH, viewX, scrollbarX, contentH, previewX, previewY);
+        int scrollbarX = viewX + slotW + 10;
+        int previewX = Math.min(width - SCREEN_PADDING - previewW, viewX + viewW + PREVIEW_GAP);
+        previewX = Math.max(viewX + slotW + 4, previewX);
+        int previewY = Math.max(viewY, viewY + (viewH - previewH) / 2);
+        previewY = Math.min(height - VIEW_BOTTOM_RESERVE - previewH, previewY);
+        return new ForgeLayout(viewX, viewY, viewW, viewH, viewX, scrollbarX, contentH, previewX, previewY, slotW, previewScale);
     }
 
     private int rowY(ForgeLayout layout, int index) {
@@ -184,7 +193,7 @@ public class CardForgeScreen extends NoBlurScreen {
     }
 
     private int hoveredIndexAt(ForgeLayout layout, List<ForgeSlotEntry> entries, double mouseX, double mouseY) {
-        if (mouseX < layout.contentX() || mouseX > layout.contentX() + SLOT_WIDTH || mouseY < layout.viewY() || mouseY > layout.viewY() + layout.viewH()) {
+        if (mouseX < layout.contentX() || mouseX > layout.contentX() + layout.slotW() || mouseY < layout.viewY() || mouseY > layout.viewY() + layout.viewH()) {
             return -1;
         }
         for (int i = 0; i < entries.size(); i++) {
@@ -196,12 +205,12 @@ public class CardForgeScreen extends NoBlurScreen {
         return -1;
     }
 
-    private void drawRowHighlight(GuiGraphics graphics, int x, int y) {
-        graphics.fill(x + 2, y + 2, x + SLOT_WIDTH - 2, y + SLOT_HEIGHT - 2, 0x33FFF2C2);
-        graphics.fill(x + 1, y + 1, x + SLOT_WIDTH - 1, y + 2, 0xFFFFD66B);
-        graphics.fill(x + 1, y + SLOT_HEIGHT - 2, x + SLOT_WIDTH - 1, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
+    private void drawRowHighlight(GuiGraphics graphics, int x, int y, int rowW) {
+        graphics.fill(x + 2, y + 2, x + rowW - 2, y + SLOT_HEIGHT - 2, 0x33FFF2C2);
+        graphics.fill(x + 1, y + 1, x + rowW - 1, y + 2, 0xFFFFD66B);
+        graphics.fill(x + 1, y + SLOT_HEIGHT - 2, x + rowW - 1, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
         graphics.fill(x + 1, y + 1, x + 2, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
-        graphics.fill(x + SLOT_WIDTH - 2, y + 1, x + SLOT_WIDTH - 1, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
+        graphics.fill(x + rowW - 2, y + 1, x + rowW - 1, y + SLOT_HEIGHT - 1, 0xFFFFD66B);
     }
 
     private void renderCardPreview(GuiGraphics graphics, ForgeSlotEntry entry, ForgeLayout layout) {
@@ -210,8 +219,12 @@ public class CardForgeScreen extends NoBlurScreen {
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 120.0F);
         try {
-            CardRenderHelper.renderCard(graphics, font, card, layout.previewX(), layout.previewY(), false, CardRenderHelper.CardValues.original(card), false, false, contentKey);
-            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, layout.previewX(), layout.previewY(), CardRenderHelper.CARD_WIDTH, CardRenderHelper.CARD_HEIGHT, width, height);
+            graphics.pose().pushPose();
+            graphics.pose().translate(layout.previewX(), layout.previewY(), 0.0F);
+            graphics.pose().scale(layout.previewScale(), layout.previewScale(), 1.0F);
+            CardRenderHelper.renderCard(graphics, font, card, 0, 0, false, CardRenderHelper.CardValues.original(card), false, false, contentKey);
+            graphics.pose().popPose();
+            CardRenderHelper.renderKeywordTipsBeside(graphics, font, card, layout.previewX(), layout.previewY(), Math.round(CardRenderHelper.CARD_WIDTH * layout.previewScale()), Math.round(CardRenderHelper.CARD_HEIGHT * layout.previewScale()), width, height);
         } finally {
             graphics.pose().popPose();
         }
@@ -262,7 +275,7 @@ public class CardForgeScreen extends NoBlurScreen {
     private record ForgeSlotEntry(int slot, ItemStack stack, CardInstance card) {
     }
 
-    private record ForgeLayout(int viewX, int viewY, int viewW, int viewH, int contentX, int scrollbarX, int contentH, int previewX, int previewY) {
+    private record ForgeLayout(int viewX, int viewY, int viewW, int viewH, int contentX, int scrollbarX, int contentH, int previewX, int previewY, int slotW, float previewScale) {
     }
 
     private record ScrollbarThumb(int y, int height) {

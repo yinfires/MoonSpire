@@ -1721,15 +1721,8 @@ public class BattleScreen extends NoBlurScreen {
         if (modalBackground) {
             return;
         }
-        MoonSpireUiRect rect = layout().resolve("monster_intent", width, height);
-        float halfW = CardRenderHelper.CARD_WIDTH * MONSTER_PLAYED_CARD_SCALE / 2.0F;
-        float halfH = CardRenderHelper.CARD_HEIGHT * MONSTER_PLAYED_CARD_SCALE / 2.0F;
-        float minX = halfW + 4.0F;
-        float maxX = width - halfW - 4.0F;
-        float minY = halfH + 4.0F;
-        float maxY = height - halfH - 4.0F;
-        float centerX = minX <= maxX ? clamp(rect.x() + rect.width() / 2.0F, minX, maxX) : width / 2.0F;
-        float centerY = minY <= maxY ? clamp(rect.y() + rect.height() / 2.0F, minY, maxY) : height / 2.0F;
+        float centerX = playedCardDisplayCenterX();
+        float centerY = playedCardDisplayCenterY();
         BattleCombatantSnapshot attacker = snapshot.combatant(ClientBattleState.monsterPlayedCardAttackerId());
         boolean attackerIsMonster = attacker == null || snapshot.isEnemyEntity(attacker.entityId());
         CardRenderHelper.CardValues values = cardValues(snapshot, card, attacker == null ? snapshot.monster() : attacker, attackerIsMonster);
@@ -2139,7 +2132,7 @@ public class BattleScreen extends NoBlurScreen {
                 float startY = from != null ? from.currentY() : drawPileCenterY();
                 if (expectedPlayedCardIds.contains(oldCard.id())) {
                     boolean exhausts = oldCard.hasEffect(CardEffectKind.EXHAUST);
-                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), exhausts);
+                    FlyingCardAnimation animation = FlyingCardAnimation.played(oldCard, startX, startY, playedCardDisplayCenterX(), playedCardDisplayCenterY(), discardPileCenterX(), discardPileCenterY(), exhausts);
                     if (exhausts) {
                         animation.releaseExhaust();
                     } else {
@@ -2160,7 +2153,7 @@ public class BattleScreen extends NoBlurScreen {
             if (representedFlyingIds.contains(playedCard.id()) || locallyDisplayedVisualCardIds.contains(playedCard.id())) {
                 continue;
             }
-            FlyingCardAnimation animation = FlyingCardAnimation.played(playedCard, battlefieldCenterX(), battlefieldCenterY(), battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), true, Math.max(PLAYED_CARD_HOLD_TICKS, event.animationTicks()));
+            FlyingCardAnimation animation = FlyingCardAnimation.played(playedCard, playedCardDisplayCenterX(), playedCardDisplayCenterY(), playedCardDisplayCenterX(), playedCardDisplayCenterY(), discardPileCenterX(), discardPileCenterY(), true, Math.max(PLAYED_CARD_HOLD_TICKS, event.animationTicks()));
             animation.releaseExhaust();
             flyingCards.add(animation);
             representedFlyingIds.add(playedCard.id());
@@ -2766,12 +2759,20 @@ public class BattleScreen extends NoBlurScreen {
         }
     }
 
-    private float battlefieldCenterX() {
-        return width / 2.0F;
+    private float playedCardDisplayCenterX() {
+        MoonSpireUiRect rect = battleRect("monster_intent");
+        float halfW = CardRenderHelper.CARD_WIDTH * MONSTER_PLAYED_CARD_SCALE / 2.0F;
+        float minX = halfW + 4.0F;
+        float maxX = width - halfW - 4.0F;
+        return minX <= maxX ? clamp(rect.x() + rect.width() / 2.0F, minX, maxX) : width / 2.0F;
     }
 
-    private float battlefieldCenterY() {
-        return height / 2.0F - 18.0F;
+    private float playedCardDisplayCenterY() {
+        MoonSpireUiRect rect = battleRect("monster_intent");
+        float halfH = CardRenderHelper.CARD_HEIGHT * MONSTER_PLAYED_CARD_SCALE / 2.0F;
+        float minY = halfH + 4.0F;
+        float maxY = height - halfH - 4.0F;
+        return minY <= maxY ? clamp(rect.y() + rect.height() / 2.0F, minY, maxY) : height / 2.0F;
     }
 
     private boolean playAreaContains(double mouseX, double mouseY) {
@@ -3650,7 +3651,7 @@ public class BattleScreen extends NoBlurScreen {
         awaitingUseCardSnapshot = true;
         locallyUsedCardIds.add(card.id());
         CardRenderData playedRenderData = cardRenderDataForPlayedCard(snapshot, card, targetId);
-        flyingCards.add(FlyingCardAnimation.played(card, startX, startY, battlefieldCenterX(), battlefieldCenterY(), discardPileCenterX(), discardPileCenterY(), card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EXHAUST), playedRenderData));
+        flyingCards.add(FlyingCardAnimation.played(card, startX, startY, playedCardDisplayCenterX(), playedCardDisplayCenterY(), discardPileCenterX(), discardPileCenterY(), card.effects().stream().anyMatch(effect -> effect.kind() == CardEffectKind.EXHAUST), playedRenderData));
         PacketDistributor.sendToServer(new UseCardPayload(dragState.handIndex(), targetId));
         return true;
     }
@@ -3957,6 +3958,25 @@ public class BattleScreen extends NoBlurScreen {
 
     private MoonSpireUiLayout layout() {
         return MoonSpireBattleLayoutEditor.layout();
+    }
+
+    private MoonSpireUiRect battleRect(String id) {
+        MoonSpireUiRect rect = layout().resolve(id, width, height);
+        if (width <= 0 || height <= 0 || !"monster_intent".equals(id)) {
+            return rect;
+        }
+        int safeW = Math.min(rect.width(), Math.max(1, width - 4));
+        int safeH = Math.min(rect.height(), Math.max(1, height - 4));
+        int safeX = clampInt(rect.x(), 2, Math.max(2, width - safeW - 2));
+        int safeY = clampInt(rect.y(), 2, Math.max(2, height - safeH - 2));
+        return new MoonSpireUiRect(safeX, safeY, safeW, safeH);
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        if (max < min) {
+            return min;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     private Component entityName(int entityId, Component fallback) {

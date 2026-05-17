@@ -30,9 +30,27 @@ public class MoonSpireTextureButton extends AbstractButton {
     @Override
     public void renderString(GuiGraphics graphics, Font font, int color) {
         Component message = getMessage();
-        int x = getX() + getWidth() / 2;
-        int y = getY() + (getHeight() - font.lineHeight) / 2;
-        graphics.drawCenteredString(font, message, x, y, color);
+        String text = message.getString();
+        int availableW = Math.max(1, getWidth() - 8);
+        int lineY = getY() + Math.max(0, (getHeight() - font.lineHeight) / 2);
+        if (font.width(text) <= availableW) {
+            int x = getX() + getWidth() / 2;
+            graphics.drawCenteredString(font, message, x, lineY, color);
+            return;
+        }
+        float scale = Math.max(0.55F, availableW / (float) Math.max(1, font.width(text)));
+        int clipX = getX() + 4;
+        int clipY = getY() + 2;
+        int clipRight = getX() + getWidth() - 4;
+        int clipBottom = getY() + getHeight() - 2;
+        int scaledLineH = Math.max(1, Math.round(font.lineHeight * scale));
+        graphics.enableScissor(clipX, clipY, clipRight, clipBottom);
+        graphics.pose().pushPose();
+        graphics.pose().translate(getX() + getWidth() / 2.0F, getY() + Math.max(0, (getHeight() - scaledLineH) / 2.0F), 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, text, -font.width(text) / 2, 0, color, false);
+        graphics.pose().popPose();
+        graphics.disableScissor();
     }
 
     @Override

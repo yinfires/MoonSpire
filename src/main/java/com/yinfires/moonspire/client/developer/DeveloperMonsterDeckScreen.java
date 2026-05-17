@@ -3,6 +3,7 @@ package com.yinfires.moonspire.client.developer;
 import com.yinfires.moonspire.card.MoonSpireCardRegistry;
 import com.yinfires.moonspire.client.CardRenderHelper;
 import com.yinfires.moonspire.client.NoBlurScreen;
+import com.yinfires.moonspire.client.ui.MoonSpireScreenLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireTextureButton;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
 import com.yinfires.moonspire.developer.DeveloperCardDefinition;
@@ -80,18 +81,18 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
 
         ButtonLayout buttons = buttonLayout(addMode ? 2 : rewardMode ? 4 : 5);
         if (addMode) {
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> confirmAdd()));
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(), buttons.w(), buttons.h(), Component.translatable("gui.cancel"), button -> cancelAdd()));
+            addRenderableWidget(new MoonSpireTextureButton(buttons.x(0), buttons.y(0), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> confirmAdd()));
+            addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(1), buttons.w(), buttons.h(), Component.translatable("gui.cancel"), button -> cancelAdd()));
         } else {
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> openAddMode()));
-            addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.delete"), button -> deleteSelected()));
+            addRenderableWidget(new MoonSpireTextureButton(buttons.x(0), buttons.y(0), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.add"), button -> openAddMode()));
+            addRenderableWidget(new MoonSpireTextureButton(buttons.x(1), buttons.y(1), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.delete"), button -> deleteSelected()));
             if (rewardMode) {
-                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
-                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(2), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(3), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
             } else {
-                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.copy"), button -> copySelected()));
-                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
-                addRenderableWidget(new MoonSpireTextureButton(buttons.x(4), buttons.y(), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(2), buttons.y(2), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.copy"), button -> copySelected()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(3), buttons.y(3), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.reset"), button -> resetDeck()));
+                addRenderableWidget(new MoonSpireTextureButton(buttons.x(4), buttons.y(4), buttons.w(), buttons.h(), Component.translatable("debug.moonspire.done"), button -> done()));
             }
         }
     }
@@ -355,21 +356,22 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
         int viewY = VIEW_TOP;
         int viewW = Math.max(CardRenderHelper.SMALL_CARD_WIDTH, panelW - 20 - SCROLLBAR_HIT_WIDTH);
         int viewH = Math.max(CardRenderHelper.SMALL_CARD_HEIGHT, panelH - 14);
-        int columns = Math.max(1, (viewW + CARD_GAP_X) / (CardRenderHelper.SMALL_CARD_WIDTH + CARD_GAP_X));
-        int usedW = columns * CardRenderHelper.SMALL_CARD_WIDTH + (columns - 1) * CARD_GAP_X;
+        int gapX = Math.max(4, Math.min(CARD_GAP_X, viewW / 12));
+        int columns = Math.max(1, (viewW + gapX) / (CardRenderHelper.SMALL_CARD_WIDTH + gapX));
+        int usedW = columns * CardRenderHelper.SMALL_CARD_WIDTH + (columns - 1) * gapX;
         int cellsX = viewX + Math.max(0, (viewW - usedW) / 2);
         int rowH = CardRenderHelper.SMALL_CARD_HEIGHT + LABEL_H + CARD_GAP_Y;
         int rows = itemCount <= 0 ? 0 : (itemCount + columns - 1) / columns;
         int contentH = rows <= 0 ? 0 : GRID_PAD_TOP + rows * rowH - CARD_GAP_Y + GRID_PAD_BOTTOM;
         int scrollbarX = panelX + panelW - SCROLLBAR_HIT_WIDTH / 2 - 5;
-        return new GridLayout(panelX, panelY, panelW, panelH, viewX, viewY, viewW, viewH, cellsX, scrollbarX, columns, rowH, contentH);
+        return new GridLayout(panelX, panelY, panelW, panelH, viewX, viewY, viewW, viewH, cellsX, scrollbarX, columns, rowH, contentH, gapX);
     }
 
     private int indexAt(GridLayout grid, double mouseX, double mouseY) {
         if (!insideGrid(grid, mouseX, mouseY)) {
             return -1;
         }
-        int column = ((int) mouseX - grid.cellsX()) / (CardRenderHelper.SMALL_CARD_WIDTH + CARD_GAP_X);
+        int column = ((int) mouseX - grid.cellsX()) / (CardRenderHelper.SMALL_CARD_WIDTH + grid.gapX());
         int row = (int) Math.floor((mouseY - grid.viewY() + scrollOffset - GRID_PAD_TOP) / grid.rowH());
         if (column < 0 || column >= grid.columns() || row < 0) {
             return -1;
@@ -384,7 +386,7 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     private GridCell cell(GridLayout grid, int index) {
         int row = index / grid.columns();
         int column = index % grid.columns();
-        int x = grid.cellsX() + column * (CardRenderHelper.SMALL_CARD_WIDTH + CARD_GAP_X);
+        int x = grid.cellsX() + column * (CardRenderHelper.SMALL_CARD_WIDTH + grid.gapX());
         int y = grid.viewY() + GRID_PAD_TOP + row * grid.rowH() - (int) Math.round(scrollOffset);
         return new GridCell(x, y);
     }
@@ -458,20 +460,25 @@ final class DeveloperMonsterDeckScreen extends NoBlurScreen {
     }
 
     private ButtonLayout buttonLayout(int count) {
-        int gap = DeveloperCenterScreen.BOTTOM_BUTTON_GAP;
-        int w = DeveloperCenterScreen.BOTTOM_BUTTON_W;
-        int h = DeveloperCenterScreen.BOTTOM_BUTTON_H;
-        int total = count * w + (count - 1) * gap;
-        return new ButtonLayout((width - total) / 2, height - 28, w, h, gap);
+        int preferredTotal = count * DeveloperCenterScreen.BOTTOM_BUTTON_W + Math.max(0, count - 1) * DeveloperCenterScreen.BOTTOM_BUTTON_GAP;
+        if (width >= preferredTotal + 12) {
+            return new ButtonLayout((width - preferredTotal) / 2, height - 28, DeveloperCenterScreen.BOTTOM_BUTTON_W, DeveloperCenterScreen.BOTTOM_BUTTON_H, DeveloperCenterScreen.BOTTOM_BUTTON_GAP, count);
+        }
+        MoonSpireScreenLayout.ButtonRows rows = MoonSpireScreenLayout.buttonRows(width, Math.max(4, height - 28), count, DeveloperCenterScreen.BOTTOM_BUTTON_W, 52, DeveloperCenterScreen.BOTTOM_BUTTON_H, DeveloperCenterScreen.BOTTOM_BUTTON_GAP, 4, 6);
+        return new ButtonLayout(rows.x(), Math.max(4, height - rows.height() - 8), rows.w(), rows.h(), rows.gap(), rows.columns());
     }
 
-    private record ButtonLayout(int x, int y, int w, int h, int gap) {
+    private record ButtonLayout(int x, int y, int w, int h, int gap, int columns) {
         int x(int index) {
-            return x + index * (w + gap);
+            return x + (index % columns) * (w + gap);
+        }
+
+        int y(int index) {
+            return y + (index / columns) * (h + gap);
         }
     }
 
-    private record GridLayout(int panelX, int panelY, int panelW, int panelH, int viewX, int viewY, int viewW, int viewH, int cellsX, int scrollbarX, int columns, int rowH, int contentH) {
+    private record GridLayout(int panelX, int panelY, int panelW, int panelH, int viewX, int viewY, int viewW, int viewH, int cellsX, int scrollbarX, int columns, int rowH, int contentH, int gapX) {
     }
 
     private record GridCell(int x, int y) {

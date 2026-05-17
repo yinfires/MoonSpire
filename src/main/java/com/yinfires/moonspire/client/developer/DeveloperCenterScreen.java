@@ -13,6 +13,7 @@ import com.yinfires.moonspire.battle.MonsterDeckProfile;
 import com.yinfires.moonspire.client.CardRenderHelper;
 import com.yinfires.moonspire.client.NoBlurScreen;
 import com.yinfires.moonspire.client.ui.MoonSpireModalLayer;
+import com.yinfires.moonspire.client.ui.MoonSpireScreenLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireTextureButton;
 import com.yinfires.moonspire.client.ui.MoonSpireUiLayout;
 import com.yinfires.moonspire.client.ui.MoonSpireUiTextures;
@@ -42,6 +43,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -278,7 +280,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         costBox = addBox(layout.formX(), layout.fieldBoxY(3), 54, Component.translatable("debug.moonspire.field.cost"));
         artPathBox = addBox(layout.formX(), layout.fieldBoxY(tab == Tab.FACES ? 2 : 4), layout.formW(), Component.translatable("debug.moonspire.field.image_path"));
         entityIdBox = addBox(layout.formX(), layout.fieldBoxY(0), layout.formW(), Component.translatable("debug.moonspire.field.entity_id"));
-        int monsterStatW = (layout.formW() - GAP * 2) / 3;
+        int monsterStatW = Math.max(32, (layout.formW() - GAP * 2) / 3);
         healthBox = addBox(layout.formX(), layout.fieldBoxY(1), monsterStatW, Component.translatable("debug.moonspire.field.health"));
         speedBox = addBox(layout.formX() + monsterStatW + GAP, layout.fieldBoxY(1), monsterStatW, Component.translatable("debug.moonspire.field.speed"));
         monsterEnergyBox = addBox(layout.formX() + (monsterStatW + GAP) * 2, layout.fieldBoxY(1), monsterStatW, Component.translatable("debug.moonspire.field.energy"));
@@ -288,17 +290,19 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         createEffectAmountBoxes(layout);
         createMonsterEffectAmountBoxes(layout);
         hideIrrelevantBoxes();
-        int tabX = 4 + (SIDEBAR_W - TAB_BUTTON_W) / 2;
-        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top(), TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.cards"), button -> switchTab(Tab.CARDS)));
-        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 24, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.faces"), button -> switchTab(Tab.FACES)));
-        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 48, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.monsters"), button -> switchTab(Tab.MONSTERS)));
-        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 72, TAB_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.layout"), button -> switchTab(Tab.LAYOUT)));
-        int sidebarActionX = 4 + (SIDEBAR_W - SIDEBAR_ACTION_BUTTON_W) / 2;
-        addRenderableWidget(new MoonSpireTextureButton(sidebarActionX, height - 58, SIDEBAR_ACTION_BUTTON_W, TAB_BUTTON_H, Component.translatable("debug.moonspire.delete_all_changes"), button -> requestDeleteAllChanges()));
-        int globalButtonsX = width - 16 - bottomButtonGroupWidth(2);
+        int tabButtonW = layout.compact() ? Math.min(TAB_BUTTON_W, Math.max(48, layout.sidebarW() - 12)) : TAB_BUTTON_W;
+        int tabX = 4 + (layout.sidebarW() - tabButtonW) / 2;
+        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top(), tabButtonW, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.cards"), button -> switchTab(Tab.CARDS)));
+        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 24, tabButtonW, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.faces"), button -> switchTab(Tab.FACES)));
+        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 48, tabButtonW, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.monsters"), button -> switchTab(Tab.MONSTERS)));
+        addRenderableWidget(new MoonSpireTextureButton(tabX, layout.top() + 72, tabButtonW, TAB_BUTTON_H, Component.translatable("debug.moonspire.tab.layout"), button -> switchTab(Tab.LAYOUT)));
+        int sidebarActionW = layout.compact() ? Math.min(SIDEBAR_ACTION_BUTTON_W, Math.max(56, layout.sidebarW() - 12)) : SIDEBAR_ACTION_BUTTON_W;
+        int sidebarActionX = 4 + (layout.sidebarW() - sidebarActionW) / 2;
+        addRenderableWidget(new MoonSpireTextureButton(sidebarActionX, Math.max(layout.top() + 102, height - 58), sidebarActionW, TAB_BUTTON_H, Component.translatable("debug.moonspire.delete_all_changes"), button -> requestDeleteAllChanges()));
+        int globalButtonsX = Math.max(layout.formX(), width - 16 - bottomButtonGroupWidth(2, layout.buttonW(), layout.buttonGap()));
         addTabActionButtons(layout, globalButtonsX - GAP);
-        addBottomButton(globalButtonsX, layout.buttonY(), Component.translatable("debug.moonspire.save"), button -> save());
-        addBottomButton(bottomButtonX(globalButtonsX, 1), layout.buttonY(), Component.translatable("gui.done"), button -> onClose());
+        addBottomButton(globalButtonsX, layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.save"), button -> save());
+        addBottomButton(bottomButtonX(globalButtonsX, 1, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("gui.done"), button -> onClose());
         refreshFields();
     }
 
@@ -577,7 +581,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             if (itemPickerOpen || effectPickerOpen || targetPickerOpen) {
                 return true;
             }
-            if (!cardListExpanded && insideRect(mouseX, mouseY, layout.previewX(), layout.previewY(), CardRenderHelper.CARD_WIDTH, CardRenderHelper.CARD_HEIGHT)) {
+            if (!cardListExpanded && layout.previewScale() > 0.0F && insideRect(mouseX, mouseY, layout.previewX(), layout.previewY(), layout.previewScaledW(), layout.previewScaledH())) {
                 adjustArtScale(scrollY);
                 return true;
             }
@@ -718,7 +722,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private EditBox addBox(int x, int y, int w, Component hint) {
-        EditBox box = new EditBox(font, x, y, w, 18, hint);
+        int safeX = Math.max(1, Math.min(x, Math.max(1, width - 2)));
+        int safeW = Math.max(1, Math.min(w, Math.max(1, width - safeX - 4)));
+        EditBox box = new EditBox(font, safeX, y, safeW, 18, hint);
         box.setHint(hint);
         addRenderableWidget(box);
         return box;
@@ -762,22 +768,22 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void addTabActionButtons(Layout layout, int rightLimit) {
         if (tab == Tab.CARDS) {
-            int x = bottomButtonGroupX(layout.formX(), rightLimit, 5);
-            addBottomButton(x, layout.buttonY(), Component.translatable("debug.moonspire.new"), button -> createCurrent());
-            addBottomButton(bottomButtonX(x, 1), layout.buttonY(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
-            addBottomButton(bottomButtonX(x, 2), layout.buttonY(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentCardToSaved());
-            addBottomButton(bottomButtonX(x, 3), layout.buttonY(), Component.translatable("debug.moonspire.next_filter"), button -> nextFilter());
-            addBottomButton(bottomButtonX(x, 4), layout.buttonY(), Component.translatable("debug.moonspire.give"), button -> giveSelectedCard());
+            int x = bottomButtonGroupX(layout.formX(), rightLimit, 5, layout.buttonW(), layout.buttonGap());
+            addBottomButton(x, layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.new"), button -> createCurrent());
+            addBottomButton(bottomButtonX(x, 1, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
+            addBottomButton(bottomButtonX(x, 2, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentCardToSaved());
+            addBottomButton(bottomButtonX(x, 3, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.next_filter"), button -> nextFilter());
+            addBottomButton(bottomButtonX(x, 4, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.give"), button -> giveSelectedCard());
         } else if (tab == Tab.FACES) {
-            int x = bottomButtonGroupX(layout.formX(), rightLimit, 4);
-            addBottomButton(x, layout.buttonY(), Component.translatable("debug.moonspire.new"), button -> createCurrent());
-            addBottomButton(bottomButtonX(x, 1), layout.buttonY(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
-            addBottomButton(bottomButtonX(x, 2), layout.buttonY(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentFaceToSaved());
-            addBottomButton(bottomButtonX(x, 3), layout.buttonY(), Component.translatable("debug.moonspire.apply"), button -> openFaceApplicationScreen());
+            int x = bottomButtonGroupX(layout.formX(), rightLimit, 4, layout.buttonW(), layout.buttonGap());
+            addBottomButton(x, layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.new"), button -> createCurrent());
+            addBottomButton(bottomButtonX(x, 1, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
+            addBottomButton(bottomButtonX(x, 2, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentFaceToSaved());
+            addBottomButton(bottomButtonX(x, 3, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.apply"), button -> openFaceApplicationScreen());
         } else if (tab == Tab.MONSTERS) {
-            int x = bottomButtonGroupX(layout.formX(), rightLimit, 2);
-            addBottomButton(x, layout.buttonY(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentMonsterToSaved());
-            addBottomButton(bottomButtonX(x, 1), layout.buttonY(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
+            int x = bottomButtonGroupX(layout.formX(), rightLimit, 2, layout.buttonW(), layout.buttonGap());
+            addBottomButton(x, layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.reset"), button -> resetCurrentMonsterToSaved());
+            addBottomButton(bottomButtonX(x, 1, layout.buttonW(), layout.buttonGap()), layout.buttonY(), layout.buttonW(), Component.translatable("debug.moonspire.delete"), button -> requestDelete());
         }
     }
 
@@ -785,16 +791,33 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         addRenderableWidget(new MoonSpireTextureButton(x, y, BOTTOM_BUTTON_W, BOTTOM_BUTTON_H, label, action));
     }
 
+    private void addBottomButton(int x, int y, int w, Component label, MoonSpireTextureButton.PressAction action) {
+        addRenderableWidget(new MoonSpireTextureButton(x, y, w, BOTTOM_BUTTON_H, label, action));
+    }
+
     static int bottomButtonGroupWidth(int count) {
         return count * BOTTOM_BUTTON_W + Math.max(0, count - 1) * BOTTOM_BUTTON_GAP;
+    }
+
+    static int bottomButtonGroupWidth(int count, int buttonW, int gap) {
+        return count * buttonW + Math.max(0, count - 1) * gap;
     }
 
     static int bottomButtonX(int startX, int index) {
         return startX + index * (BOTTOM_BUTTON_W + BOTTOM_BUTTON_GAP);
     }
 
+    static int bottomButtonX(int startX, int index, int buttonW, int gap) {
+        return startX + index * (buttonW + gap);
+    }
+
     static int bottomButtonGroupX(int left, int right, int count) {
         int width = bottomButtonGroupWidth(count);
+        return Math.max(left, left + Math.max(0, right - left - width) / 2);
+    }
+
+    static int bottomButtonGroupX(int left, int right, int count, int buttonW, int gap) {
+        int width = bottomButtonGroupWidth(count, buttonW, gap);
         return Math.max(left, left + Math.max(0, right - left - width) / 2);
     }
 
@@ -903,18 +926,23 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void renderCardPreview(GuiGraphics graphics, Layout layout) {
         DeveloperCardDefinition card = selectedCard();
-        if (card == null) {
+        if (card == null || layout.previewScale() <= 0.0F || layout.itemW() <= 0) {
             return;
         }
         drawHeader(graphics, Component.translatable("debug.moonspire.card_preview"), layout.previewX(), layout.top());
-        CardRenderHelper.renderCard(graphics, font, card.toCardInstance(), layout.previewX(), layout.previewY(), false, true, data);
+        graphics.pose().pushPose();
+        graphics.pose().translate(layout.previewX(), layout.previewY(), 0.0F);
+        graphics.pose().scale(layout.previewScale(), layout.previewScale(), 1.0F);
+        CardRenderHelper.renderCard(graphics, font, card.toCardInstance(), 0, 0, false, true, data);
+        graphics.pose().popPose();
     }
 
     private void renderCardImageControls(GuiGraphics graphics, Layout layout) {
         int y = layout.imageControlsY();
-        drawButtonLike(graphics, layout.formX(), y, 76, 18, Component.translatable("debug.moonspire.local_image"));
-        drawButtonLike(graphics, layout.formX() + 82, y, 76, 18, Component.translatable("debug.moonspire.item_icon"));
-        drawButtonLike(graphics, layout.formX() + 164, y, 54, 18, Component.translatable("debug.moonspire.reset"));
+        ButtonStrip strip = buttonStrip(layout.formX(), layout.formW(), 76, 76, 54);
+        drawButtonLike(graphics, strip.x(0), y, strip.w(0), 18, Component.translatable("debug.moonspire.local_image"));
+        drawButtonLike(graphics, strip.x(1), y, strip.w(1), 18, Component.translatable("debug.moonspire.item_icon"));
+        drawButtonLike(graphics, strip.x(2), y, strip.w(2), 18, Component.translatable("debug.moonspire.reset"));
     }
 
     private void renderCardEffectEditor(GuiGraphics graphics, Layout layout) {
@@ -970,6 +998,46 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         drawCenteredFitted(graphics, text.getString(), x + 4, y + (h - font.lineHeight) / 2, w - 8, font.lineHeight, 0xFFFFFFFF);
     }
 
+    private static ButtonStrip buttonStrip(int x, int availableW, int... preferredWidths) {
+        int gap = 6;
+        int preferredTotal = Math.max(0, preferredWidths.length - 1) * gap;
+        for (int width : preferredWidths) {
+            preferredTotal += width;
+        }
+        if (availableW >= preferredTotal) {
+            return new ButtonStrip(x, preferredWidths, gap);
+        }
+        int[] widths = new int[preferredWidths.length];
+        int minW = 34;
+        int totalGaps = Math.max(0, preferredWidths.length - 1) * gap;
+        int availableButtonsW = Math.max(preferredWidths.length, availableW - totalGaps);
+        int assigned = 0;
+        for (int i = 0; i < preferredWidths.length; i++) {
+            widths[i] = Math.max(minW, Math.round(preferredWidths[i] * (availableButtonsW / (float) Math.max(1, preferredTotal - totalGaps))));
+            assigned += widths[i];
+        }
+        int overflow = assigned + totalGaps - availableW;
+        for (int i = widths.length - 1; overflow > 0 && i >= 0; i--) {
+            int trim = Math.min(overflow, Math.max(0, widths[i] - 1));
+            widths[i] -= trim;
+            overflow -= trim;
+        }
+        return new ButtonStrip(x, widths, gap);
+    }
+
+    private static ButtonStrip equalButtonStrip(int x, int availableW, int count, int preferredW, int gap) {
+        int total = count * preferredW + Math.max(0, count - 1) * gap;
+        if (availableW >= total) {
+            int[] widths = new int[count];
+            Arrays.fill(widths, preferredW);
+            return new ButtonStrip(x, widths, gap);
+        }
+        int w = Math.max(1, (availableW - Math.max(0, count - 1) * gap) / Math.max(1, count));
+        int[] widths = new int[count];
+        Arrays.fill(widths, w);
+        return new ButtonStrip(x, widths, gap);
+    }
+
     private Component effectName(DeveloperCardEffect.Kind kind) {
         return Component.translatable("debug.moonspire.effect." + kind.name().toLowerCase(Locale.ROOT));
     }
@@ -1016,8 +1084,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private void renderFaceImageControls(GuiGraphics graphics, Layout layout) {
         int y = layout.fieldBoxY(1);
-        drawButtonLike(graphics, layout.formX(), y, 76, 18, Component.translatable("debug.moonspire.local_image"));
-        drawButtonLike(graphics, layout.formX() + 82, y, 54, 18, Component.translatable("debug.moonspire.reset"));
+        ButtonStrip strip = buttonStrip(layout.formX(), layout.formW(), 76, 54);
+        drawButtonLike(graphics, strip.x(0), y, strip.w(0), 18, Component.translatable("debug.moonspire.local_image"));
+        drawButtonLike(graphics, strip.x(1), y, strip.w(1), 18, Component.translatable("debug.moonspire.reset"));
         String imagePath = selectedFace().imagePath();
         Component current = imagePath.isBlank()
                 ? Component.translatable("debug.moonspire.face_image_empty")
@@ -1026,15 +1095,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void renderFaceAreaPicker(GuiGraphics graphics, Layout layout) {
-        int x = layout.formX();
+        ButtonStrip strip = equalButtonStrip(layout.formX(), layout.formW(), faceAreaKinds.size(), 42, 4);
         int y = layout.fieldBoxY(3);
-        int buttonW = Math.max(42, (layout.formW() - 16) / faceAreaKinds.size());
         for (int i = 0; i < faceAreaKinds.size(); i++) {
             FaceAreaKind kind = faceAreaKinds.get(i);
-            int bx = x + i * (buttonW + 4);
-            if (bx + buttonW > x + layout.formW()) {
-                buttonW = Math.max(28, x + layout.formW() - bx);
-            }
+            int bx = strip.x(i);
+            int buttonW = strip.w(i);
             boolean selected = kind == selectedFaceAreaKind;
             MoonSpireUiTextures.drawButton(graphics, bx, y, buttonW, 18, selected || insideRect(lastMouseX, lastMouseY, bx, y, buttonW, 18), true);
             drawCenteredFitted(graphics, faceAreaName(kind).getString(), bx + 3, y + (18 - font.lineHeight) / 2, buttonW - 6, font.lineHeight, selected ? 0xFFFFF3BF : 0xFFFFFFFF);
@@ -1042,6 +1108,9 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void renderFacePreview(GuiGraphics graphics, Layout layout) {
+        if (layout.facePreviewScale() <= 0.0F || layout.itemW() <= 0) {
+            return;
+        }
         DeveloperCardFace face = selectedFace();
         int x = layout.facePreviewX();
         int y = layout.facePreviewY();
@@ -1049,10 +1118,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         CardRenderHelper.renderCardFaceBase(graphics, face.imagePath(), x, y, layout.facePreviewW(), layout.facePreviewH());
         for (FaceAreaKind kind : faceAreaKinds) {
             DeveloperCardFace.Area area = faceArea(face, kind);
-            int ax = x + scaleFaceX(area.x());
-            int ay = y + scaleFaceY(area.y());
-            int aw = scaleFaceX(area.width());
-            int ah = scaleFaceY(area.height());
+            int ax = x + scaleFaceX(layout, area.x());
+            int ay = y + scaleFaceY(layout, area.y());
+            int aw = scaleFaceX(layout, area.width());
+            int ah = scaleFaceY(layout, area.height());
             int color = kind == selectedFaceAreaKind ? 0xFFFFFF00 : 0x998BD3FF;
             graphics.renderOutline(ax, ay, aw, ah, color);
             graphics.fill(ax + aw - 5, ay + ah - 5, ax + aw, ay + ah, color);
@@ -1115,14 +1184,16 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private void renderPanels(GuiGraphics graphics, Layout layout) {
-        MoonSpireUiTextures.drawDarkPanel(graphics, 4, 24, SIDEBAR_W, height - 56);
+        MoonSpireUiTextures.drawDarkPanel(graphics, 4, 24, layout.sidebarW(), Math.max(40, height - 56));
         if (tab == Tab.LAYOUT) {
             MoonSpireUiTextures.drawDarkPanel(graphics, layout.formX() - 8, layout.top() - 8, layout.contentRight() - layout.formX() + 16, layout.bottom() - layout.top() + 16);
             return;
         }
         MoonSpireUiTextures.drawDarkPanel(graphics, layout.formX() - 8, layout.top() - 8, layout.formW() + 16, layout.bottom() - layout.top() + 16);
         if (tab == Tab.CARDS || tab == Tab.FACES) {
-            MoonSpireUiTextures.drawDarkPanel(graphics, layout.itemX() - 8, layout.top() - 8, layout.itemW() + 16, layout.bottom() - layout.top() + 16);
+            if (layout.itemW() > 0) {
+                MoonSpireUiTextures.drawDarkPanel(graphics, layout.itemX() - 8, layout.top() - 8, layout.itemW() + 16, layout.bottom() - layout.top() + 16);
+            }
         }
         MoonSpireUiTextures.drawDarkPanel(graphics, layout.listX() - 8, layout.top() - 8, layout.listW() + 16, layout.bottom() - layout.top() + 16);
     }
@@ -1236,11 +1307,12 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return false;
         }
         int imageY = layout.imageControlsY();
-        if (insideRect(mouseX, mouseY, layout.formX(), imageY, 76, 18)) {
+        ButtonStrip imageButtons = buttonStrip(layout.formX(), layout.formW(), 76, 76, 54);
+        if (insideRect(mouseX, mouseY, imageButtons.x(0), imageY, imageButtons.w(0), 18)) {
             chooseLocalImage();
             return true;
         }
-        if (insideRect(mouseX, mouseY, layout.formX() + 82, imageY, 76, 18)) {
+        if (insideRect(mouseX, mouseY, imageButtons.x(1), imageY, imageButtons.w(1), 18)) {
             cardListExpanded = false;
             itemPickerOpen = true;
             effectPickerOpen = false;
@@ -1250,11 +1322,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             init();
             return true;
         }
-        if (insideRect(mouseX, mouseY, layout.formX() + 164, imageY, 54, 18)) {
+        if (insideRect(mouseX, mouseY, imageButtons.x(2), imageY, imageButtons.w(2), 18)) {
             resetCardArt();
             return true;
         }
-        if (!cardListExpanded && insideRect(mouseX, mouseY, layout.previewX(), layout.previewY(), CardRenderHelper.CARD_WIDTH, CardRenderHelper.CARD_HEIGHT)) {
+        if (!cardListExpanded && layout.previewScale() > 0.0F && insideRect(mouseX, mouseY, layout.previewX(), layout.previewY(), layout.previewScaledW(), layout.previewScaledH())) {
             draggingArt = true;
             artGrabX = (int) mouseX - card.artX();
             artGrabY = (int) mouseY - card.artY();
@@ -1297,20 +1369,19 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private boolean clickFaceForm(Layout layout, double mouseX, double mouseY) {
         int imageY = layout.fieldBoxY(1);
-        if (insideRect(mouseX, mouseY, layout.formX(), imageY, 76, 18)) {
+        ButtonStrip imageButtons = buttonStrip(layout.formX(), layout.formW(), 76, 54);
+        if (insideRect(mouseX, mouseY, imageButtons.x(0), imageY, imageButtons.w(0), 18)) {
             chooseLocalImage();
             return true;
         }
-        if (insideRect(mouseX, mouseY, layout.formX() + 82, imageY, 54, 18)) {
+        if (insideRect(mouseX, mouseY, imageButtons.x(1), imageY, imageButtons.w(1), 18)) {
             resetFaceImage();
             return true;
         }
         int areaY = layout.fieldBoxY(3);
-        int buttonW = Math.max(42, (layout.formW() - 16) / faceAreaKinds.size());
+        ButtonStrip areaButtons = equalButtonStrip(layout.formX(), layout.formW(), faceAreaKinds.size(), 42, 4);
         for (int i = 0; i < faceAreaKinds.size(); i++) {
-            int bx = layout.formX() + i * (buttonW + 4);
-            int bw = Math.min(buttonW, Math.max(1, layout.formX() + layout.formW() - bx));
-            if (insideRect(mouseX, mouseY, bx, areaY, bw, 18)) {
+            if (insideRect(mouseX, mouseY, areaButtons.x(i), areaY, areaButtons.w(i), 18)) {
                 selectedFaceAreaKind = faceAreaKinds.get(i);
                 return true;
             }
@@ -1319,8 +1390,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         if (hit != null) {
             selectedFaceAreaKind = hit;
             DeveloperCardFace.Area area = faceArea(selectedFace(), hit);
-            faceGrabX = (int) mouseX - (layout.facePreviewX() + scaleFaceX(area.x()));
-            faceGrabY = (int) mouseY - (layout.facePreviewY() + scaleFaceY(area.y()));
+            faceGrabX = (int) mouseX - (layout.facePreviewX() + scaleFaceX(layout, area.x()));
+            faceGrabY = (int) mouseY - (layout.facePreviewY() + scaleFaceY(layout, area.y()));
             draggingFaceArea = true;
             return true;
         }
@@ -1332,10 +1403,10 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         for (int i = faceAreaKinds.size() - 1; i >= 0; i--) {
             FaceAreaKind kind = faceAreaKinds.get(i);
             DeveloperCardFace.Area area = faceArea(face, kind);
-            int x = layout.facePreviewX() + scaleFaceX(area.x());
-            int y = layout.facePreviewY() + scaleFaceY(area.y());
-            int w = scaleFaceX(area.width());
-            int h = scaleFaceY(area.height());
+            int x = layout.facePreviewX() + scaleFaceX(layout, area.x());
+            int y = layout.facePreviewY() + scaleFaceY(layout, area.y());
+            int w = scaleFaceX(layout, area.width());
+            int h = scaleFaceY(layout, area.height());
             if (insideRect(mouseX, mouseY, x, y, w, h)) {
                 return kind;
             }
@@ -2732,8 +2803,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         Layout layout = layout();
         DeveloperCardFace face = selectedFace();
         DeveloperCardFace.Area area = faceArea(face, selectedFaceAreaKind);
-        int nextX = unscaleFaceX(mouseX - faceGrabX - layout.facePreviewX());
-        int nextY = unscaleFaceY(mouseY - faceGrabY - layout.facePreviewY());
+        int nextX = unscaleFaceX(layout, mouseX - faceGrabX - layout.facePreviewX());
+        int nextY = unscaleFaceY(layout, mouseY - faceGrabY - layout.facePreviewY());
         nextX = Math.max(0, Math.min(128 - area.width(), nextX));
         nextY = Math.max(0, Math.min(158 - area.height(), nextY));
         replaceSelectedFaceArea(new DeveloperCardFace.Area(nextX, nextY, area.width(), area.height()));
@@ -2851,6 +2922,24 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
     private static int unscaleFaceY(int value) {
         return Math.max(0, Math.round(value * (158.0F / CardRenderHelper.CARD_HEIGHT)));
+    }
+
+    private static int scaleFaceX(Layout layout, int value) {
+        return Math.max(1, Math.round(value * (CardRenderHelper.CARD_WIDTH / 128.0F) * layout.facePreviewScale()));
+    }
+
+    private static int scaleFaceY(Layout layout, int value) {
+        return Math.max(1, Math.round(value * (CardRenderHelper.CARD_HEIGHT / 158.0F) * layout.facePreviewScale()));
+    }
+
+    private static int unscaleFaceX(Layout layout, int value) {
+        float scale = Math.max(0.01F, layout.facePreviewScale());
+        return Math.max(0, Math.round(value * (128.0F / CardRenderHelper.CARD_WIDTH) / scale));
+    }
+
+    private static int unscaleFaceY(Layout layout, int value) {
+        float scale = Math.max(0.01F, layout.facePreviewScale());
+        return Math.max(0, Math.round(value * (158.0F / CardRenderHelper.CARD_HEIGHT) / scale));
     }
 
     private boolean saveCardArtFiles() {
@@ -4122,45 +4211,56 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     }
 
     private Layout layout() {
-        int formX = SIDEBAR_W + 16;
-        int contentRight = Math.min(width - 16, Math.max(formX + 360, width - 16));
-        int available = Math.max(360, contentRight - formX);
+        int baseFormX = SIDEBAR_W + 16;
+        int baseContentRight = Math.min(width - 16, Math.max(baseFormX + 360, width - 16));
+        int baseAvailable = Math.max(360, baseContentRight - baseFormX);
+        boolean compact = width < baseFormX + 360 + 16 || height < TOP + 150;
+        int sidebarW = compact ? Math.min(SIDEBAR_W, Math.max(74, width / 5)) : SIDEBAR_W;
+        int outerGap = compact ? Math.max(6, width / 64) : 16;
+        int gap = compact ? Math.max(4, Math.min(GAP, width / 80)) : GAP;
+        int formX = compact ? sidebarW + outerGap : baseFormX;
+        int contentRight = compact ? Math.max(formX + 1, width - outerGap) : baseContentRight;
+        int available = compact ? Math.max(1, contentRight - formX) : baseAvailable;
         int formW;
         int itemX;
         int itemW;
         int listX;
         int listW;
         if (tab == Tab.CARDS) {
-            formW = Math.min(FORM_W, Math.max(246, available * 38 / 100));
-            int remaining = Math.max(120, available - formW - GAP);
-            int combinedListsW = Math.max(80, remaining - GAP);
-            itemW = itemPickerOpen ? Math.max(180, Math.min(combinedListsW - 86, combinedListsW / 2)) : cardListExpanded ? 0 : Math.max(CardRenderHelper.CARD_WIDTH + 16, combinedListsW / 2);
+            formW = compact ? Math.min(FORM_W, Math.max(128, Math.min(available, available * 38 / 100))) : Math.min(FORM_W, Math.max(246, available * 38 / 100));
+            int remaining = compact ? Math.max(1, available - formW - gap) : Math.max(120, available - formW - GAP);
+            int combinedListsW = compact ? Math.max(1, remaining - gap) : Math.max(80, remaining - GAP);
+            itemW = compact
+                    ? itemPickerOpen ? Math.max(72, Math.min(combinedListsW - 64, combinedListsW / 2)) : cardListExpanded ? 0 : Math.max(0, Math.min(Math.max(CardRenderHelper.CARD_WIDTH + 16, combinedListsW / 2), combinedListsW - 72))
+                    : itemPickerOpen ? Math.max(180, Math.min(combinedListsW - 86, combinedListsW / 2)) : cardListExpanded ? 0 : Math.max(CardRenderHelper.CARD_WIDTH + 16, combinedListsW / 2);
             listW = cardListExpanded ? Math.max(60, combinedListsW) : Math.max(60, combinedListsW - itemW);
             listW = Math.max(72, listW);
-            itemX = formX + formW + GAP;
-            listX = cardListExpanded ? itemX : itemX + itemW + GAP;
-            listW = Math.min(listW, Math.max(72, width - 16 - listX));
+            itemX = formX + formW + gap;
+            listX = cardListExpanded ? itemX : itemX + itemW + gap;
+            listW = Math.min(listW, Math.max(compact ? 1 : 72, contentRight - listX));
         } else if (tab == Tab.FACES) {
-            formW = Math.min(FORM_W, Math.max(246, available * 34 / 100));
-            itemX = formX + formW + GAP;
+            formW = compact ? Math.min(FORM_W, Math.max(128, Math.min(available, available * 34 / 100))) : Math.min(FORM_W, Math.max(246, available * 34 / 100));
+            itemX = formX + formW + gap;
             int maxListW = 330;
-            int minItemW = CardRenderHelper.CARD_WIDTH + 16;
+            int minItemW = compact ? Math.min(CardRenderHelper.CARD_WIDTH + 16, Math.max(64, available / 3)) : CardRenderHelper.CARD_WIDTH + 16;
             int preferredItemW = 220;
-            int preferredListW = Math.min(maxListW, Math.max(MIN_LIST_W, available - formW - GAP - preferredItemW - GAP));
-            listW = Math.min(preferredListW, Math.max(72, contentRight - itemX - minItemW - GAP));
-            itemW = Math.max(minItemW, contentRight - itemX - listW - GAP);
-            listX = itemX + itemW + GAP;
-            listW = Math.min(listW, Math.max(72, contentRight - listX));
+            int preferredListW = Math.min(maxListW, Math.max(compact ? 72 : MIN_LIST_W, available - formW - gap - preferredItemW - gap));
+            listW = Math.min(preferredListW, Math.max(72, contentRight - itemX - minItemW - gap));
+            itemW = compact ? Math.max(0, contentRight - itemX - listW - gap) : Math.max(minItemW, contentRight - itemX - listW - gap);
+            listX = itemX + itemW + gap;
+            listW = Math.min(listW, Math.max(compact ? 1 : 72, contentRight - listX));
         } else {
-            listW = Math.min(330, Math.max(MIN_LIST_W, available * 42 / 100));
-            formW = Math.min(FORM_W, Math.max(246, available - listW - GAP));
-            itemX = formX + formW + GAP;
+            listW = compact ? Math.min(330, Math.max(72, Math.min(available, available * 42 / 100))) : Math.min(330, Math.max(MIN_LIST_W, available * 42 / 100));
+            formW = compact ? Math.min(FORM_W, Math.max(128, available - listW - gap)) : Math.min(FORM_W, Math.max(246, available - listW - GAP));
+            itemX = formX + formW + gap;
             itemW = 0;
             listX = contentRight - listW;
         }
-        int bottom = Math.max(TOP + 80, height - CONTENT_BOTTOM_RESERVE);
-        int buttonY = Math.max(bottom + 10, height - BUTTON_Y_OFFSET);
-        return new Layout(formX, formW, itemX, itemW, listX, listW, contentRight, bottom, buttonY, cardListExpanded);
+        int bottom = compact ? Math.max(TOP + 80, Math.min(height - CONTENT_BOTTOM_RESERVE, height - BUTTON_Y_OFFSET - 10)) : Math.max(TOP + 80, height - CONTENT_BOTTOM_RESERVE);
+        int buttonY = compact ? Math.max(TOP + 104, height - BUTTON_Y_OFFSET) : Math.max(bottom + 10, height - BUTTON_Y_OFFSET);
+        int buttonW = compact ? Math.min(BOTTOM_BUTTON_W, Math.max(52, (width - formX - outerGap) / 7)) : BOTTOM_BUTTON_W;
+        int buttonGap = compact ? Math.min(BOTTOM_BUTTON_GAP, Math.max(4, (width - formX - buttonW * 7) / 8)) : BOTTOM_BUTTON_GAP;
+        return new Layout(sidebarW, formX, formW, itemX, itemW, listX, Math.max(1, listW), contentRight, bottom, buttonY, buttonW, buttonGap, gap, cardListExpanded, compact);
     }
 
     private static String cleanId(String value, String fallback) {
@@ -4271,7 +4371,21 @@ public class DeveloperCenterScreen extends NoBlurScreen {
     private record PickerBounds(int x, int y, int w, int h) {
     }
 
-    private record Layout(int formX, int formW, int itemX, int itemW, int listX, int listW, int contentRight, int bottom, int buttonY, boolean cardListExpanded) {
+    private record ButtonStrip(int x, int[] widths, int gap) {
+        int x(int index) {
+            int result = x;
+            for (int i = 0; i < index && i < widths.length; i++) {
+                result += widths[i] + gap;
+            }
+            return result;
+        }
+
+        int w(int index) {
+            return index >= 0 && index < widths.length ? widths[index] : 1;
+        }
+    }
+
+    private record Layout(int sidebarW, int formX, int formW, int itemX, int itemW, int listX, int listW, int contentRight, int bottom, int buttonY, int buttonW, int buttonGap, int gap, boolean cardListExpanded, boolean compact) {
         int top() {
             return TOP;
         }
@@ -4325,7 +4439,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
 
         int previewX() {
-            return itemX + Math.max(0, (previewW() - CardRenderHelper.CARD_WIDTH) / 2);
+            return itemX + Math.max(0, (previewW() - previewScaledW()) / 2);
         }
 
         int previewY() {
@@ -4336,8 +4450,26 @@ public class DeveloperCenterScreen extends NoBlurScreen {
             return itemW;
         }
 
+        int previewScaledW() {
+            return compact ? Math.max(1, Math.round(CardRenderHelper.CARD_WIDTH * previewScale())) : CardRenderHelper.CARD_WIDTH;
+        }
+
+        int previewScaledH() {
+            return compact ? Math.max(1, Math.round(CardRenderHelper.CARD_HEIGHT * previewScale())) : CardRenderHelper.CARD_HEIGHT;
+        }
+
+        float previewScale() {
+            if (itemW <= 0) {
+                return 0.0F;
+            }
+            if (!compact) {
+                return 1.0F;
+            }
+            return Math.max(0.45F, Math.min(1.0F, Math.min(itemW / (float) CardRenderHelper.CARD_WIDTH, Math.max(1, bottom - previewY()) / (float) CardRenderHelper.CARD_HEIGHT)));
+        }
+
         int facePreviewX() {
-            return itemX + Math.max(0, (facePreviewW() - CardRenderHelper.CARD_WIDTH) / 2);
+            return itemX + Math.max(0, (itemW - facePreviewW()) / 2);
         }
 
         int facePreviewY() {
@@ -4345,11 +4477,21 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         }
 
         int facePreviewW() {
-            return CardRenderHelper.CARD_WIDTH;
+            return compact ? Math.max(1, Math.round(CardRenderHelper.CARD_WIDTH * facePreviewScale())) : CardRenderHelper.CARD_WIDTH;
         }
 
         int facePreviewH() {
-            return CardRenderHelper.CARD_HEIGHT;
+            return compact ? Math.max(1, Math.round(CardRenderHelper.CARD_HEIGHT * facePreviewScale())) : CardRenderHelper.CARD_HEIGHT;
+        }
+
+        float facePreviewScale() {
+            if (itemW <= 0) {
+                return 0.0F;
+            }
+            if (!compact) {
+                return 1.0F;
+            }
+            return Math.max(0.45F, Math.min(1.0F, Math.min(itemW / (float) CardRenderHelper.CARD_WIDTH, Math.max(1, bottom - facePreviewY()) / (float) CardRenderHelper.CARD_HEIGHT)));
         }
 
         int imageControlsY() {
@@ -4374,11 +4516,11 @@ public class DeveloperCenterScreen extends NoBlurScreen {
 
         GridLayout cardGrid(int itemCount) {
             int scrollReserve = cardListExpanded ? CARD_GRID_COMPACT_SCROLL_RESERVE : CARD_GRID_SCROLL_RESERVE;
-            int gapX = cardListExpanded ? CARD_GRID_COMPACT_GAP_X : CARD_GRID_GAP_X;
+            int gapX = cardListExpanded ? CARD_GRID_COMPACT_GAP_X : Math.max(4, Math.min(CARD_GRID_GAP_X, listW / 12));
             int viewW = Math.max(1, listW - SCROLLBAR_HIT_WIDTH - 4);
             int availableW = Math.max(1, Math.min(listW - scrollReserve, viewW) - CARD_GRID_SELECTION_PAD * 2);
             int columns = Math.max(1, Math.min(CARD_GRID_MAX_COLUMNS, (availableW + gapX) / (CardRenderHelper.SMALL_CARD_WIDTH + gapX)));
-            if (cardListExpanded && columns < CARD_GRID_EXPANDED_MIN_COLUMNS) {
+            if (cardListExpanded && availableW >= CARD_GRID_EXPANDED_MIN_COLUMNS * CARD_GRID_EXPANDED_MIN_CELL_W && columns < CARD_GRID_EXPANDED_MIN_COLUMNS) {
                 columns = CARD_GRID_EXPANDED_MIN_COLUMNS;
             }
             int minCellW = cardListExpanded ? CARD_GRID_EXPANDED_MIN_CELL_W : CARD_GRID_MIN_CELL_W;
@@ -4391,7 +4533,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         GridLayout itemGrid(int itemCount) {
             int cellW = ITEM_SLOT + 4;
             int fitColumns = Math.max(1, (itemW + ITEM_GAP) / (cellW + ITEM_GAP));
-            int columns = Math.max(1, Math.min(8, fitColumns - 1));
+            int columns = Math.max(1, Math.min(8, Math.max(1, fitColumns - 1)));
             return grid(ScrollArea.ITEMS, itemX, itemW, cellW, ITEM_SLOT, ITEM_GAP, ITEM_GAP, columns, itemCount, 0, 0);
         }
 

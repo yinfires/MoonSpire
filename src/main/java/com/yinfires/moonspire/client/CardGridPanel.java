@@ -667,17 +667,17 @@ final class CardGridPanel {
         }
         int viewX = 18;
         int viewY = TITLE_RESERVED_HEIGHT;
-        int rawViewW = Math.max(CardRenderHelper.CARD_WIDTH + SCROLLBAR_HIT_WIDTH + CARD_GAP_X, width - viewX * 2);
-        int contentW = Math.max(CardRenderHelper.CARD_WIDTH, rawViewW - SCROLLBAR_HIT_WIDTH - CARD_GAP_X);
+        int rawViewW = Math.max(Math.round(CardRenderHelper.CARD_WIDTH * GRID_MIN_CARD_SCALE) + SCROLLBAR_HIT_WIDTH + CARD_GAP_X, width - viewX * 2);
+        int contentW = Math.max(Math.round(CardRenderHelper.CARD_WIDTH * GRID_MIN_CARD_SCALE), rawViewW - SCROLLBAR_HIT_WIDTH - CARD_GAP_X);
         float scaleForSevenColumns = (contentW - (GRID_SCALE_COLUMNS - 1) * CARD_GAP_X) / (float) (GRID_SCALE_COLUMNS * CardRenderHelper.CARD_WIDTH);
         float cardScale = Math.max(GRID_MIN_CARD_SCALE, Math.min(GRID_CARD_SCALE, scaleForSevenColumns));
         int cardW = Math.round(CardRenderHelper.CARD_WIDTH * cardScale);
         int cardH = Math.round(CardRenderHelper.CARD_HEIGHT * cardScale);
         int previewPad = Math.max(0, (CardRenderHelper.CARD_HEIGHT - cardH) / 2 + PREVIEW_EDGE_MARGIN);
-        int viewW = Math.max(cardW, rawViewW);
+        int viewW = Math.min(Math.max(cardW, rawViewW), Math.max(cardW, width - viewX * 2));
         int reservedBottom = Math.max(0, bottomReserve);
         int pileTop = TITLE_RESERVED_HEIGHT;
-        int pileBottom = Math.max(pileTop + CardRenderHelper.CARD_HEIGHT, height - reservedBottom);
+        int pileBottom = Math.max(pileTop + cardH, height - reservedBottom);
         int cardViewY = viewY;
         int availableH = pileBottom - cardViewY;
         int layoutH = availableH;

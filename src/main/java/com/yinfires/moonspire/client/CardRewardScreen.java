@@ -24,6 +24,7 @@ public class CardRewardScreen extends NoBlurScreen {
     private static final int SCROLL_STEP = 34;
     private static final int MAX_VISIBLE_COLUMNS = 3;
     private static final float CARD_SCALE = 2.0F / 3.0F;
+    private static final float MIN_CARD_SCALE = 0.46F;
     private static final float PREVIEW_SCALE = 0.9F;
 
     private final UUID rewardId;
@@ -167,7 +168,7 @@ public class CardRewardScreen extends NoBlurScreen {
                 if (previewAnimation.visible() && previewAnimation.matches(card.id())) {
                     continue;
                 }
-                renderCardAt(graphics, card, bounds, CARD_SCALE);
+                renderCardAt(graphics, card, bounds, layout.cardScale());
             }
         } finally {
             graphics.disableScissor();
@@ -192,15 +193,17 @@ public class CardRewardScreen extends NoBlurScreen {
     }
 
     private void updatePreviewAnimation(CardInstance card, CardBounds bounds) {
-        float centerX = bounds.x() + cardW() / 2.0F;
-        float centerY = bounds.y() + cardH() / 2.0F;
-        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * PREVIEW_SCALE);
-        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * PREVIEW_SCALE);
+        float layoutScale = currentLayoutScale();
+        float centerX = bounds.x() + cardW(layoutScale) / 2.0F;
+        float centerY = bounds.y() + cardH(layoutScale) / 2.0F;
+        float previewScale = Math.min(PREVIEW_SCALE, Math.max(MIN_CARD_SCALE, width / (float) Math.max(1, CardRenderHelper.CARD_WIDTH + 16)));
+        int previewW = Math.round(CardRenderHelper.CARD_WIDTH * previewScale);
+        int previewH = Math.round(CardRenderHelper.CARD_HEIGHT * previewScale);
         int previewX = Math.round(centerX - previewW / 2.0F);
         int previewY = Math.round(centerY - previewH / 2.0F);
         previewX = Math.max(8, Math.min(width - previewW - 8, previewX));
         previewY = Math.max(TOP_TITLE_Y + font.lineHeight + 8, Math.min(height - BOTTOM_RESERVE - previewH, previewY));
-        previewAnimation.setOpenTarget(card.id(), centerX, centerY, previewX + previewW / 2.0F, previewY + previewH / 2.0F, CARD_SCALE, PREVIEW_SCALE);
+        previewAnimation.setOpenTarget(card.id(), centerX, centerY, previewX + previewW / 2.0F, previewY + previewH / 2.0F, layoutScale, previewScale);
         previewAnimation.advance();
     }
 
@@ -252,17 +255,24 @@ public class CardRewardScreen extends NoBlurScreen {
     }
 
     private Layout layout(int cardCount) {
-        int columns = Math.max(1, Math.min(MAX_VISIBLE_COLUMNS, Math.max(1, cardCount)));
-        int contentW = columns * cardW() + (columns - 1) * CARD_GAP_X;
-        int viewW = contentW + (cardCount > MAX_VISIBLE_COLUMNS ? SCROLLBAR_HIT_WIDTH + 8 : 0);
-        int viewX = Math.max(8, (width - viewW) / 2);
-        int viewY = Math.max(TOP_TITLE_Y + font.lineHeight + 42, (height - BOTTOM_RESERVE - cardH()) / 2);
-        int visibleRows = cardCount <= MAX_VISIBLE_COLUMNS ? 1 : 1;
-        int viewH = Math.min(cardH() * visibleRows + CARD_GAP_Y * Math.max(0, visibleRows - 1), Math.max(cardH(), height - viewY - BOTTOM_RESERVE));
+        float scale = cardScale();
+        int cardW = cardW(scale);
+        int cardH = cardH(scale);
+        int gapX = Math.max(8, Math.round(CARD_GAP_X * scale / CARD_SCALE));
+        int gapY = Math.max(8, Math.round(CARD_GAP_Y * scale / CARD_SCALE));
+        int maxColumnsByWidth = Math.max(1, (width - 16 + gapX) / Math.max(1, cardW + gapX));
+        int columns = Math.max(1, Math.min(MAX_VISIBLE_COLUMNS, Math.min(Math.max(1, cardCount), maxColumnsByWidth)));
+        int contentW = columns * cardW + (columns - 1) * gapX;
         int rows = cardCount <= 0 ? 0 : (cardCount + columns - 1) / columns;
-        int contentH = rows <= 0 ? 0 : rows * cardH() + (rows - 1) * CARD_GAP_Y;
+        int visibleRows = 1;
+        int viewW = contentW + (rows > visibleRows ? SCROLLBAR_HIT_WIDTH + 8 : 0);
+        int viewX = Math.max(8, (width - viewW) / 2);
+        int topGap = scale >= CARD_SCALE ? 42 : 28;
+        int viewY = Math.max(TOP_TITLE_Y + font.lineHeight + topGap, (height - BOTTOM_RESERVE - cardH) / 2);
+        int viewH = Math.min(cardH * visibleRows + gapY * Math.max(0, visibleRows - 1), Math.max(cardH, height - viewY - BOTTOM_RESERVE));
+        int contentH = rows <= 0 ? 0 : rows * cardH + (rows - 1) * gapY;
         int scrollbarX = viewX + contentW + 10;
-        return new Layout(viewX, viewY, viewW, viewH, viewX, columns, contentH, scrollbarX);
+        return new Layout(viewX, viewY, viewW, viewH, viewX, columns, contentH, scrollbarX, cardW, cardH, gapX, gapY, scale);
     }
 
     private int cardIndexAt(Layout layout, double mouseX, double mouseY) {
@@ -271,7 +281,7 @@ public class CardRewardScreen extends NoBlurScreen {
         }
         for (int i = firstVisibleIndex(layout); i < Math.min(currentCardCount(), lastVisibleIndex(layout)); i++) {
             CardBounds bounds = cardBounds(layout, i);
-            if (mouseX >= bounds.x() && mouseX <= bounds.x() + cardW() && mouseY >= bounds.y() && mouseY <= bounds.y() + cardH()) {
+            if (mouseX >= bounds.x() && mouseX <= bounds.x() + layout.cardW() && mouseY >= bounds.y() && mouseY <= bounds.y() + layout.cardH()) {
                 return i;
             }
         }
@@ -281,18 +291,18 @@ public class CardRewardScreen extends NoBlurScreen {
     private CardBounds cardBounds(Layout layout, int index) {
         int row = index / layout.columns();
         int column = index % layout.columns();
-        int x = layout.cardsX() + column * (cardW() + CARD_GAP_X);
-        int y = layout.viewY() + row * (cardH() + CARD_GAP_Y) - (int) Math.round(scrollOffset);
+        int x = layout.cardsX() + column * (layout.cardW() + layout.gapX());
+        int y = layout.viewY() + row * (layout.cardH() + layout.gapY()) - (int) Math.round(scrollOffset);
         return new CardBounds(x, y);
     }
 
     private int firstVisibleIndex(Layout layout) {
-        int firstRow = Math.max(0, (int) Math.floor(scrollOffset / Math.max(1, cardH() + CARD_GAP_Y)));
+        int firstRow = Math.max(0, (int) Math.floor(scrollOffset / Math.max(1, layout.cardH() + layout.gapY())));
         return firstRow * layout.columns();
     }
 
     private int lastVisibleIndex(Layout layout) {
-        int lastRow = Math.max(1, (int) Math.ceil((scrollOffset + layout.viewH()) / Math.max(1, cardH() + CARD_GAP_Y)) + 1);
+        int lastRow = Math.max(1, (int) Math.ceil((scrollOffset + layout.viewH()) / Math.max(1, layout.cardH() + layout.gapY())) + 1);
         return lastRow * layout.columns();
     }
 
@@ -360,7 +370,28 @@ public class CardRewardScreen extends NoBlurScreen {
         return Math.round(CardRenderHelper.CARD_HEIGHT * CARD_SCALE);
     }
 
-    private record Layout(int viewX, int viewY, int viewW, int viewH, int cardsX, int columns, int contentH, int scrollbarX) {
+    private int cardW(float scale) {
+        return Math.round(CardRenderHelper.CARD_WIDTH * scale);
+    }
+
+    private int cardH(float scale) {
+        return Math.round(CardRenderHelper.CARD_HEIGHT * scale);
+    }
+
+    private float cardScale() {
+        int preferredW = MAX_VISIBLE_COLUMNS * cardW() + (MAX_VISIBLE_COLUMNS - 1) * CARD_GAP_X;
+        if (width >= preferredW + 16) {
+            return CARD_SCALE;
+        }
+        float scale = (width - 16 - (MAX_VISIBLE_COLUMNS - 1) * 8) / (float) Math.max(1, MAX_VISIBLE_COLUMNS * CardRenderHelper.CARD_WIDTH);
+        return Math.max(MIN_CARD_SCALE, Math.min(CARD_SCALE, scale));
+    }
+
+    private float currentLayoutScale() {
+        return cardScale();
+    }
+
+    private record Layout(int viewX, int viewY, int viewW, int viewH, int cardsX, int columns, int contentH, int scrollbarX, int cardW, int cardH, int gapX, int gapY, float cardScale) {
     }
 
     private record CardBounds(int x, int y) {
