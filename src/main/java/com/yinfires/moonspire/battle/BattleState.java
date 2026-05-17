@@ -3077,6 +3077,9 @@ public class BattleState {
         if (batch.card() != null && isVexCard(batch.card())) {
             return new ItemStack(Items.IRON_SWORD);
         }
+        if (batch.card() != null && "builtin_monster_bone_rend".equals(batch.card().cardId())) {
+            return new ItemStack(Items.STONE_SWORD);
+        }
         if (batch.card() != null && "builtin_monster_bow_strike".equals(batch.card().cardId())) {
             return new ItemStack(Items.BOW);
         }

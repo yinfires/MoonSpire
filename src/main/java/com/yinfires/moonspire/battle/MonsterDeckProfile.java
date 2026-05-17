@@ -63,6 +63,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_raised_axe_guard",
             "builtin_monster_fanatic_might",
             "builtin_monster_fanatic_might");
+    private static final List<String> WITHER_SKELETON_DEFAULT_DECK = List.of(
+            "builtin_monster_wither_blade",
+            "builtin_monster_wither_blade",
+            "builtin_monster_wither_blade",
+            "builtin_monster_charred_guard",
+            "builtin_monster_charred_guard",
+            "builtin_monster_soul_cleave",
+            "builtin_monster_soul_cleave",
+            "builtin_monster_black_fortress_stance",
+            "builtin_monster_bone_rend",
+            "builtin_monster_bone_rend");
     private static final List<String> SKELETON_DEFAULT_DECK = List.of(
             "builtin_monster_bow_strike",
             "builtin_monster_sidestep",
@@ -371,6 +382,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.BOGGED) {
             return cards(BOGGED_DEFAULT_DECK);
         }
+        if (type == EntityType.WITHER_SKELETON) {
+            return cards(WITHER_SKELETON_DEFAULT_DECK);
+        }
         if (isSkeletonFamily(type)) {
             return cards(SKELETON_DEFAULT_DECK);
         }
@@ -444,6 +458,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.BOGGED) {
             return BOGGED_DEFAULT_DECK;
         }
+        if (type == EntityType.WITHER_SKELETON) {
+            return WITHER_SKELETON_DEFAULT_DECK;
+        }
         if (isSkeletonFamily(type)) {
             return SKELETON_DEFAULT_DECK;
         }
@@ -477,8 +494,7 @@ public final class MonsterDeckProfile {
     public static boolean isSkeletonFamily(EntityType<?> type) {
         return type == EntityType.SKELETON
                 || type == EntityType.STRAY
-                || type == EntityType.BOGGED
-                || type == EntityType.WITHER_SKELETON;
+                || type == EntityType.BOGGED;
     }
 
     public static boolean hasAbundantArrowsByDefault(EntityType<?> type) {
