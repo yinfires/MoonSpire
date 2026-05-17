@@ -161,6 +161,7 @@ public record BattleVisualEvent(
         POTION_THROW,
         POTION_DRINK,
         WIND_CHARGE,
-        PIGLIN_MELEE_SWING
+        PIGLIN_MELEE_SWING,
+        HOGLIN_HEAD_ATTACK
     }
 }

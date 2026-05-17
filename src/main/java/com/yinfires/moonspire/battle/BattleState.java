@@ -85,6 +85,10 @@ public class BattleState {
     private static final int PIGLIN_MELEE_APPROACH_TICKS = 8;
     private static final int PIGLIN_MELEE_STRIKE_TICKS = 1;
     private static final int PIGLIN_MELEE_RECOVER_TICKS = 6;
+    private static final int HOGLIN_HEAD_ATTACK_RAISE_TICKS = 2;
+    private static final int HOGLIN_HEAD_ATTACK_APPROACH_TICKS = 8;
+    private static final int HOGLIN_HEAD_ATTACK_STRIKE_TICKS = 2;
+    private static final int HOGLIN_HEAD_ATTACK_RECOVER_TICKS = 6;
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
@@ -2389,6 +2393,23 @@ public class BattleState {
                 .anyMatch(effect -> isDirectAttackEffect(effect.kind()) && !effect.effectDamage() && effect.amount() > 0);
     }
 
+    private boolean isHoglinHeadAttack(PendingCardBatch batch) {
+        if (batch == null || batch.card() == null || batch.user() == null) {
+            return false;
+        }
+        EntityType<?> type = batch.user().entity().getType();
+        if (type != EntityType.HOGLIN && type != EntityType.ZOGLIN) {
+            return false;
+        }
+        return "builtin_monster_hoglin_gore".equals(batch.card().cardId())
+                || "builtin_monster_crimson_headbutt".equals(batch.card().cardId())
+                || "builtin_monster_tusks_up".equals(batch.card().cardId())
+                || "builtin_monster_zoglin_gore".equals(batch.card().cardId())
+                || "builtin_monster_rotten_headbutt".equals(batch.card().cardId())
+                || "builtin_monster_maddened_charge".equals(batch.card().cardId())
+                || "builtin_monster_rotting_trample".equals(batch.card().cardId());
+    }
+
     private LungeStyle lungeStyle(PendingCardBatch batch) {
         if (isVindicatorAxeAttack(batch)) {
             return LungeStyle.VINDICATOR_AXE;
@@ -2401,6 +2422,9 @@ public class BattleState {
         }
         if (isPiglinMeleeAttack(batch)) {
             return LungeStyle.PIGLIN_MELEE;
+        }
+        if (isHoglinHeadAttack(batch)) {
+            return LungeStyle.HOGLIN_HEAD_ATTACK;
         }
         return LungeStyle.NORMAL;
     }
@@ -5022,10 +5046,11 @@ public class BattleState {
         VINDICATOR_AXE,
         VEX_CHARGE,
         RAVAGER_HEAD_RAM,
-        PIGLIN_MELEE;
+        PIGLIN_MELEE,
+        HOGLIN_HEAD_ATTACK;
 
         private boolean hasPrepare() {
-            return this == VINDICATOR_AXE || this == VEX_CHARGE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE;
+            return this == VINDICATOR_AXE || this == VEX_CHARGE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE || this == HOGLIN_HEAD_ATTACK;
         }
 
         private int prepareTicks() {
@@ -5034,6 +5059,7 @@ public class BattleState {
                 case VEX_CHARGE -> VEX_CHARGE_RAISE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RAISE_TICKS;
                 case PIGLIN_MELEE -> PIGLIN_MELEE_RAISE_TICKS;
+                case HOGLIN_HEAD_ATTACK -> HOGLIN_HEAD_ATTACK_RAISE_TICKS;
                 case NORMAL -> 0;
             };
         }
@@ -5044,12 +5070,13 @@ public class BattleState {
                 case VEX_CHARGE -> VEX_CHARGE_APPROACH_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_APPROACH_TICKS;
                 case PIGLIN_MELEE -> PIGLIN_MELEE_APPROACH_TICKS;
+                case HOGLIN_HEAD_ATTACK -> HOGLIN_HEAD_ATTACK_APPROACH_TICKS;
                 case NORMAL -> MELEE_LUNGE_TICKS;
             };
         }
 
         private boolean hasStrike() {
-            return this == VINDICATOR_AXE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE;
+            return this == VINDICATOR_AXE || this == RAVAGER_HEAD_RAM || this == PIGLIN_MELEE || this == HOGLIN_HEAD_ATTACK;
         }
 
         private int strikeTicks() {
@@ -5057,6 +5084,7 @@ public class BattleState {
                 case VINDICATOR_AXE -> VINDICATOR_AXE_STRIKE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_STRIKE_TICKS;
                 case PIGLIN_MELEE -> PIGLIN_MELEE_STRIKE_TICKS;
+                case HOGLIN_HEAD_ATTACK -> HOGLIN_HEAD_ATTACK_STRIKE_TICKS;
                 case NORMAL, VEX_CHARGE -> 0;
             };
         }
@@ -5067,6 +5095,7 @@ public class BattleState {
                 case VEX_CHARGE -> VEX_CHARGE_HIT_PAUSE_TICKS;
                 case RAVAGER_HEAD_RAM -> RAVAGER_HEAD_RAM_RECOVER_TICKS;
                 case PIGLIN_MELEE -> PIGLIN_MELEE_RECOVER_TICKS;
+                case HOGLIN_HEAD_ATTACK -> HOGLIN_HEAD_ATTACK_RECOVER_TICKS;
                 case NORMAL -> MELEE_HIT_PAUSE_TICKS;
             };
         }
@@ -5081,6 +5110,7 @@ public class BattleState {
                 case VEX_CHARGE -> BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE;
                 case RAVAGER_HEAD_RAM -> BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM;
                 case PIGLIN_MELEE -> BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING;
+                case HOGLIN_HEAD_ATTACK -> BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK;
                 case NORMAL -> BattleVisualEvent.AnimationType.MELEE_LUNGE;
             };
         }

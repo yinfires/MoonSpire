@@ -384,6 +384,27 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_brute_fury", "card.moonspire.monster.brute_fury.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.STRENGTH, 1, CardTarget.SELF),
                         new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:golden_axe", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_hoglin_gore", "card.moonspire.monster.hoglin_gore.name", "", 1, 6, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:hoglin_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_crimson_headbutt", "card.moonspire.monster.crimson_headbutt.name", "", 1, 5, 0, List.of(
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:crimson_fungus", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_tusks_up", "card.moonspire.monster.tusks_up.name", "", 2, 9, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:hoglin_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_crimson_hide", "card.moonspire.monster.crimson_hide.name", "", 1, 0, 7, List.of(), CardSourceType.MONSTER, "", "minecraft:leather", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_herd_fury", "card.moonspire.monster.herd_fury.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.STRENGTH, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.EXHAUST, 1)), CardSourceType.MONSTER, "", "minecraft:crimson_roots", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_zoglin_gore", "card.moonspire.monster.zoglin_gore.name", "", 1, 7, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:zoglin_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_rotten_headbutt", "card.moonspire.monster.rotten_headbutt.name", "", 1, 6, 0, List.of(
+                        new CardEffect(CardEffectKind.WITHER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:rotten_flesh", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_maddened_charge", "card.moonspire.monster.maddened_charge.name", "", 2, 10, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:zoglin_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_dead_hide", "card.moonspire.monster.dead_hide.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 6, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.GUARD, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:leather", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_rotting_trample", "card.moonspire.monster.rotting_trample.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:rotten_flesh", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_hungry_lunge", "card.moonspire.monster.hungry_lunge.name", "", 2, 8, 0, List.of(
                         new CardEffect(CardEffectKind.HUNGER, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_goring_headbutt", "card.moonspire.monster.goring_headbutt.name", "", 1, 8, 0, List.of(

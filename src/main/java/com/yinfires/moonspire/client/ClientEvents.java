@@ -59,7 +59,9 @@ import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.monster.Zoglin;
 import net.minecraft.world.entity.monster.breeze.Breeze;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.piglin.Piglin;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -103,6 +105,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
+    private static final Set<Integer> VISUAL_HOGLIN_HEAD_ATTACKS = new HashSet<>();
     private static final Set<Integer> VISUAL_BREEZE_WIND_CHARGES = new HashSet<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
@@ -210,6 +213,7 @@ public final class ClientEvents {
                 tickScheduledSelfDestructExplosions(minecraft);
                 syncVisualRiptideStates(minecraft);
                 syncVisualRavagerHeadRams(minecraft);
+                syncVisualHoglinHeadAttacks(minecraft);
                 syncVisualBreezeWindCharges(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
@@ -709,6 +713,56 @@ public final class ClientEvents {
             }
         }
 
+        private static void syncVisualHoglinHeadAttacks(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_HOGLIN_HEAD_ATTACKS.clear();
+                return;
+            }
+            Set<Integer> activeHoglins = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualHoglinHeadAttack(minecraft.level.getEntity(combatant.entityId()), activeHoglins);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualHoglinHeadAttack(minecraft.level.getEntity(combatant.entityId()), activeHoglins);
+            }
+            for (int entityId : VISUAL_HOGLIN_HEAD_ATTACKS.toArray(Integer[]::new)) {
+                if (!activeHoglins.contains(entityId)) {
+                    clearVisualHoglinHeadAttack(minecraft.level.getEntity(entityId));
+                    VISUAL_HOGLIN_HEAD_ATTACKS.remove(entityId);
+                }
+            }
+        }
+
+        private static void syncVisualHoglinHeadAttack(Entity entity, Set<Integer> activeHoglins) {
+            int attackTick = entity == null ? 0 : ClientBattleState.visualHoglinAttackTick(entity.getId());
+            if (attackTick > 0 && setVisualHoglinHeadAttack(entity, attackTick)) {
+                activeHoglins.add(entity.getId());
+                VISUAL_HOGLIN_HEAD_ATTACKS.add(entity.getId());
+            } else if (entity != null && VISUAL_HOGLIN_HEAD_ATTACKS.remove(entity.getId())) {
+                clearVisualHoglinHeadAttack(entity);
+            }
+        }
+
+        private static boolean setVisualHoglinHeadAttack(Entity entity, int attackTick) {
+            if (entity instanceof Hoglin hoglin) {
+                hoglin.attackAnimationRemainingTicks = attackTick;
+                return true;
+            }
+            if (entity instanceof Zoglin zoglin) {
+                zoglin.attackAnimationRemainingTicks = attackTick;
+                return true;
+            }
+            return false;
+        }
+
+        private static void clearVisualHoglinHeadAttack(Entity entity) {
+            if (entity instanceof Hoglin hoglin) {
+                hoglin.attackAnimationRemainingTicks = 0;
+            } else if (entity instanceof Zoglin zoglin) {
+                zoglin.attackAnimationRemainingTicks = 0;
+            }
+        }
+
         private static void syncVisualBreezeWindCharges(Minecraft minecraft) {
             if (minecraft.level == null) {
                 VISUAL_BREEZE_WIND_CHARGES.clear();
@@ -886,6 +940,9 @@ public final class ClientEvents {
                         ravager.attackTick = 0;
                     }
                 }
+                for (int entityId : VISUAL_HOGLIN_HEAD_ATTACKS.toArray(Integer[]::new)) {
+                    clearVisualHoglinHeadAttack(minecraft.level.getEntity(entityId));
+                }
                 for (int entityId : VISUAL_BREEZE_WIND_CHARGES.toArray(Integer[]::new)) {
                     if (minecraft.level.getEntity(entityId) instanceof Breeze breeze) {
                         stopVisualBreezeWindCharge(breeze);
@@ -905,6 +962,7 @@ public final class ClientEvents {
             TEMP_ARM_POSES.clear();
             VISUAL_RIPTIDE_STATES.clear();
             VISUAL_RAVAGER_HEAD_RAMS.clear();
+            VISUAL_HOGLIN_HEAD_ATTACKS.clear();
             VISUAL_BREEZE_WIND_CHARGES.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
@@ -1114,6 +1172,8 @@ public final class ClientEvents {
                 }
             } else if (event.animationType() == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK) {
+                scheduleBattleSound(attacker, attacker instanceof Zoglin ? SoundEvents.ZOGLIN_ATTACK : SoundEvents.HOGLIN_ATTACK, 1, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
                 scheduleBattleSound(attacker, SoundEvents.GUARDIAN_ATTACK, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE || event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE) {

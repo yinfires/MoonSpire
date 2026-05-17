@@ -165,6 +165,28 @@ public final class MonsterDeckProfile {
             "builtin_monster_brute_gold_plate",
             "builtin_monster_brute_gold_plate",
             "builtin_monster_brute_fury");
+    private static final List<String> HOGLIN_DEFAULT_DECK = List.of(
+            "builtin_monster_hoglin_gore",
+            "builtin_monster_hoglin_gore",
+            "builtin_monster_hoglin_gore",
+            "builtin_monster_crimson_headbutt",
+            "builtin_monster_crimson_headbutt",
+            "builtin_monster_tusks_up",
+            "builtin_monster_tusks_up",
+            "builtin_monster_crimson_hide",
+            "builtin_monster_crimson_hide",
+            "builtin_monster_herd_fury");
+    private static final List<String> ZOGLIN_DEFAULT_DECK = List.of(
+            "builtin_monster_zoglin_gore",
+            "builtin_monster_zoglin_gore",
+            "builtin_monster_zoglin_gore",
+            "builtin_monster_rotten_headbutt",
+            "builtin_monster_rotten_headbutt",
+            "builtin_monster_maddened_charge",
+            "builtin_monster_maddened_charge",
+            "builtin_monster_dead_hide",
+            "builtin_monster_dead_hide",
+            "builtin_monster_rotting_trample");
     private static final List<String> SPIDER_DEFAULT_DECK = List.of(
             "builtin_monster_pounce",
             "builtin_monster_skitter",
@@ -424,6 +446,12 @@ public final class MonsterDeckProfile {
         if (type == EntityType.PIGLIN_BRUTE) {
             return cards(PIGLIN_BRUTE_DEFAULT_DECK);
         }
+        if (type == EntityType.HOGLIN) {
+            return cards(HOGLIN_DEFAULT_DECK);
+        }
+        if (type == EntityType.ZOGLIN) {
+            return cards(ZOGLIN_DEFAULT_DECK);
+        }
         if (type == EntityType.CAVE_SPIDER) {
             return cards(CAVE_SPIDER_DEFAULT_DECK);
         }
@@ -505,6 +533,12 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.PIGLIN_BRUTE) {
             return PIGLIN_BRUTE_DEFAULT_DECK;
+        }
+        if (type == EntityType.HOGLIN) {
+            return HOGLIN_DEFAULT_DECK;
+        }
+        if (type == EntityType.ZOGLIN) {
+            return ZOGLIN_DEFAULT_DECK;
         }
         if (type == EntityType.CAVE_SPIDER) {
             return CAVE_SPIDER_DEFAULT_DECK;

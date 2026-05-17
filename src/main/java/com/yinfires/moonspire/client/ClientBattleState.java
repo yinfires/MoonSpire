@@ -58,6 +58,11 @@ public final class ClientBattleState {
     private static final int PIGLIN_MELEE_STRIKE_TICKS = 1;
     private static final int PIGLIN_MELEE_RECOVER_TICKS = 6;
     private static final int RAVAGER_HEAD_ATTACK_TICKS = 10;
+    private static final int HOGLIN_HEAD_ATTACK_RAISE_TICKS = 2;
+    private static final int HOGLIN_HEAD_ATTACK_APPROACH_TICKS = 8;
+    private static final int HOGLIN_HEAD_ATTACK_STRIKE_TICKS = 2;
+    private static final int HOGLIN_HEAD_ATTACK_RECOVER_TICKS = 6;
+    private static final int HOGLIN_HEAD_ATTACK_TICKS = 10;
     static final int RIPTIDE_CHARGE_TICKS = 16;
     private static final int RIPTIDE_RUSH_TICKS = 10;
     private static final int RIPTIDE_HIT_PAUSE_TICKS = 6;
@@ -564,6 +569,11 @@ public final class ClientBattleState {
         return state == null ? 0 : state.ravagerAttackTick();
     }
 
+    public static int visualHoglinAttackTick(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.hoglinAttackTick();
+    }
+
     public static boolean visualEvokerSpellcasting(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state != null && state.evokerSpellcasting();
@@ -1029,7 +1039,8 @@ public final class ClientBattleState {
                 || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
                 || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
                 || animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
-                || animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING;
+                || animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
+                || animationType == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK;
     }
 
     public static final class GuardianBeamAnimation {
@@ -1335,6 +1346,8 @@ public final class ClientBattleState {
                         ? RAVAGER_HEAD_RAM_RAISE_TICKS + RAVAGER_HEAD_RAM_APPROACH_TICKS + RAVAGER_HEAD_RAM_STRIKE_TICKS + RAVAGER_HEAD_RAM_RECOVER_TICKS
                         : nextType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
                         ? PIGLIN_MELEE_RAISE_TICKS + PIGLIN_MELEE_APPROACH_TICKS + PIGLIN_MELEE_STRIKE_TICKS + PIGLIN_MELEE_RECOVER_TICKS
+                        : nextType == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK
+                        ? HOGLIN_HEAD_ATTACK_RAISE_TICKS + HOGLIN_HEAD_ATTACK_APPROACH_TICKS + HOGLIN_HEAD_ATTACK_STRIKE_TICKS + HOGLIN_HEAD_ATTACK_RECOVER_TICKS
                         : MELEE_LUNGE_TICKS + MELEE_HIT_PAUSE_TICKS;
                 lungeTicks = Math.max(1, Math.max(minimumTicks, animationTicks));
                 lungeAge = 0;
@@ -1461,6 +1474,16 @@ public final class ClientBattleState {
                 }
                 return lungeStrike;
             }
+            if (animationType == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK) {
+                if (age <= HOGLIN_HEAD_ATTACK_RAISE_TICKS) {
+                    return lungeStart;
+                }
+                age -= HOGLIN_HEAD_ATTACK_RAISE_TICKS;
+                if (age <= HOGLIN_HEAD_ATTACK_APPROACH_TICKS) {
+                    return lungePosition(age / HOGLIN_HEAD_ATTACK_APPROACH_TICKS);
+                }
+                return lungeStrike;
+            }
             if (age <= MELEE_LUNGE_TICKS) {
                 return lungePosition(age / MELEE_LUNGE_TICKS);
             }
@@ -1575,6 +1598,17 @@ public final class ClientBattleState {
                 return 0;
             }
             return Math.max(1, RAVAGER_HEAD_ATTACK_TICKS - attackAge);
+        }
+
+        private int hoglinAttackTick() {
+            if (animationType != BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK || lungeTicks <= 0) {
+                return 0;
+            }
+            int attackAge = lungeAge - HOGLIN_HEAD_ATTACK_RAISE_TICKS;
+            if (attackAge < 0 || attackAge >= HOGLIN_HEAD_ATTACK_TICKS) {
+                return 0;
+            }
+            return Math.max(1, HOGLIN_HEAD_ATTACK_TICKS - attackAge);
         }
 
         private void hurtFlash(Vec3 knockbackVelocity) {
