@@ -30,6 +30,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.projectile.LargeFireball;
+import net.minecraft.world.entity.projectile.ShulkerBullet;
 import net.minecraft.world.entity.projectile.SmallFireball;
 import net.minecraft.world.entity.projectile.SpectralArrow;
 import net.minecraft.world.entity.projectile.ThrownPotion;
@@ -485,6 +486,7 @@ public final class BattleWorldOverlay {
         private WindCharge windCharge;
         private SmallFireball smallFireball;
         private LargeFireball largeFireball;
+        private ShulkerBullet shulkerBullet;
         private int nextVisualId = -1000000;
 
         private Entity entityFor(Minecraft minecraft, ClientBattleState.ProjectileVisual visual) {
@@ -508,6 +510,15 @@ public final class BattleWorldOverlay {
                     }
                 }
                 return largeFireball;
+            }
+            if (visual.animationType() == com.yinfires.moonspire.battle.BattleVisualEvent.AnimationType.SHULKER_BULLET) {
+                if (shulkerBullet == null || shulkerBullet.level() != minecraft.level) {
+                    shulkerBullet = EntityType.SHULKER_BULLET.create(minecraft.level);
+                    if (shulkerBullet != null) {
+                        initializeVisualEntity(shulkerBullet);
+                    }
+                }
+                return shulkerBullet;
             }
             ItemStack stack = visual.stack();
             if (visual.animationType() == com.yinfires.moonspire.battle.BattleVisualEvent.AnimationType.WIND_CHARGE) {

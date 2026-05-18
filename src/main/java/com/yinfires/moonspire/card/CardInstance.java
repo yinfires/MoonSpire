@@ -522,6 +522,9 @@ public record CardInstance(
             case "card.moonspire.monster.sulfur_drift.name" -> "builtin_monster_sulfur_drift";
             case "card.moonspire.monster.tearful_ward.name" -> "builtin_monster_tearful_ward";
             case "card.moonspire.monster.infernal_shriek.name" -> "builtin_monster_infernal_shriek";
+            case "card.moonspire.monster.shulker_bullet.name" -> "builtin_monster_shulker_bullet";
+            case "card.moonspire.monster.disruptive_bullet.name" -> "builtin_monster_disruptive_bullet";
+            case "card.moonspire.monster.shell_closure.name" -> "builtin_monster_shell_closure";
             case "card.moonspire.monster.pounce.name" -> "builtin_monster_pounce";
             case "card.moonspire.monster.skitter.name" -> "builtin_monster_skitter";
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";

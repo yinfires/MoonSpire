@@ -41,6 +41,7 @@ import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.monster.Vex;
@@ -94,6 +95,7 @@ public class BattleState {
     private static final int TRIDENT_DRAW_TICKS = 18;
     private static final int FIREBALL_PREPARE_TICKS = 20;
     private static final int WIND_CHARGE_TICKS = 15;
+    private static final int SHULKER_BULLET_PREPARE_TICKS = 12;
     private static final int GUARDIAN_BEAM_TICKS = 80;
     private static final int POTION_THROW_PREPARE_TICKS = 8;
     private static final int POTION_DRINK_TICKS = 32;
@@ -2263,6 +2265,9 @@ public class BattleState {
         if (isWindChargeCard(card)) {
             return WIND_CHARGE_TICKS;
         }
+        if (isShulkerBulletCard(card)) {
+            return SHULKER_BULLET_PREPARE_TICKS;
+        }
         if (isBlazeFireballCard(card) || isGhastFireballCard(card)) {
             return FIREBALL_PREPARE_TICKS;
         }
@@ -2285,6 +2290,9 @@ public class BattleState {
         }
         if (isWindChargeCard(card)) {
             return BattleVisualEvent.AnimationType.WIND_CHARGE;
+        }
+        if (isShulkerBulletCard(card)) {
+            return BattleVisualEvent.AnimationType.SHULKER_BULLET;
         }
         if (isBlazeFireballCard(card)) {
             return BattleVisualEvent.AnimationType.BLAZE_FIREBALL;
@@ -2321,6 +2329,14 @@ public class BattleState {
         return "builtin_monster_blaze_fireball".equals(card.cardId())
                 || "builtin_monster_blazing_barrage".equals(card.cardId())
                 || "builtin_monster_flame_pressure".equals(card.cardId());
+    }
+
+    private boolean isShulkerBulletCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_shulker_bullet".equals(card.cardId())
+                || "builtin_monster_disruptive_bullet".equals(card.cardId());
     }
 
     private boolean isGhastFireballCard(CardInstance card) {
@@ -2625,14 +2641,29 @@ public class BattleState {
             }
             boolean trident = isTridentCard(batch.card());
             boolean windCharge = isWindChargeCard(batch.card());
+            boolean shulkerBullet = isShulkerBulletCard(batch.card());
             boolean fireball = isBlazeFireballCard(batch.card()) || isGhastFireballCard(batch.card());
-            ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? windChargeStack() : fireball ? ItemStack.EMPTY : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
-            ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : windCharge || fireball ? ItemStack.EMPTY : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
+            ItemStack projectileStack = trident
+                    ? new ItemStack(Items.TRIDENT)
+                    : windCharge
+                    ? windChargeStack()
+                    : shulkerBullet || fireball
+                    ? ItemStack.EMPTY
+                    : batch.projectileStack().isEmpty()
+                    ? new ItemStack(Items.ARROW)
+                    : batch.projectileStack();
+            ItemStack visualStack = trident
+                    ? new ItemStack(Items.TRIDENT)
+                    : windCharge || shulkerBullet || fireball
+                    ? ItemStack.EMPTY
+                    : batch.stack().isEmpty()
+                    ? new ItemStack(Items.BOW)
+                    : batch.stack();
             int drawTicks = rangedPrepareTicks(batch.card());
             LivingEntity actor = batch.user().entity();
             LivingEntity target = animated.target().entity();
             int animationTicks = drawTicks + projectileFlightTicks(actor, target);
-            emitVisual(actor, target, visualStack, projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), animationTicks, projectileStartPoint(actor, target), targetPoint(target));
+            emitVisual(actor, target, visualStack, projectileStack, batch.card(), new BattleDamageResult(0, 0, 0), 0, 0, 0, rangedAnimationType(batch.card()), animationTicks, projectileStartPoint(batch.card(), actor, target), targetPoint(target));
             pendingAnimation = new ProjectileAnimation(batch, animated.target(), projectileStack, drawTicks);
             return true;
         }
@@ -5466,6 +5497,13 @@ public class BattleState {
         return projectileStartPoint(actor, target, 0.6D);
     }
 
+    private Vec3 projectileStartPoint(CardInstance card, LivingEntity actor, LivingEntity target) {
+        if (isShulkerBulletCard(card) && actor instanceof Shulker shulker) {
+            return shulkerProjectileStartPoint(shulker, target);
+        }
+        return projectileStartPoint(actor, target);
+    }
+
     private Vec3 potionStartPoint(LivingEntity actor, LivingEntity target) {
         return projectileStartPoint(actor, target, 0.45D);
     }
@@ -5474,6 +5512,14 @@ public class BattleState {
         Vec3 direction = targetPoint(target).subtract(actor.getEyePosition());
         Vec3 normalized = direction.lengthSqr() > 0.0001D ? direction.normalize() : actor.getLookAngle();
         return actor.getEyePosition().add(normalized.scale(forwardOffset));
+    }
+
+    private Vec3 shulkerProjectileStartPoint(Shulker shulker, LivingEntity target) {
+        Vec3 center = shulker.getBoundingBox().getCenter();
+        Vec3 direction = targetPoint(target).subtract(center);
+        Vec3 normalized = direction.lengthSqr() > 0.0001D ? direction.normalize() : shulker.getLookAngle();
+        double forwardOffset = Math.max(0.35D, shulker.getBbWidth() * 0.45D);
+        return center.add(normalized.scale(forwardOffset));
     }
 
     private Vec3 targetPoint(LivingEntity entity) {

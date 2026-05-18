@@ -382,6 +382,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_pearl_shift",
             "builtin_monster_rending_gaze",
             "builtin_monster_rending_gaze");
+    private static final List<String> SHULKER_DEFAULT_DECK = List.of(
+            "builtin_monster_shulker_bullet",
+            "builtin_monster_shulker_bullet",
+            "builtin_monster_shulker_bullet",
+            "builtin_monster_shulker_bullet",
+            "builtin_monster_disruptive_bullet",
+            "builtin_monster_disruptive_bullet",
+            "builtin_monster_disruptive_bullet",
+            "builtin_monster_shell_closure",
+            "builtin_monster_shell_closure",
+            "builtin_monster_shell_closure");
     private static final List<String> BREEZE_DEFAULT_DECK = List.of(
             "builtin_monster_wind_charge",
             "builtin_monster_wind_charge",
@@ -470,6 +481,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.ENDERMAN) {
             return cards(ENDERMAN_DEFAULT_DECK);
+        }
+        if (type == EntityType.SHULKER) {
+            return cards(SHULKER_DEFAULT_DECK);
         }
         if (type == EntityType.BREEZE) {
             return cards(BREEZE_DEFAULT_DECK);
@@ -573,6 +587,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.ENDERMAN) {
             return ENDERMAN_DEFAULT_DECK;
+        }
+        if (type == EntityType.SHULKER) {
+            return SHULKER_DEFAULT_DECK;
         }
         if (type == EntityType.BREEZE) {
             return BREEZE_DEFAULT_DECK;

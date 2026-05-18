@@ -164,6 +164,7 @@ public record BattleVisualEvent(
         PIGLIN_MELEE_SWING,
         HOGLIN_HEAD_ATTACK,
         BLAZE_FIREBALL,
-        GHAST_FIREBALL
+        GHAST_FIREBALL,
+        SHULKER_BULLET
     }
 }

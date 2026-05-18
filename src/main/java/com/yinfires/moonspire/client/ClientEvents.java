@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import net.minecraft.core.particles.ColorParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.Util;
@@ -57,6 +58,7 @@ import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.entity.monster.Ghast;
 import net.minecraft.world.entity.monster.Pillager;
 import net.minecraft.world.entity.monster.Ravager;
+import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
@@ -105,6 +107,7 @@ public final class ClientEvents {
     private static final Map<Integer, TemporaryHandState> TEMP_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryFireballState> VISUAL_FIREBALL_STATES = new HashMap<>();
+    private static final Map<Integer, TemporaryShulkerState> VISUAL_SHULKER_STATES = new HashMap<>();
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
@@ -213,6 +216,7 @@ public final class ClientEvents {
                 syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
                 syncVisualFireballStates(minecraft);
+                syncVisualShulkerPeekStates(minecraft);
                 tickScheduledBattleSounds(minecraft);
                 tickScheduledSelfDestructExplosions(minecraft);
                 syncVisualRiptideStates(minecraft);
@@ -855,6 +859,49 @@ public final class ClientEvents {
             }
         }
 
+        private static void syncVisualShulkerPeekStates(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_SHULKER_STATES.clear();
+                return;
+            }
+            Set<Integer> activeShulkers = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualShulkerPeekState(minecraft.level.getEntity(combatant.entityId()), activeShulkers);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualShulkerPeekState(minecraft.level.getEntity(combatant.entityId()), activeShulkers);
+            }
+            for (int entityId : VISUAL_SHULKER_STATES.keySet().toArray(Integer[]::new)) {
+                if (!activeShulkers.contains(entityId)) {
+                    restoreVisualShulkerState(minecraft.level.getEntity(entityId));
+                }
+            }
+        }
+
+        private static void syncVisualShulkerPeekState(Entity entity, Set<Integer> activeShulkers) {
+            if (!(entity instanceof Shulker shulker)) {
+                return;
+            }
+            if (ClientBattleState.visualAnimationType(shulker.getId()) != BattleVisualEvent.AnimationType.SHULKER_BULLET
+                    || !ClientBattleState.visualShulkerBulletActive(shulker.getId())) {
+                restoreVisualShulkerState(shulker);
+                return;
+            }
+            VISUAL_SHULKER_STATES.computeIfAbsent(shulker.getId(), id -> TemporaryShulkerState.capture(shulker));
+            shulker.setRawPeekAmount(100);
+            activeShulkers.add(shulker.getId());
+        }
+
+        private static void restoreVisualShulkerState(Entity entity) {
+            if (!(entity instanceof Shulker shulker)) {
+                return;
+            }
+            TemporaryShulkerState state = VISUAL_SHULKER_STATES.remove(shulker.getId());
+            if (state != null) {
+                state.restore(shulker);
+            }
+        }
+
         private static void syncVisualUseItemState(LivingEntity entity, ItemStack mainHand) {
             int duration = Math.max(1, mainHand.getUseDuration(entity));
             int usedTicks = Math.max(0, ClientBattleState.visualTicksUsingItem(entity.getId()));
@@ -983,6 +1030,9 @@ public final class ClientEvents {
                 for (int entityId : VISUAL_FIREBALL_STATES.keySet().toArray(Integer[]::new)) {
                     restoreVisualFireballState(minecraft.level.getEntity(entityId));
                 }
+                for (int entityId : VISUAL_SHULKER_STATES.keySet().toArray(Integer[]::new)) {
+                    restoreVisualShulkerState(minecraft.level.getEntity(entityId));
+                }
                 for (int entityId : TEMP_ARM_POSES.keySet().toArray(Integer[]::new)) {
                     if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
                         restoreArmPose(living);
@@ -1018,6 +1068,7 @@ public final class ClientEvents {
             TEMP_MAIN_HANDS.clear();
             VISUAL_MAIN_HANDS.clear();
             VISUAL_FIREBALL_STATES.clear();
+            VISUAL_SHULKER_STATES.clear();
             TEMP_ARM_POSES.clear();
             VISUAL_RIPTIDE_STATES.clear();
             VISUAL_RAVAGER_HEAD_RAMS.clear();
@@ -1119,6 +1170,9 @@ public final class ClientEvents {
                     SoundEvent burstSound = breeze ? SoundEvents.BREEZE_WIND_CHARGE_BURST.value() : SoundEvents.WIND_CHARGE_BURST.value();
                     minecraft.level.playLocalSound(position.x, position.y, position.z, burstSound, SoundSource.PLAYERS, 1.0F, 1.0F, false);
                     spawnWindChargeBurstParticles(minecraft, position);
+                } else if (impact.animationType() == BattleVisualEvent.AnimationType.SHULKER_BULLET) {
+                    minecraft.level.playLocalSound(position.x, position.y, position.z, SoundEvents.SHULKER_BULLET_HIT, SoundSource.PLAYERS, 1.0F, 1.0F, false);
+                    spawnShulkerBulletImpactParticles(minecraft, position);
                 } else if (isFireballAnimation(impact.animationType())) {
                     boolean large = impact.animationType() == BattleVisualEvent.AnimationType.GHAST_FIREBALL;
                     minecraft.level.playLocalSound(position.x, position.y, position.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, large ? 1.15F : 0.8F, large ? 0.9F : 1.15F, false);
@@ -1144,6 +1198,18 @@ public final class ClientEvents {
                         x * 0.12D,
                         0.02D,
                         z * 0.12D);
+            }
+        }
+
+        private static void spawnShulkerBulletImpactParticles(Minecraft minecraft, Vec3 position) {
+            if (minecraft.level == null) {
+                return;
+            }
+            for (int i = 0; i < 10; i++) {
+                double dx = (minecraft.level.random.nextDouble() - 0.5D) * 0.2D;
+                double dy = (minecraft.level.random.nextDouble() - 0.5D) * 0.2D;
+                double dz = (minecraft.level.random.nextDouble() - 0.5D) * 0.2D;
+                minecraft.level.addParticle(ParticleTypes.END_ROD, position.x, position.y, position.z, dx, dy, dz);
             }
         }
 
@@ -1258,6 +1324,9 @@ public final class ClientEvents {
                 } else {
                     scheduleBattleSound(attacker, SoundEvents.WIND_CHARGE_THROW, Math.max(1, prepareTicks), 1.0F, 1.0F);
                 }
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.SHULKER_BULLET) {
+                scheduleBattleSound(attacker, SoundEvents.SHULKER_OPEN, 0, 0.8F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.SHULKER_SHOOT, Math.max(1, prepareTicks), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.BLAZE_FIREBALL) {
                 scheduleBattleSound(attacker, SoundEvents.BLAZE_SHOOT, Math.max(1, prepareTicks), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GHAST_FIREBALL) {
@@ -1351,6 +1420,16 @@ public final class ClientEvents {
             if (originalGhastCharging != null && entity instanceof Ghast ghast) {
                 ghast.setCharging(originalGhastCharging);
             }
+        }
+    }
+
+    private record TemporaryShulkerState(int originalRawPeekAmount) {
+        private static TemporaryShulkerState capture(Shulker shulker) {
+            return new TemporaryShulkerState(shulker.getRawPeekAmount());
+        }
+
+        private void restore(Shulker shulker) {
+            shulker.setRawPeekAmount(originalRawPeekAmount);
         }
     }
 
@@ -1519,6 +1598,11 @@ public final class ClientEvents {
         if (minecraft.player == null || minecraft.level == null) {
             return null;
         }
+        LivingEntity targeted = targetedLivingEntity(minecraft, entity ->
+                entity != minecraft.player && entity.isAlive() && MonsterDeckProfile.hasBattleDeck(entity));
+        if (targeted != null) {
+            return targeted;
+        }
         Vec3 start = minecraft.player.getEyePosition();
         Vec3 look = minecraft.player.getLookAngle();
         Vec3 end = start.add(look.scale(CHALLENGE_RANGE));
@@ -1539,6 +1623,21 @@ public final class ClientEvents {
             }
         }
         return best;
+    }
+
+    static LivingEntity targetedLivingEntity(Minecraft minecraft) {
+        return targetedLivingEntity(minecraft, entity -> true);
+    }
+
+    static LivingEntity targetedLivingEntity(Minecraft minecraft, Predicate<LivingEntity> predicate) {
+        if (minecraft == null) {
+            return null;
+        }
+        Entity entity = minecraft.crosshairPickEntity;
+        if (entity instanceof LivingEntity living && (predicate == null || predicate.test(living))) {
+            return living;
+        }
+        return null;
     }
 
     static boolean handleUiDebugKey(Minecraft minecraft) {

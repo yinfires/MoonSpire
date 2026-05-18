@@ -87,4 +87,4 @@
 
 - 自定义卡图和卡面图片都建议通过开发者中心的本地图片入口选择。
 - 物品图标会直接使用物品栏渲染图。
-- 客户端世界战斗视觉依赖 `src/main/resources/META-INF/accesstransformer.cfg` 公开 `LivingEntity.useItem`、`useItemRemaining`、`setLivingEntityFlag(...)`、`autoSpinAttackTicks`、`autoSpinAttackDmg`、`autoSpinAttackItemStack`、`Ravager.attackTick` 和 `Piglin.isChargingCrossbow()`。这些访问点只用于战斗动画临时复用原版持物、使用物品、激流旋转姿态、劫掠兽头部伸缩和猪灵弩装填状态恢复；动画结束、战斗结束或实体离开客户端时必须恢复原状态，不能把这些字段当作权威战斗伤害、碰撞或位置来源。
+- 客户端世界战斗视觉依赖 `src/main/resources/META-INF/accesstransformer.cfg` 公开 `LivingEntity.useItem`、`useItemRemaining`、`setLivingEntityFlag(...)`、`autoSpinAttackTicks`、`autoSpinAttackDmg`、`autoSpinAttackItemStack`、`Ravager.attackTick`、`Piglin.isChargingCrossbow()` 以及 `Shulker.setRawPeekAmount(...)` / `Shulker.getRawPeekAmount()`。这些访问点只用于战斗动画临时复用原版持物、使用物品、激流旋转姿态、劫掠兽头部伸缩、猪灵弩装填状态和潜影贝开壳状态恢复；动画结束、战斗结束或实体离开客户端时必须恢复原状态，不能把这些字段当作权威战斗伤害、碰撞或位置来源。

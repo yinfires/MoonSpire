@@ -47,6 +47,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -3553,6 +3554,11 @@ public class BattleScreen extends NoBlurScreen {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || minecraft.gameRenderer == null || width <= 0 || height <= 0) {
             return -1;
+        }
+        LivingEntity targeted = ClientEvents.targetedLivingEntity(minecraft, entity ->
+                snapshot.combatant(entity.getId()) != null && !combatantFakeDead(snapshot, entity.getId()));
+        if (targeted != null) {
+            return targeted.getId();
         }
         var camera = minecraft.gameRenderer.getMainCamera();
         if (!camera.isInitialized()) {

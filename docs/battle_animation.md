@@ -31,7 +31,9 @@
 
 - 近战位移：`MELEE_LUNGE`、`VINDICATOR_AXE_SWING`、`VEX_CHARGE_LUNGE`、`RAVAGER_HEAD_RAM`、`PIGLIN_MELEE_SWING`、`HOGLIN_HEAD_ATTACK` 由 `BattleState.LungeAnimation` 和 `LungeStyle` 控制服务端节奏；客户端 `VisualState` 用相同阶段时长生成渲染偏移和走路速度，`ClientEvents` 同步对应怪物攻击姿势。
 - 激流突进：`RIPTIDE_RUSH` 使用服务端 `RiptideRushAnimation` 安排蓄力、冲刺和停顿；客户端以三叉戟临时手持物、使用状态、`autoSpinAttack` 视觉状态和中心高度偏移播放旋转冲刺。
-- 远程弹射物：`BOW_DRAW`、`CROSSBOW_LOAD`、`TRIDENT_THROW`、`CHANNELING_TRIDENT_THROW`、`POTION_THROW`、`WIND_CHARGE`、`BLAZE_FIREBALL`、`GHAST_FIREBALL` 使用准备时间加飞行时间。服务端在命中节奏点结算效果，客户端 `ProjectileVisual` 负责从起点飞向命中点，必要时生成命中特效或视觉闪电。
+- 远程弹射物：`BOW_DRAW`、`CROSSBOW_LOAD`、`TRIDENT_THROW`、`CHANNELING_TRIDENT_THROW`、`POTION_THROW`、`WIND_CHARGE`、`BLAZE_FIREBALL`、`GHAST_FIREBALL`、`SHULKER_BULLET` 使用准备时间加飞行时间。服务端在命中节奏点结算效果，客户端 `ProjectileVisual` 负责从起点飞向命中点，必要时生成命中特效或视觉闪电。
+- 潜影弹：`SHULKER_BULLET` 准备时间固定 12 tick，飞行时间继续复用按距离计算的 projectile flight。服务端对潜影贝专门改用壳体中心朝目标前缘作为发射点，不再复用通用眼睛位置；客户端 `BattleWorldOverlay` 复用原版 `ShulkerBullet` 作为只渲染实体，并在命中点补本地音效与粒子。
+- 潜影贝姿态：只有攻击者本体是潜影贝且正在播放 `SHULKER_BULLET` 时，客户端 `ClientEvents.syncVisualShulkerPeekStates(...)` 才会临时把壳体打开；动画结束、战斗结束或实体离开客户端后必须恢复原始 peek 值。玩家或其它非潜影贝单位打出同牌时，只保留潜影弹飞行与命中，不套用潜影贝开壳表现。
 - 原版物品使用姿势：弓、弩、三叉戟、喝药水等通过临时主手物品和 `visualUsingItem` 驱动原版使用动画。`ClientEvents.syncVisualUseItemState(...)` 维护 `useItem`、`useItemRemaining` 和 living entity flags，让原版模型按持续使用时间累计姿势。
 - 怪物专属姿势：骷髅弓、溺尸三叉戟、卫道士举斧、恼鬼冲锋、猪灵近战、掠夺兽/疣猪兽头槌、女巫饮药、烈焰人/恶魂蓄火球等都通过 `ClientEvents` 的临时状态同步到原版实体字段，动画结束后必须恢复原状态。
 - 受击和击退：造成生命伤害的视觉事件会触发目标 `VisualState.hurtFlash(...)`。客户端通过 `hurtTime` 播放受击闪烁，并用 `knockbackDelta` 在渲染层播放带重力、阻力和回弹 settle 的击退偏移。

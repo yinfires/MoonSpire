@@ -504,6 +504,15 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.PHASE, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_rending_gaze", "card.moonspire.monster.rending_gaze.name", "", 2, 7, 0, List.of(
                         new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_shulker_bullet", "card.moonspire.monster.shulker_bullet.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:shulker_shell", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_disruptive_bullet", "card.moonspire.monster.disruptive_bullet.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.SLOWNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:shulker_shell", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_shell_closure", "card.moonspire.monster.shell_closure.name", "", 1, 0, 5, List.of(
+                        new CardEffect(CardEffectKind.PHASE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:shulker_shell", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_ender_nip", "card.moonspire.monster.ender_nip.name", "", 1, 3, 0, List.of(
                         new CardEffect(CardEffectKind.GAZE, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:endermite_spawn_egg", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_rift_skitter", "card.moonspire.monster.rift_skitter.name", "", 1, 0, 0, List.of(
