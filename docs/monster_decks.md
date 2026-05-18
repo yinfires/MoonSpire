@@ -51,6 +51,7 @@
 - 蜘蛛：`builtin_monster_pounce` x3，`builtin_monster_skitter` x3，`builtin_monster_bite` x2，`builtin_monster_web` x2。
 - 洞穴蜘蛛：`builtin_monster_pounce` x3，`builtin_monster_skitter` x3，`builtin_monster_web` x2，`builtin_monster_venom_fang` x2。
 - 蠹虫：`builtin_monster_nipping_bite` x3，`builtin_monster_crackling_mandibles` x2，`builtin_monster_stone_scuttle` x2，`builtin_monster_swarm_alarm` x2，`builtin_monster_infested_call` x1；召唤出的蠹虫使用同一默认卡组或开发者覆盖。
+- 末影螨：`builtin_monster_ender_nip` x5，`builtin_monster_rift_skitter` x5；默认奖励池会按这两张牌的去重结果生成，不再使用动态 fallback 卡组。
 - 苦力怕：`builtin_monster_light_fuse` x1，`builtin_monster_hissing_advance` x3，`builtin_monster_powder_shell` x3；怪物 AI 会优先使用可用的点燃引信。
 - 幻翼：`builtin_monster_raking_dive` x3，`builtin_monster_wingbeat_guard` x3，`builtin_monster_moonlit_glide` x2，`builtin_monster_dragging_talons` x2。
 - 恼鬼：`builtin_monster_razor_rush` x3，`builtin_monster_flicker_cut` x2，`builtin_monster_phase_stab` x2，`builtin_monster_evasive_flicker` x2，`builtin_monster_frenzied_dive` x1；攻击牌会触发恼鬼蓄势突刺表现。

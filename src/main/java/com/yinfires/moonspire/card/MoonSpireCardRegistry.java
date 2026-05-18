@@ -504,6 +504,11 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.PHASE, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_rending_gaze", "card.moonspire.monster.rending_gaze.name", "", 2, 7, 0, List.of(
                         new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_ender_nip", "card.moonspire.monster.ender_nip.name", "", 1, 3, 0, List.of(
+                        new CardEffect(CardEffectKind.GAZE, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:endermite_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_rift_skitter", "card.moonspire.monster.rift_skitter.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.BLOCK, 2, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.PHASE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_pounce", "card.moonspire.monster.pounce.name", "", 1, 5, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_skitter", "card.moonspire.monster.skitter.name", "", 1, 0, 3, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_bite", "card.moonspire.monster.bite.name", "", 2, 7, 0, List.of(), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),

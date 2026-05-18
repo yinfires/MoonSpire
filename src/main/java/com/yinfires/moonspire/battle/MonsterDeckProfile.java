@@ -231,6 +231,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_swarm_alarm",
             "builtin_monster_swarm_alarm",
             "builtin_monster_infested_call");
+    private static final List<String> ENDERMITE_DEFAULT_DECK = List.of(
+            "builtin_monster_ender_nip",
+            "builtin_monster_ender_nip",
+            "builtin_monster_ender_nip",
+            "builtin_monster_ender_nip",
+            "builtin_monster_ender_nip",
+            "builtin_monster_rift_skitter",
+            "builtin_monster_rift_skitter",
+            "builtin_monster_rift_skitter",
+            "builtin_monster_rift_skitter",
+            "builtin_monster_rift_skitter");
     private static final List<String> CREEPER_DEFAULT_DECK = List.of(
             "builtin_monster_light_fuse",
             "builtin_monster_hissing_advance",
@@ -520,6 +531,9 @@ public final class MonsterDeckProfile {
         if (type == EntityType.SILVERFISH) {
             return cards(SILVERFISH_DEFAULT_DECK);
         }
+        if (type == EntityType.ENDERMITE) {
+            return cards(ENDERMITE_DEFAULT_DECK);
+        }
         if (type == EntityType.CREEPER) {
             return cards(CREEPER_DEFAULT_DECK);
         }
@@ -619,6 +633,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.SILVERFISH) {
             return SILVERFISH_DEFAULT_DECK;
+        }
+        if (type == EntityType.ENDERMITE) {
+            return ENDERMITE_DEFAULT_DECK;
         }
         if (type == EntityType.CREEPER) {
             return CREEPER_DEFAULT_DECK;
