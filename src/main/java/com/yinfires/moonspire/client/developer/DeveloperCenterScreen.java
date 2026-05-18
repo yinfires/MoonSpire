@@ -1891,6 +1891,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         for (com.yinfires.moonspire.card.CardEffect effect : definition.effects()) {
             if (effect.kind() == CardEffectKind.DAMAGE && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.DAMAGE, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.FIXED_DAMAGE && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.FIXED_DAMAGE, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.REMOTE) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.REMOTE, 1));
             } else if (effect.kind() == CardEffectKind.CONSUME_ARROW && effect.amount() > 0) {
@@ -1947,6 +1949,8 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.WEAKNESS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.SLOWNESS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.SLOWNESS, effect.amount(), effect.target(), effect.count()));
+            } else if (effect.kind() == CardEffectKind.DARKNESS && effect.amount() > 0) {
+                effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.DARKNESS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.DRAW_CARDS && effect.amount() > 0) {
                 effects.add(new DeveloperCardEffect(DeveloperCardEffect.Kind.DRAW_CARDS, effect.amount(), effect.target(), effect.count()));
             } else if (effect.kind() == CardEffectKind.GAIN_ENERGY && effect.amount() > 0) {
@@ -2462,6 +2466,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
         String query = effectSearchBox == null ? "" : effectSearchBox.getValue().toLowerCase(Locale.ROOT);
         return List.of(
                         DeveloperCardEffect.Kind.DAMAGE,
+                        DeveloperCardEffect.Kind.FIXED_DAMAGE,
                         DeveloperCardEffect.Kind.REMOTE,
                         DeveloperCardEffect.Kind.CONSUME_ARROW,
                         DeveloperCardEffect.Kind.ARROW,
@@ -2490,6 +2495,7 @@ public class DeveloperCenterScreen extends NoBlurScreen {
                         DeveloperCardEffect.Kind.FUSE,
                         DeveloperCardEffect.Kind.WEAKNESS,
                         DeveloperCardEffect.Kind.SLOWNESS,
+                        DeveloperCardEffect.Kind.DARKNESS,
                         DeveloperCardEffect.Kind.DRAW_CARDS,
                         DeveloperCardEffect.Kind.GAIN_ENERGY,
                         DeveloperCardEffect.Kind.EXHAUST,

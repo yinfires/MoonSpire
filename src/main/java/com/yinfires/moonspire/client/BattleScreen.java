@@ -624,18 +624,26 @@ public class BattleScreen extends NoBlurScreen {
         int negativeEffects = 0;
         int positiveEffects = 0;
         int paralysis = Math.max(0, CardRenderHelper.effectAmount(entry, BattleEffectType.PARALYSIS));
+        int darkness = Math.max(0, CardRenderHelper.effectAmount(entry, BattleEffectType.DARKNESS));
         for (CardInstance card : intentCards) {
-            boolean paralyzedAttack = paralysis > 0 && card.hasAttack();
+            boolean attackCard = card.hasAttack();
+            boolean darkenedAttack = darkness > 0 && attackCard;
+            boolean paralyzedAttack = !darkenedAttack && paralysis > 0 && attackCard;
             boolean automaticEnemySide = snapshot.isEnemyEntity(entry.entityId());
             int primaryOpponent = primaryOpponentEntityId(snapshot, automaticEnemySide);
-            if (card.hasAttack() && primaryOpponent >= 0) {
+            if (attackCard && !darkenedAttack && primaryOpponent >= 0) {
                 BattleCombatantSnapshot opponent = snapshot.combatant(primaryOpponent);
                 if (opponent != null) {
-                    attack += CardRenderHelper.previewAttack(card, entry, opponent, paralyzedAttack);
+                    attack += CardRenderHelper.previewAttack(card, entry, opponent, paralyzedAttack, darkenedAttack);
                 }
             }
-            if (paralyzedAttack) {
+            if (darkenedAttack) {
+                darkness--;
+            } else if (paralyzedAttack) {
                 paralysis--;
+            }
+            if (darkenedAttack) {
+                continue;
             }
             for (CardEffect effect : card.effects()) {
                 if (effect.amount() <= 0) {
@@ -2510,18 +2518,25 @@ public class BattleScreen extends NoBlurScreen {
         int previewAttackTotal = 0;
         boolean hasPreviewAttack = false;
         boolean paralyzedAttack = paralyzedAttackForCardPreview(snapshot, card, attacker);
+        boolean darkenedAttack = CardRenderHelper.effectAmount(attacker, BattleEffectType.DARKNESS) > 0 && card.hasAttack();
         for (CardEffect effect : card.effects()) {
             int damageAmount = effect.amount();
             int blockAmount = effect.amount();
             BattleCombatantSnapshot singleTarget = singlePreviewTarget(card, effect.target(), snapshot, monsterCard, previewTargetEntityId);
             if (CardInstance.isAttackDamageEffect(effect.kind())) {
-                int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
-                boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
-                int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
-                if (singleTarget.entityId() >= 0) {
-                    damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GLOWING) > 0, CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GAZE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.PHASE) > 0);
+                if (darkenedAttack) {
+                    damageAmount = 0;
+                } else if (effect.kind() == CardEffectKind.FIXED_DAMAGE) {
+                    damageAmount = Math.max(0, effect.amount());
                 } else {
-                    damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, 1, 1, 0, 0, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false);
+                    int attackerStrength = CardRenderHelper.effectAmount(attacker, BattleEffectType.STRENGTH);
+                    boolean attackerWeak = CardRenderHelper.effectAmount(attacker, BattleEffectType.WEAKNESS) > 0;
+                    int baseDamage = paralyzedAttack ? Math.max(0, effect.amount() - CardBalance.PARALYSIS_ATTACK_DAMAGE_REDUCTION) : effect.amount();
+                    if (singleTarget.entityId() >= 0) {
+                        damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, attacker.roundSpeed(), singleTarget.roundSpeed(), singleTarget.defense(), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GUARD), attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GLOWING) > 0, CardRenderHelper.effectAmount(singleTarget, BattleEffectType.GAZE), CardRenderHelper.effectAmount(singleTarget, BattleEffectType.PHASE) > 0);
+                    } else {
+                        damageAmount = CardRenderHelper.previewDamageAmount(baseDamage, 1, 1, 0, 0, attackerStrength, attackerWeak, card.hasEffect(CardEffectKind.REMOTE), false);
+                    }
                 }
             }
             damageAmounts.add(damageAmount);
@@ -2583,7 +2598,8 @@ public class BattleScreen extends NoBlurScreen {
                 || kind == CardEffectKind.HUNGER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
-                || kind == CardEffectKind.GLOWING;
+                || kind == CardEffectKind.GLOWING
+                || kind == CardEffectKind.DARKNESS;
     }
 
     private BattleCombatantSnapshot singlePreviewTarget(CardInstance card, CardTarget target, BattleSnapshot snapshot, boolean monsterCard) {

@@ -56,7 +56,7 @@
 - 卡牌页选中卡牌后会显示 `复制` 按钮。点击后复制的是实际指令用的规范化卡牌 id：已有 `builtin_`、`item_`、`custom_` 前缀的 id 原样保留，其他开发者卡牌 id 会补成 `custom_<id>`。
 - 开发者数据在保存和加载时会规范化并去重卡牌、卡面和怪物覆盖；删除卡牌时会同步清理引用并刷新在线玩家数据。怪物卡组和奖励池的重复、清理、回退规则见 `docs/monster_decks.md`。
 - `自爆` 是开发者中心自定义筛选下的只读查看牌，固定使用 `custom_self_destruct`。它用于查看当前自爆伤害与描述，不保存到开发者自定义卡文件，不能编辑、删除、复制成普通卡，也不能被 `/moonspire give_card`、制卡台、怪物卡组选择器、掉落池或普通卡牌列表解析为可用卡。
-- 卡牌效果编辑器支持 `获得引信`、`给予凋零`、`给予潮蚀`、`给予麻痹`、`给予饥饿`、`获得荆棘`、`获得不死`、`唤魔者尖牙直线`、`唤魔者尖牙环阵` 和 `召唤生物`。引信、荆棘、不死和召唤生物默认作用于自身，保存后分别转换为 `CardEffectKind.FUSE`、`THORNS`、`UNDYING` 和通用 `CardEffectKind.SUMMON`；召唤效果的 `amount` 表示召唤数量，`count` 表示存活回合数，效果行会额外显示实体 id 输入框，保存为 `CardEffect.entityTypeId`，卡面描述使用该实体的翻译名生成“召唤x只存活x回合的某生物”。旧数据里的 `SUMMON_VEX` 和 `SUMMON_SILVERFISH` 会在读取与保存时归一到同一条通用召唤链路，并保留对应的 `minecraft:vex` 或 `minecraft:silverfish` 默认实体 id。唤魔者尖牙直线默认作用于单体敌方，唤魔者尖牙环阵默认作用于全体敌方，保存后分别转换为 `CardEffectKind.EVOKER_FANG_LINE` 和 `EVOKER_FANG_CIRCLE`，并按攻击牌显示与结算。凋零、潮蚀、麻痹和饥饿默认作用于单体敌方，保存后分别转换为 `CardEffectKind.WITHER`、`CardEffectKind.TIDAL_EROSION`、`CardEffectKind.PARALYSIS` 和 `CardEffectKind.HUNGER`；凋零用于降低目标战斗内生命上限，潮蚀用于抵消目标后续获得的格挡，麻痹用于削弱目标后续攻击牌的基础伤害，饥饿用于让目标回合开始时少抽 1 张牌并减少 1 层，荆棘用于在受到攻击伤害时反伤攻击者。引信关键词提示、状态 tooltip 和 `自爆` 查看牌仍从同一个自爆伤害常量读取数值；开发者修改卡牌效果层数时只改变引信倒计时层数，不单独覆盖自爆伤害。
+- 卡牌效果编辑器支持 `固定伤害`、`获得引信`、`给予凋零`、`给予潮蚀`、`给予麻痹`、`给予饥饿`、`给予黑暗`、`获得荆棘`、`获得不死`、`唤魔者尖牙直线`、`唤魔者尖牙环阵` 和 `召唤生物`。固定伤害默认作用于单体敌方，保存后转换为 `CardEffectKind.FIXED_DAMAGE`，结算时直接扣除战斗生命，不受速度、力量、虚弱、守护、发光、凝视、相位、格挡等加减伤或防护影响。引信、荆棘、不死和召唤生物默认作用于自身，保存后分别转换为 `CardEffectKind.FUSE`、`THORNS`、`UNDYING` 和通用 `CardEffectKind.SUMMON`；召唤效果的 `amount` 表示召唤数量，`count` 表示存活回合数，效果行会额外显示实体 id 输入框，保存为 `CardEffect.entityTypeId`，卡面描述使用该实体的翻译名生成“召唤x只存活x回合的某生物”。旧数据里的 `SUMMON_VEX` 和 `SUMMON_SILVERFISH` 会在读取与保存时归一到同一条通用召唤链路，并保留对应的 `minecraft:vex` 或 `minecraft:silverfish` 默认实体 id。唤魔者尖牙直线默认作用于单体敌方，唤魔者尖牙环阵默认作用于全体敌方，保存后分别转换为 `CardEffectKind.EVOKER_FANG_LINE` 和 `EVOKER_FANG_CIRCLE`，并按攻击牌显示与结算。凋零、潮蚀、麻痹、饥饿和黑暗默认作用于单体敌方，保存后分别转换为 `CardEffectKind.WITHER`、`CardEffectKind.TIDAL_EROSION`、`CardEffectKind.PARALYSIS`、`CardEffectKind.HUNGER` 和 `CardEffectKind.DARKNESS`；凋零用于降低目标战斗内生命上限，潮蚀用于抵消目标后续获得的格挡，麻痹用于削弱目标后续攻击牌的基础伤害，饥饿用于让目标回合开始时少抽 1 张牌并减少 1 层，黑暗用于让目标打出的攻击牌直接进入弃牌堆并减少层数，荆棘用于在受到攻击伤害时反伤攻击者。引信关键词提示、状态 tooltip 和 `自爆` 查看牌仍从同一个自爆伤害常量读取数值；开发者修改卡牌效果层数时只改变引信倒计时层数，不单独覆盖自爆伤害。
 - 卡牌效果编辑器支持 `给予凝视` 和 `获得相位`。凝视默认作用于单体敌方，保存后转换为 `CardEffectKind.GAZE`；相位默认作用于自身，保存后转换为 `CardEffectKind.PHASE`。开发者卡牌导入内置或转换牌定义时也会把已有 `GAZE` / `PHASE` 效果还原为可编辑效果行。
 - 卡牌效果编辑器、开发者数据保存/加载和注册卡牌转换都会规范化效果顺序：`固有` 固定在第一组，`消耗` 固定在最后一组，其它效果保持原相对顺序。
 
@@ -65,7 +65,7 @@
 - 怪物搜索会同时显示译名和实体 id。
 - 怪物页可以编辑血量、费用、速度、初始状态、卡组和奖励池；未保存覆盖时，敌对怪物显示代码内置默认值，中立和友善生物显示默认属性与空卡组基础。
 - 怪物默认卡组、默认属性、默认初始状态、奖励池、显式空卡组、无效覆盖清理和运行时回退规则见 `docs/monster_decks.md`，此处只保留开发者中心可见行为摘要。
-- 怪物页的 `初始状态` 区域可以用 `+` 打开状态选择器，添加可用战斗状态，包括凋零、荆棘、饥饿、不死和召唤物；每条状态可以调整数值，也可以用 `-` 删除。不能为负层数的状态会把数值限制到不低于 0，数值无效或 0 层的状态不会保存为有效覆盖。守护无论来自初始状态、卡牌效果还是开发者配置，都会在战斗中统一限制到最多 9 层。
+- 怪物页的 `初始状态` 区域可以用 `+` 打开状态选择器，添加可用战斗状态，包括凋零、荆棘、饥饿、黑暗、不死和召唤物；每条状态可以调整数值，也可以用 `-` 删除。不能为负层数的状态会把数值限制到不低于 0，数值无效或 0 层的状态不会保存为有效覆盖。守护无论来自初始状态、卡牌效果还是开发者配置，都会在战斗中统一限制到最多 9 层。
 - `初始状态` 可以配置通用“分裂”状态。分裂层数表示该非玩家生物在战斗内死亡后还能分裂几次；死亡时会按通用分裂规则生成两个同类型、更小、更弱、同阵营的子体，子体分裂层数为父体层数减 1。开发者中心不需要专门的分裂 UI，`BattleEffectType.SPLIT` 加入后会自动出现在现有状态选择器中；卡牌效果编辑器暂不提供施加分裂的效果类型。
 - 战斗开始创建怪物战斗单位时，服务端会从 `DeveloperDataManager.monsterOverride(...)` 读取该实体 id 的覆盖配置，先应用血量、费用和速度，再把 `initialEffects` 逐条转换成 `BattleEffectType` 并调用 `CombatantState.addEffect(...)`。之后仍会追加代码内置的默认初始状态，例如骷髅系的 `Abundant Arrows`。
 - 怪物卡组编辑器中的 `复制` 会把当前选中的卡牌 id 在卡组列表中复制一份到下一行；它不是剪贴板复制。怪物奖励池编辑器复用同一套卡牌选择界面，但不提供复制按钮，添加时会自动跳过已经存在的卡牌以保持奖励池去重。
@@ -87,4 +87,4 @@
 
 - 自定义卡图和卡面图片都建议通过开发者中心的本地图片入口选择。
 - 物品图标会直接使用物品栏渲染图。
-- 客户端世界战斗视觉依赖 `src/main/resources/META-INF/accesstransformer.cfg` 公开 `LivingEntity.useItem`、`useItemRemaining`、`setLivingEntityFlag(...)`、`autoSpinAttackTicks`、`autoSpinAttackDmg`、`autoSpinAttackItemStack`、`Ravager.attackTick`、`Piglin.isChargingCrossbow()` 以及 `Shulker.setRawPeekAmount(...)` / `Shulker.getRawPeekAmount()`。这些访问点只用于战斗动画临时复用原版持物、使用物品、激流旋转姿态、劫掠兽头部伸缩、猪灵弩装填状态和潜影贝开壳状态恢复；动画结束、战斗结束或实体离开客户端时必须恢复原状态，不能把这些字段当作权威战斗伤害、碰撞或位置来源。
+- 客户端世界战斗视觉依赖 `src/main/resources/META-INF/accesstransformer.cfg` 公开 `LivingEntity.useItem`、`useItemRemaining`、`setLivingEntityFlag(...)`、`autoSpinAttackTicks`、`autoSpinAttackDmg`、`autoSpinAttackItemStack`、`Ravager.attackTick`、`Hoglin.attackAnimationRemainingTicks`、`Zoglin.attackAnimationRemainingTicks`、`Warden.attackAnimationState`、`Warden.sonicBoomAnimationState`、`Warden.roarAnimationState`、`Piglin.isChargingCrossbow()` 以及 `Shulker.setRawPeekAmount(...)` / `Shulker.getRawPeekAmount()`。这些访问点只用于战斗动画临时复用原版持物、使用物品、激流旋转姿态、劫掠兽头部伸缩、疣猪兽头部攻击、监守者近战/音波/咆哮动画状态、猪灵弩装填状态和潜影贝开壳状态恢复；动画结束、战斗结束或实体离开客户端时必须恢复原状态，不能把这些字段当作权威战斗伤害、碰撞或位置来源。

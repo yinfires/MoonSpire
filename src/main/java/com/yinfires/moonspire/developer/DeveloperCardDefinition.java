@@ -96,6 +96,7 @@ public record DeveloperCardDefinition(
     private static CardEffectKind cardEffectKind(DeveloperCardEffect.Kind kind) {
         return switch (kind) {
             case DAMAGE -> CardEffectKind.DAMAGE;
+            case FIXED_DAMAGE -> CardEffectKind.FIXED_DAMAGE;
             case REMOTE -> CardEffectKind.REMOTE;
             case CONSUME_ARROW -> CardEffectKind.CONSUME_ARROW;
             case ARROW -> CardEffectKind.ARROW;
@@ -124,6 +125,7 @@ public record DeveloperCardDefinition(
             case FUSE -> CardEffectKind.FUSE;
             case WEAKNESS -> CardEffectKind.WEAKNESS;
             case SLOWNESS -> CardEffectKind.SLOWNESS;
+            case DARKNESS -> CardEffectKind.DARKNESS;
             case DRAW_CARDS -> CardEffectKind.DRAW_CARDS;
             case GAIN_ENERGY -> CardEffectKind.GAIN_ENERGY;
             case EXHAUST -> CardEffectKind.EXHAUST;

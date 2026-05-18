@@ -290,11 +290,19 @@ public final class BattleWorldOverlay {
         int negative = 0;
         int positive = 0;
         int paralysis = Math.max(0, CardRenderHelper.effectAmount(enemy, BattleEffectType.PARALYSIS));
+        int darkness = Math.max(0, CardRenderHelper.effectAmount(enemy, BattleEffectType.DARKNESS));
         for (CardInstance card : intentCards) {
-            boolean paralyzedAttack = paralysis > 0 && card.hasAttack();
-            attack += Math.max(0, card.hasAttack() && primaryOpponent != null ? CardRenderHelper.previewAttack(card, enemy, primaryOpponent, paralyzedAttack) : 0);
-            if (paralyzedAttack) {
+            boolean attackCard = card.hasAttack();
+            boolean darkenedAttack = darkness > 0 && attackCard;
+            boolean paralyzedAttack = !darkenedAttack && paralysis > 0 && attackCard;
+            attack += Math.max(0, attackCard && primaryOpponent != null ? CardRenderHelper.previewAttack(card, enemy, primaryOpponent, paralyzedAttack, darkenedAttack) : 0);
+            if (darkenedAttack) {
+                darkness--;
+            } else if (paralyzedAttack) {
                 paralysis--;
+            }
+            if (darkenedAttack) {
+                continue;
             }
             for (CardEffect effect : card.effects()) {
                 if (effect.kind() == CardEffectKind.BLOCK && effect.target().targetsSelf()) {
@@ -377,7 +385,8 @@ public final class BattleWorldOverlay {
                 || kind == CardEffectKind.HUNGER
                 || kind == CardEffectKind.WEAKNESS
                 || kind == CardEffectKind.SLOWNESS
-                || kind == CardEffectKind.GLOWING;
+                || kind == CardEffectKind.GLOWING
+                || kind == CardEffectKind.DARKNESS;
     }
 
     private static BattleCombatantSnapshot primaryOpponent(BattleSnapshot snapshot, boolean enemySideActor) {

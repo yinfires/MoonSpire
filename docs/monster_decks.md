@@ -27,6 +27,7 @@
 - 开发者覆盖属性只在值有效时生效：`maxHealth > 0`、`energy > 0`、`speed > 0`。无效或等同默认值的字段不保存为覆盖。
 - 开发者配置的 `initialEffects` 会先应用；随后 `BattleState.applyDefaultInitialEffects(...)` 追加默认初始状态。
 - 普通骷髅、流浪者、沼骸、掠夺者和普通猪灵默认获得 1 层 `ABUNDANT_ARROWS`。
+- 监守者默认获得 5 层 `DARKNESS`。黑暗会压制其高伤害攻击牌，使监守者更倾向先打出非攻击牌。
 - 史莱姆和岩浆怪按 `Slime#getSize()` 获得默认分裂层数：尺寸 >= 4 为 2 层，尺寸 >= 2 为 1 层，更小为 0 层。若开发者初始状态已经给出分裂层数，则不再覆盖。
 - 史莱姆和岩浆怪的中/小体型会使用动态削弱卡牌副本：中型削弱一次，小型削弱两次；卡牌攻击、格挡和效果数值按 50% 向上取整且最低 1。
 
@@ -65,6 +66,7 @@
 - 烈焰人：`builtin_monster_blaze_fireball` x3，`builtin_monster_blazing_barrage` x2，`builtin_monster_smoldering_guard` x2，`builtin_monster_heat_haze` x2，`builtin_monster_flame_pressure` x1；火球牌触发小火球世界表现。
 - 恶魂：`builtin_monster_ghast_fireball` x3，`builtin_monster_explosive_wail` x2，`builtin_monster_sulfur_drift` x2，`builtin_monster_tearful_ward` x2，`builtin_monster_infernal_shriek` x1；火球牌触发大火球世界表现。
 - 末影人：`builtin_monster_ender_stare` x2，`builtin_monster_blink_step` x2，`builtin_monster_void_claw` x3，`builtin_monster_pearl_shift` x1，`builtin_monster_rending_gaze` x2。
+- 监守者：`builtin_monster_warden_maul` x4，`builtin_monster_warden_sonic_boom` x2，`builtin_monster_warden_roar` x1，`builtin_monster_sculk_heart` x3；默认自带 5 层 `DARKNESS`。监守者本体打出前三类专属牌时分别触发近战、音波和咆哮表现；玩家或其它单位使用这些牌时保留音效，音波牌还会保留音波粒子轨迹。
 - 潜影贝：`builtin_monster_shulker_bullet` x4，`builtin_monster_disruptive_bullet` x3，`builtin_monster_shell_closure` x3；潜影弹类牌触发潜影贝开壳、发射原版风格潜影弹并在动画结束后闭壳，默认奖励池会按这 3 张牌的去重结果生成。
 - 旋风人：`builtin_monster_wind_charge` x3，`builtin_monster_gale_burst` x2，`builtin_monster_sweeping_gust` x1，`builtin_monster_whirling_guard` x2，`builtin_monster_unsteady_air` x2；风弹类牌触发风弹投射和命中爆发表现。
 - 其它未列出的敌对怪物：使用动态 fallback 卡组。实际战斗牌库为 `builtin_monster_strike` x2、`builtin_monster_guard` x2、`builtin_monster_heavy_strike` x1，攻击和格挡数值根据实体攻击力与护甲生成；开发者中心默认列表显示同名静态 fallback id。

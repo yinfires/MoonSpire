@@ -382,6 +382,17 @@ public final class MonsterDeckProfile {
             "builtin_monster_pearl_shift",
             "builtin_monster_rending_gaze",
             "builtin_monster_rending_gaze");
+    private static final List<String> WARDEN_DEFAULT_DECK = List.of(
+            "builtin_monster_warden_maul",
+            "builtin_monster_warden_maul",
+            "builtin_monster_warden_maul",
+            "builtin_monster_warden_maul",
+            "builtin_monster_warden_sonic_boom",
+            "builtin_monster_warden_sonic_boom",
+            "builtin_monster_warden_roar",
+            "builtin_monster_sculk_heart",
+            "builtin_monster_sculk_heart",
+            "builtin_monster_sculk_heart");
     private static final List<String> SHULKER_DEFAULT_DECK = List.of(
             "builtin_monster_shulker_bullet",
             "builtin_monster_shulker_bullet",
@@ -481,6 +492,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.ENDERMAN) {
             return cards(ENDERMAN_DEFAULT_DECK);
+        }
+        if (type == EntityType.WARDEN) {
+            return cards(WARDEN_DEFAULT_DECK);
         }
         if (type == EntityType.SHULKER) {
             return cards(SHULKER_DEFAULT_DECK);
@@ -587,6 +601,9 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.ENDERMAN) {
             return ENDERMAN_DEFAULT_DECK;
+        }
+        if (type == EntityType.WARDEN) {
+            return WARDEN_DEFAULT_DECK;
         }
         if (type == EntityType.SHULKER) {
             return SHULKER_DEFAULT_DECK;

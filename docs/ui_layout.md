@@ -50,6 +50,7 @@ Moon Spire 的自定义界面底图都放在：
 | `effects/paralysis.png` | 麻痹效果图标 | 复制自原版铜锭 `assets/minecraft/textures/item/copper_ingot.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.PARALYSIS` 通过 `iconTexturePath` 绑定贴图；麻痹层数显示在图标右下角，tooltip 显示接下来攻击牌基础伤害减少 5 点和打出攻击牌时消耗层数规则 |
 | `effects/hunger.png` | 饥饿效果图标 | 复制自原版饥饿 `assets/minecraft/textures/mob_effect/hunger.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.HUNGER` 通过 `iconTexturePath` 绑定贴图；饥饿层数显示在图标右下角，tooltip 显示回合开始时少抽 1 张牌并减少 1 层 |
 | `effects/thorns.png` | 荆棘效果图标 | 复制自原版河豚物品 `assets/minecraft/textures/item/pufferfish.png`，普通 16x16 贴图，缩放到效果槽尺寸 | `BattleEffectType.THORNS` 通过 `iconTexturePath` 绑定贴图；荆棘层数显示在图标右下角，tooltip 显示受到攻击伤害时对攻击者造成反伤 |
+| `effects/darkness.png` | 黑暗效果图标 | 复制自原版黑暗 `assets/minecraft/textures/mob_effect/darkness.png`，普通 18x18 贴图，缩放到效果槽尺寸 | `BattleEffectType.DARKNESS` 通过 `iconTexturePath` 绑定贴图；黑暗层数显示在图标右下角，tooltip 显示攻击牌被直接丢弃和回合结束衰减规则 |
 | `animations/block_gain.png` | 获得格挡时的世界动画图标 | 普通 18x18 贴图，按获得者实体包围盒计算统一边长并等比缩放为覆盖身体的 billboard | 由 `BattleVisualEvent.gainedBlock` 触发，`ClientBattleState` 维护动画时间；`BattleWorldOverlay` 使用和战斗状态图标一致的全局可透视渲染，落点固定锚定在实体身体中心而不是头顶条，淡入后原地停留并淡出，保持原始比例，避免与持续状态图标目录混淆 |
 | `cards/card_base.png` | 默认卡面底图 | 普通贴图拉伸 | 默认卡面仍使用 `default` id，排布坐标来自 `card_faces.json` 的 `default` 条目，当前底图已替换为用户提供的 `new` 图样 |
 

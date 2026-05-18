@@ -281,6 +281,7 @@ public class CombatantState {
         }
         reduceEffect(BattleEffectType.WITHER, 1);
         reduceEffect(BattleEffectType.TIDAL_EROSION, 1);
+        reduceEffect(BattleEffectType.DARKNESS, 1);
         syncEntityGlowing();
     }
 

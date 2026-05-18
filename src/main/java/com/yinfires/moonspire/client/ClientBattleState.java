@@ -58,6 +58,11 @@ public final class ClientBattleState {
     private static final int PIGLIN_MELEE_STRIKE_TICKS = 1;
     private static final int PIGLIN_MELEE_RECOVER_TICKS = 6;
     private static final int RAVAGER_HEAD_ATTACK_TICKS = 10;
+    private static final int WARDEN_MELEE_RAISE_TICKS = 2;
+    private static final int WARDEN_MELEE_APPROACH_TICKS = 8;
+    private static final int WARDEN_MELEE_STRIKE_TICKS = 2;
+    private static final int WARDEN_MELEE_RECOVER_TICKS = 6;
+    private static final int WARDEN_ATTACK_TICKS = 10;
     private static final int HOGLIN_HEAD_ATTACK_RAISE_TICKS = 2;
     private static final int HOGLIN_HEAD_ATTACK_APPROACH_TICKS = 8;
     private static final int HOGLIN_HEAD_ATTACK_STRIKE_TICKS = 2;
@@ -575,6 +580,11 @@ public final class ClientBattleState {
         return state == null ? 0 : state.hoglinAttackTick();
     }
 
+    public static int visualWardenAttackTick(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state == null ? 0 : state.wardenAttackTick();
+    }
+
     public static boolean visualEvokerSpellcasting(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state != null && state.evokerSpellcasting();
@@ -1056,6 +1066,7 @@ public final class ClientBattleState {
                 || animationType == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING
                 || animationType == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE
                 || animationType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
+                || animationType == BattleVisualEvent.AnimationType.WARDEN_MELEE
                 || animationType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
                 || animationType == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK;
     }
@@ -1377,6 +1388,8 @@ public final class ClientBattleState {
                         ? VEX_CHARGE_RAISE_TICKS + VEX_CHARGE_APPROACH_TICKS + VEX_CHARGE_HIT_PAUSE_TICKS
                         : nextType == BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM
                         ? RAVAGER_HEAD_RAM_RAISE_TICKS + RAVAGER_HEAD_RAM_APPROACH_TICKS + RAVAGER_HEAD_RAM_STRIKE_TICKS + RAVAGER_HEAD_RAM_RECOVER_TICKS
+                        : nextType == BattleVisualEvent.AnimationType.WARDEN_MELEE
+                        ? WARDEN_MELEE_RAISE_TICKS + WARDEN_MELEE_APPROACH_TICKS + WARDEN_MELEE_STRIKE_TICKS + WARDEN_MELEE_RECOVER_TICKS
                         : nextType == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING
                         ? PIGLIN_MELEE_RAISE_TICKS + PIGLIN_MELEE_APPROACH_TICKS + PIGLIN_MELEE_STRIKE_TICKS + PIGLIN_MELEE_RECOVER_TICKS
                         : nextType == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK
@@ -1502,6 +1515,16 @@ public final class ClientBattleState {
                 age -= RAVAGER_HEAD_RAM_RAISE_TICKS;
                 if (age <= RAVAGER_HEAD_RAM_APPROACH_TICKS) {
                     return lungePosition(age / RAVAGER_HEAD_RAM_APPROACH_TICKS);
+                }
+                return lungeStrike;
+            }
+            if (animationType == BattleVisualEvent.AnimationType.WARDEN_MELEE) {
+                if (age <= WARDEN_MELEE_RAISE_TICKS) {
+                    return lungeStart;
+                }
+                age -= WARDEN_MELEE_RAISE_TICKS;
+                if (age <= WARDEN_MELEE_APPROACH_TICKS) {
+                    return lungePosition(age / WARDEN_MELEE_APPROACH_TICKS);
                 }
                 return lungeStrike;
             }
@@ -1634,7 +1657,7 @@ public final class ClientBattleState {
             if (animationType != BattleVisualEvent.AnimationType.RAVAGER_HEAD_RAM || lungeTicks <= 0) {
                 return 0;
             }
-            int attackAge = lungeAge - RAVAGER_HEAD_RAM_RAISE_TICKS;
+            int attackAge = lungeAge - RAVAGER_HEAD_RAM_RAISE_TICKS - RAVAGER_HEAD_RAM_APPROACH_TICKS;
             if (attackAge < 0 || attackAge >= RAVAGER_HEAD_ATTACK_TICKS) {
                 return 0;
             }
@@ -1645,11 +1668,22 @@ public final class ClientBattleState {
             if (animationType != BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK || lungeTicks <= 0) {
                 return 0;
             }
-            int attackAge = lungeAge - HOGLIN_HEAD_ATTACK_RAISE_TICKS;
+            int attackAge = lungeAge - HOGLIN_HEAD_ATTACK_RAISE_TICKS - HOGLIN_HEAD_ATTACK_APPROACH_TICKS;
             if (attackAge < 0 || attackAge >= HOGLIN_HEAD_ATTACK_TICKS) {
                 return 0;
             }
             return Math.max(1, HOGLIN_HEAD_ATTACK_TICKS - attackAge);
+        }
+
+        private int wardenAttackTick() {
+            if (animationType != BattleVisualEvent.AnimationType.WARDEN_MELEE || lungeTicks <= 0) {
+                return 0;
+            }
+            int attackAge = lungeAge - WARDEN_MELEE_RAISE_TICKS - WARDEN_MELEE_APPROACH_TICKS;
+            if (attackAge < 0 || attackAge >= WARDEN_ATTACK_TICKS) {
+                return 0;
+            }
+            return Math.max(1, WARDEN_ATTACK_TICKS - attackAge);
         }
 
         private void hurtFlash(Vec3 knockbackVelocity) {

@@ -372,6 +372,7 @@ public record CardInstance(
 
     public static boolean isAttackDamageEffect(CardEffectKind kind) {
         return kind == CardEffectKind.DAMAGE
+                || kind == CardEffectKind.FIXED_DAMAGE
                 || kind == CardEffectKind.CONSUME_ARROW
                 || kind == CardEffectKind.EVOKER_FANG_LINE
                 || kind == CardEffectKind.EVOKER_FANG_CIRCLE;

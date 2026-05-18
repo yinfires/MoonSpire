@@ -22,7 +22,8 @@ public enum BattleEffectType {
     THORNS("thorns", "effect.moonspire.thorns.name", "effect.moonspire.thorns.description", "effect.moonspire.thorns.active_description", "gui/effects/thorns.png"),
     WEAKNESS("weakness", "effect.moonspire.weakness.name", "effect.moonspire.weakness.description", "effect.moonspire.weakness.active_description", "gui/effects/weakness.png"),
     SLOWNESS("slowness", "effect.moonspire.slowness.name", "effect.moonspire.slowness.description", "effect.moonspire.slowness.active_description", "gui/effects/slowness.png"),
-    ABUNDANT_ARROWS("abundant_arrows", "effect.moonspire.abundant_arrows.name", "effect.moonspire.abundant_arrows.description", "effect.moonspire.abundant_arrows.active_description", "gui/effects/abundant_arrows.png");
+    ABUNDANT_ARROWS("abundant_arrows", "effect.moonspire.abundant_arrows.name", "effect.moonspire.abundant_arrows.description", "effect.moonspire.abundant_arrows.active_description", "gui/effects/abundant_arrows.png"),
+    DARKNESS("darkness", "effect.moonspire.darkness.name", "effect.moonspire.darkness.description", "effect.moonspire.darkness.active_description", "gui/effects/darkness.png");
 
     private final String id;
     private final String nameKey;

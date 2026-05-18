@@ -42,7 +42,9 @@ public enum CardEffectKind {
     ETHEREAL(CardTarget.SELF),
     RETAIN_REDUCE_COST(CardTarget.SELF),
     EXHAUST_HAND(CardTarget.SELF),
-    DISCARD_HAND(CardTarget.SELF);
+    DISCARD_HAND(CardTarget.SELF),
+    FIXED_DAMAGE(CardTarget.SINGLE_ENEMY),
+    DARKNESS(CardTarget.SINGLE_ENEMY);
 
     private final CardTarget defaultTarget;
 

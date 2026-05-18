@@ -504,6 +504,15 @@ public final class MoonSpireCardRegistry {
                         new CardEffect(CardEffectKind.PHASE, 2, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:ender_pearl", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_rending_gaze", "card.moonspire.monster.rending_gaze.name", "", 2, 7, 0, List.of(
                         new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_warden_maul", "card.moonspire.monster.warden_maul.name", "", 1, 12, 0, List.of(), CardSourceType.MONSTER, "", "minecraft:warden_spawn_egg", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_warden_sonic_boom", "card.moonspire.monster.warden_sonic_boom.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.FIXED_DAMAGE, 8, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:echo_shard", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_warden_roar", "card.moonspire.monster.warden_roar.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DARKNESS, 2, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:sculk_shrieker", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_sculk_heart", "card.moonspire.monster.sculk_heart.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.DRAW_CARDS, 1, CardTarget.SELF),
+                        new CardEffect(CardEffectKind.GAIN_ENERGY, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "minecraft:sculk_catalyst", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_shulker_bullet", "card.moonspire.monster.shulker_bullet.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.REMOTE, 1),
                         new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:shulker_shell", 0, 0, 1.0F, "default", ""),

@@ -62,6 +62,7 @@ import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Vindicator;
+import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.monster.Witch;
 import net.minecraft.world.entity.monster.Zoglin;
 import net.minecraft.world.entity.monster.breeze.Breeze;
@@ -112,9 +113,11 @@ public final class ClientEvents {
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
     private static final Set<Integer> VISUAL_HOGLIN_HEAD_ATTACKS = new HashSet<>();
+    private static final Set<Integer> VISUAL_WARDEN_MELEE_ATTACKS = new HashSet<>();
     private static final Set<Integer> VISUAL_BREEZE_WIND_CHARGES = new HashSet<>();
     private static final Set<Integer> VISUAL_LUNGE_POSE_PUSHES = new HashSet<>();
     private static final List<ScheduledBattleSound> SCHEDULED_BATTLE_SOUNDS = new ArrayList<>();
+    private static final List<ScheduledWardenSonicBoomVisual> SCHEDULED_WARDEN_SONIC_BOOM_VISUALS = new ArrayList<>();
     private static final List<ScheduledSelfDestructExplosion> SCHEDULED_SELF_DESTRUCT_EXPLOSIONS = new ArrayList<>();
     private static long lastUiDebugKeyMillis;
     private static boolean battleRenderActive;
@@ -211,6 +214,7 @@ public final class ClientEvents {
                     minecraft.setScreen(new BattleScreen());
                 }
                 playVisualEvents(minecraft);
+                tickScheduledWardenSonicBoomVisuals(minecraft);
                 playProjectileImpactVisuals(minecraft);
                 spawnEvokerSpellParticles(minecraft);
                 syncVisualWalkAnimations(minecraft);
@@ -222,6 +226,7 @@ public final class ClientEvents {
                 syncVisualRiptideStates(minecraft);
                 syncVisualRavagerHeadRams(minecraft);
                 syncVisualHoglinHeadAttacks(minecraft);
+                syncVisualWardenMeleeAttacks(minecraft);
                 syncVisualBreezeWindCharges(minecraft);
             } else if (minecraft.screen instanceof BattleScreen) {
                 minecraft.setScreen(null);
@@ -771,6 +776,46 @@ public final class ClientEvents {
             }
         }
 
+        private static void syncVisualWardenMeleeAttacks(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_WARDEN_MELEE_ATTACKS.clear();
+                return;
+            }
+            Set<Integer> activeWardens = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualWardenMeleeAttack(minecraft.level.getEntity(combatant.entityId()), activeWardens);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualWardenMeleeAttack(minecraft.level.getEntity(combatant.entityId()), activeWardens);
+            }
+            for (int entityId : VISUAL_WARDEN_MELEE_ATTACKS.toArray(Integer[]::new)) {
+                if (!activeWardens.contains(entityId)) {
+                    clearVisualWardenMeleeAttack(minecraft.level.getEntity(entityId));
+                    VISUAL_WARDEN_MELEE_ATTACKS.remove(entityId);
+                }
+            }
+        }
+
+        private static void syncVisualWardenMeleeAttack(Entity entity, Set<Integer> activeWardens) {
+            if (!(entity instanceof Warden warden)) {
+                return;
+            }
+            int attackTick = ClientBattleState.visualWardenAttackTick(warden.getId());
+            if (attackTick > 0) {
+                activeWardens.add(warden.getId());
+                VISUAL_WARDEN_MELEE_ATTACKS.add(warden.getId());
+                warden.attackAnimationState.startIfStopped(warden.tickCount);
+            } else if (VISUAL_WARDEN_MELEE_ATTACKS.remove(warden.getId())) {
+                clearVisualWardenMeleeAttack(warden);
+            }
+        }
+
+        private static void clearVisualWardenMeleeAttack(Entity entity) {
+            if (entity instanceof Warden warden) {
+                warden.attackAnimationState.stop();
+            }
+        }
+
         private static void syncVisualBreezeWindCharges(Minecraft minecraft) {
             if (minecraft.level == null) {
                 VISUAL_BREEZE_WIND_CHARGES.clear();
@@ -1051,6 +1096,9 @@ public final class ClientEvents {
                 for (int entityId : VISUAL_HOGLIN_HEAD_ATTACKS.toArray(Integer[]::new)) {
                     clearVisualHoglinHeadAttack(minecraft.level.getEntity(entityId));
                 }
+                for (int entityId : VISUAL_WARDEN_MELEE_ATTACKS.toArray(Integer[]::new)) {
+                    clearVisualWardenMeleeAttack(minecraft.level.getEntity(entityId));
+                }
                 for (int entityId : VISUAL_BREEZE_WIND_CHARGES.toArray(Integer[]::new)) {
                     if (minecraft.level.getEntity(entityId) instanceof Breeze breeze) {
                         stopVisualBreezeWindCharge(breeze);
@@ -1073,9 +1121,11 @@ public final class ClientEvents {
             VISUAL_RIPTIDE_STATES.clear();
             VISUAL_RAVAGER_HEAD_RAMS.clear();
             VISUAL_HOGLIN_HEAD_ATTACKS.clear();
+            VISUAL_WARDEN_MELEE_ATTACKS.clear();
             VISUAL_BREEZE_WIND_CHARGES.clear();
             VISUAL_LUNGE_POSE_PUSHES.clear();
             SCHEDULED_BATTLE_SOUNDS.clear();
+            SCHEDULED_WARDEN_SONIC_BOOM_VISUALS.clear();
             SCHEDULED_SELF_DESTRUCT_EXPLOSIONS.clear();
             ClientBattleState.clearVisualStates();
         }
@@ -1126,13 +1176,18 @@ public final class ClientEvents {
                 boolean vindicatorAxeHit = event.animationType() == BattleVisualEvent.AnimationType.VINDICATOR_AXE_SWING && event.animationTicks() <= 0;
                 boolean vexChargeHit = event.animationType() == BattleVisualEvent.AnimationType.VEX_CHARGE_LUNGE && event.animationTicks() <= 0;
                 boolean piglinMeleeHit = event.animationType() == BattleVisualEvent.AnimationType.PIGLIN_MELEE_SWING && event.animationTicks() <= 0;
+                boolean wardenMeleeHit = event.animationType() == BattleVisualEvent.AnimationType.WARDEN_MELEE && event.animationTicks() <= 0;
                 boolean shouldSwing = event.animationType() == BattleVisualEvent.AnimationType.NONE;
                 boolean potionThrow = event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW;
-                if (((playedCardVisual && shouldSwing) || meleeLungeHit || vindicatorAxeHit || vexChargeHit || piglinMeleeHit || potionThrow) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
+                if (((playedCardVisual && shouldSwing) || meleeLungeHit || vindicatorAxeHit || vexChargeHit || piglinMeleeHit || wardenMeleeHit || potionThrow) && attacker instanceof LivingEntity livingAttacker && swungAttackers.add(event.attackerId())) {
                     livingAttacker.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
                 }
                 if (attacker instanceof LivingEntity livingAttacker) {
+                    startWardenVisualState(livingAttacker, event.animationType());
                     scheduleUseSounds(livingAttacker, event);
+                }
+                if (event.animationType() == BattleVisualEvent.AnimationType.WARDEN_SONIC_BOOM) {
+                    scheduleWardenSonicBoomVisual(event);
                 }
                 if (target != null) {
                     if (event.shieldSound()) {
@@ -1151,6 +1206,78 @@ public final class ClientEvents {
                 if (event.animationType() == BattleVisualEvent.AnimationType.UNDYING_REVIVE && target instanceof LivingEntity livingTarget) {
                     spawnUndyingParticles(livingTarget);
                 }
+            }
+        }
+
+        private static void startWardenVisualState(LivingEntity attacker, BattleVisualEvent.AnimationType animationType) {
+            if (!(attacker instanceof Warden warden)) {
+                return;
+            }
+            if (animationType == BattleVisualEvent.AnimationType.WARDEN_SONIC_BOOM) {
+                warden.sonicBoomAnimationState.stop();
+                warden.sonicBoomAnimationState.start(warden.tickCount);
+            } else if (animationType == BattleVisualEvent.AnimationType.WARDEN_ROAR) {
+                warden.roarAnimationState.stop();
+                warden.roarAnimationState.start(warden.tickCount);
+            }
+        }
+
+        private static void scheduleWardenSonicBoomVisual(BattleVisualEvent event) {
+            int releaseDelay = Math.max(1, event.animationTicks() - 4);
+            SCHEDULED_WARDEN_SONIC_BOOM_VISUALS.add(new ScheduledWardenSonicBoomVisual(event, releaseDelay));
+        }
+
+        private static void tickScheduledWardenSonicBoomVisuals(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                SCHEDULED_WARDEN_SONIC_BOOM_VISUALS.clear();
+                return;
+            }
+            Iterator<ScheduledWardenSonicBoomVisual> iterator = SCHEDULED_WARDEN_SONIC_BOOM_VISUALS.iterator();
+            while (iterator.hasNext()) {
+                ScheduledWardenSonicBoomVisual visual = iterator.next();
+                if (visual.delayTicks > 0) {
+                    visual.delayTicks--;
+                    continue;
+                }
+                BattleVisualEvent event = visual.event;
+                Entity attacker = minecraft.level.getEntity(event.attackerId());
+                Entity target = minecraft.level.getEntity(event.targetId());
+                if (attacker == null || target == null) {
+                    iterator.remove();
+                    continue;
+                }
+                spawnWardenSonicBoomParticles(minecraft, event, attacker, target);
+                minecraft.level.playLocalSound(attacker.getX(), attacker.getY(), attacker.getZ(), SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 1.2F, 1.0F, false);
+                iterator.remove();
+            }
+        }
+
+        private static void spawnWardenSonicBoomParticles(Minecraft minecraft, BattleVisualEvent event, Entity attacker, Entity target) {
+            if (minecraft.level == null) {
+                return;
+            }
+            Vec3 start = event.animationStart();
+            if (start == null && attacker != null) {
+                start = attacker.position().add(0.0D, attacker.getBbHeight() * 0.5D, 0.0D);
+            }
+            Vec3 end = event.animationStrike();
+            if (end == null && target != null) {
+                end = target.position().add(0.0D, target.getBbHeight() * 0.5D, 0.0D);
+            }
+            if (start == null || end == null) {
+                return;
+            }
+            Vec3 delta = end.subtract(start);
+            double distance = delta.length();
+            if (distance <= 0.001D) {
+                minecraft.level.addParticle(ParticleTypes.SONIC_BOOM, start.x, start.y, start.z, 0.0D, 0.0D, 0.0D);
+                return;
+            }
+            int steps = Mth.clamp((int) Math.ceil(distance * 2.0D), 3, 32);
+            Vec3 step = delta.scale(1.0D / steps);
+            for (int i = 0; i <= steps; i++) {
+                Vec3 position = start.add(step.scale(i));
+                minecraft.level.addParticle(ParticleTypes.SONIC_BOOM, position.x, position.y, position.z, 0.0D, 0.0D, 0.0D);
             }
         }
 
@@ -1336,6 +1463,12 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK) {
                 scheduleBattleSound(attacker, attacker instanceof Zoglin ? SoundEvents.ZOGLIN_ATTACK : SoundEvents.HOGLIN_ATTACK, 1, 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.WARDEN_MELEE) {
+                scheduleBattleSound(attacker, SoundEvents.WARDEN_ATTACK_IMPACT, Math.max(1, event.animationTicks()), 1.2F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.WARDEN_SONIC_BOOM) {
+                scheduleBattleSound(attacker, SoundEvents.WARDEN_SONIC_CHARGE, 0, 1.2F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.WARDEN_ROAR) {
+                scheduleBattleSound(attacker, SoundEvents.WARDEN_ROAR, 0, 1.2F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.GUARDIAN_BEAM) {
                 scheduleBattleSound(attacker, SoundEvents.GUARDIAN_ATTACK, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE || event.animationType() == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE) {
@@ -1537,6 +1670,16 @@ public final class ClientEvents {
             this.delayTicks = delayTicks;
             this.volume = volume;
             this.pitch = pitch;
+        }
+    }
+
+    private static final class ScheduledWardenSonicBoomVisual {
+        private final BattleVisualEvent event;
+        private int delayTicks;
+
+        private ScheduledWardenSonicBoomVisual(BattleVisualEvent event, int delayTicks) {
+            this.event = event;
+            this.delayTicks = Math.max(0, delayTicks);
         }
     }
 

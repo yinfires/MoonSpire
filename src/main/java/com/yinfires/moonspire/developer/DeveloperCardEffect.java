@@ -99,6 +99,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
 
     public enum Kind {
         DAMAGE,
+        FIXED_DAMAGE,
         REMOTE,
         CONSUME_ARROW,
         ARROW,
@@ -129,6 +130,7 @@ public record DeveloperCardEffect(Kind kind, int amount, CardTarget target, int 
         FUSE,
         WEAKNESS,
         SLOWNESS,
+        DARKNESS,
         DRAW_CARDS,
         GAIN_ENERGY,
         EXHAUST,

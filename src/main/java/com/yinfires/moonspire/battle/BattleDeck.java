@@ -101,7 +101,12 @@ public class BattleDeck {
     }
 
     public List<CardInstance> draw(int count, RandomSource random) {
+        return drawPlanned(count, List.of(), random);
+    }
+
+    public List<CardInstance> drawPlanned(int count, List<UUID> plannedIds, RandomSource random) {
         List<CardInstance> drawnCards = new ArrayList<>();
+        List<UUID> preferredIds = plannedIds == null ? List.of() : plannedIds;
         for (int i = 0; i < count; i++) {
             if (drawPile.isEmpty()) {
                 if (discardPile.isEmpty()) {
@@ -110,7 +115,10 @@ public class BattleDeck {
                 drawPile.addAll(discardPile);
                 discardPile.clear();
             }
-            CardInstance drawn = drawRandom(drawPile, random);
+            CardInstance drawn = i < preferredIds.size() ? removeCardById(drawPile, preferredIds.get(i)) : null;
+            if (drawn == null) {
+                drawn = drawRandom(drawPile, random);
+            }
             drawnCards.add(drawn);
             if (hand.size() >= CardBalance.MAX_HAND_SIZE) {
                 discardPile.add(drawn);

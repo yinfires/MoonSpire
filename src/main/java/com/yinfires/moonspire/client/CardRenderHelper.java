@@ -630,6 +630,8 @@ public final class CardRenderHelper {
             CardEffect effect = card.effects().get(i);
             if (effect.kind() == CardEffectKind.DAMAGE) {
                 addEffectLine(lines, Component.translatable(damageDescriptionKey(effect.target()), statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
+            } else if (effect.kind() == CardEffectKind.FIXED_DAMAGE) {
+                addEffectLine(lines, Component.translatable(fixedDamageDescriptionKey(effect.target()), statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
             } else if (effect.kind() == CardEffectKind.EVOKER_FANG_LINE) {
                 addEffectLine(lines, Component.translatable("card.moonspire.effect.evoker_fang_line", statNumber(effect.amount(), displayedDamageAmount(effect, values, i))), effect.count());
             } else if (effect.kind() == CardEffectKind.EVOKER_FANG_CIRCLE) {
@@ -686,6 +688,8 @@ public final class CardRenderHelper {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "weakness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.weakness.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.SLOWNESS) {
                 addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "slowness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.slowness.name"))), effect.count());
+            } else if (effect.kind() == CardEffectKind.DARKNESS) {
+                addEffectLine(lines, Component.translatable(effectDescriptionKey(effect.kind(), "darkness", effect.target()), effect.amount(), keyword(Component.translatable("effect.moonspire.darkness.name"))), effect.count());
             } else if (effect.kind() == CardEffectKind.DRAW_CARDS) {
                 addEffectLine(lines, Component.translatable(keywordDescriptionKey("draw_cards", effect.target()), effect.amount()), effect.count());
             } else if (effect.kind() == CardEffectKind.GAIN_ENERGY) {
@@ -744,6 +748,21 @@ public final class CardRenderHelper {
             case RANDOM_ENEMY -> "card.moonspire.effect.damage.random_enemy";
             case RANDOM_ALLY -> "card.moonspire.effect.damage.random_ally";
             case SINGLE_ENEMY -> "card.moonspire.effect.damage";
+        };
+    }
+
+    private static String fixedDamageDescriptionKey(CardTarget target) {
+        return switch (target) {
+            case SELF -> "card.moonspire.effect.fixed_damage.self";
+            case SINGLE_ALLY -> "card.moonspire.effect.fixed_damage.single_ally";
+            case ALL_ENEMIES -> "card.moonspire.effect.fixed_damage.all_enemies";
+            case ALL_ALLIES -> "card.moonspire.effect.fixed_damage.all_allies";
+            case ALL_UNITS -> "card.moonspire.effect.fixed_damage.all_units";
+            case ALL_OTHER_UNITS -> "card.moonspire.effect.fixed_damage.all_other_units";
+            case ALL_OTHER_ALLIES -> "card.moonspire.effect.fixed_damage.all_other_allies";
+            case RANDOM_ENEMY -> "card.moonspire.effect.fixed_damage.random_enemy";
+            case RANDOM_ALLY -> "card.moonspire.effect.fixed_damage.random_ally";
+            case SINGLE_ENEMY -> "card.moonspire.effect.fixed_damage";
         };
     }
 
@@ -840,15 +859,29 @@ public final class CardRenderHelper {
     }
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender) {
-        return previewAttack(card, attacker, defender, effectAmount(attacker, BattleEffectType.PARALYSIS) > 0 && card.hasAttack());
+        if (effectAmount(attacker, BattleEffectType.DARKNESS) > 0 && card.hasAttack()) {
+            return 0;
+        }
+        return previewAttack(card, attacker, defender, effectAmount(attacker, BattleEffectType.PARALYSIS) > 0 && card.hasAttack(), false);
     }
 
     public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender, boolean paralyzedAttack) {
+        return previewAttack(card, attacker, defender, paralyzedAttack, effectAmount(attacker, BattleEffectType.DARKNESS) > 0 && card.hasAttack());
+    }
+
+    public static int previewAttack(CardInstance card, BattleCombatantSnapshot attacker, BattleCombatantSnapshot defender, boolean paralyzedAttack, boolean darkenedAttack) {
+        if (darkenedAttack) {
+            return 0;
+        }
         int incoming = 0;
         int phaseStacks = Math.max(0, effectAmount(defender, BattleEffectType.PHASE));
         int gazeBonus = Math.max(0, effectAmount(defender, BattleEffectType.GAZE));
         for (CardEffect effect : card.effects()) {
             if (!CardInstance.isAttackDamageEffect(effect.kind()) || !effect.target().targetsEnemy()) {
+                continue;
+            }
+            if (effect.kind() == CardEffectKind.FIXED_DAMAGE) {
+                incoming += Math.max(0, effect.amount()) * Math.max(1, effect.count());
                 continue;
             }
             int baseDamage = paralysisAdjustedDamage(effect.amount(), paralyzedAttack);
@@ -1094,6 +1127,8 @@ public final class CardRenderHelper {
                 height += tipHeight(font, Component.translatable("effect.moonspire.weakness.name"), Component.translatable("effect.moonspire.weakness.description")) + 4;
             } else if (effect.kind() == CardEffectKind.SLOWNESS && renderedTips.add("slowness")) {
                 height += tipHeight(font, Component.translatable("effect.moonspire.slowness.name"), Component.translatable("effect.moonspire.slowness.description")) + 4;
+            } else if (effect.kind() == CardEffectKind.DARKNESS && renderedTips.add("darkness")) {
+                height += tipHeight(font, Component.translatable("effect.moonspire.darkness.name"), Component.translatable("effect.moonspire.darkness.description", effect.amount())) + 4;
             } else if (effect.kind() == CardEffectKind.GAIN_ENERGY && renderedTips.add("energy")) {
                 height += tipHeight(font, Component.translatable("keyword.moonspire.energy.name"), Component.translatable("keyword.moonspire.energy.description")) + 4;
             } else if (effect.kind() == CardEffectKind.EXHAUST && renderedTips.add("exhaust")) {

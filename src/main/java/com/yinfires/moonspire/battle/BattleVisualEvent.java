@@ -165,6 +165,9 @@ public record BattleVisualEvent(
         HOGLIN_HEAD_ATTACK,
         BLAZE_FIREBALL,
         GHAST_FIREBALL,
-        SHULKER_BULLET
+        SHULKER_BULLET,
+        WARDEN_MELEE,
+        WARDEN_SONIC_BOOM,
+        WARDEN_ROAR
     }
 }
