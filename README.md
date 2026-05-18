@@ -7,7 +7,7 @@ Moon Spire is a Minecraft 1.21.1 mod built with NeoForge.
 
 ## Overview
 
-Moon Spire adds a deck-building card battle layer to Minecraft. Players can challenge creatures, play cards with energy, manage draw, discard, and exhausted piles, and use generated equipment cards through the Card Forge. The mod also includes status effects, enemy intents, animated combat feedback, and developer tools for editing cards, card faces, monster decks, and battle UI layout.
+Moon Spire adds a deck-building card battle layer to Minecraft. Players can challenge creatures, earn cards by defeating monsters, play cards with energy, manage draw, discard, and exhausted piles, and use generated equipment cards through the Card Forge. The mod also includes status effects, enemy intents, animated combat feedback, and developer tools for editing cards, card faces, monster decks, and battle UI layout.
 
 ## License
 

@@ -32,9 +32,10 @@
 - 近战位移：`MELEE_LUNGE`、`VINDICATOR_AXE_SWING`、`VEX_CHARGE_LUNGE`、`RAVAGER_HEAD_RAM`、`WARDEN_MELEE`、`PIGLIN_MELEE_SWING`、`HOGLIN_HEAD_ATTACK` 由 `BattleState.LungeAnimation` 和 `LungeStyle` 控制服务端节奏；客户端 `VisualState` 用相同阶段时长生成渲染偏移和走路速度，`ClientEvents` 同步对应怪物攻击姿势。劫掠兽、疣猪兽和监守者的原版攻击姿态只在准备与接近阶段结束、实体已经停在 `lungeStrike` 后启动，避免边靠近边提前攻击。
 - 激流突进：`RIPTIDE_RUSH` 使用服务端 `RiptideRushAnimation` 安排蓄力、冲刺和停顿；客户端以三叉戟临时手持物、使用状态、`autoSpinAttack` 视觉状态和中心高度偏移播放旋转冲刺。
 - 远程弹射物：`BOW_DRAW`、`CROSSBOW_LOAD`、`TRIDENT_THROW`、`CHANNELING_TRIDENT_THROW`、`POTION_THROW`、`WIND_CHARGE`、`BLAZE_FIREBALL`、`GHAST_FIREBALL`、`SHULKER_BULLET` 使用准备时间加飞行时间。服务端在命中节奏点结算效果，客户端 `ProjectileVisual` 负责从起点飞向命中点，必要时生成命中特效或视觉闪电。
+- 药水投掷音效：`POTION_THROW` 的发射声只允许保留一条音效链。客户端 `ClientEvents.scheduleUseSounds(...)` 负责为当前投掷安排 `SPLASH_POTION_THROW` 或女巫的 `WITCH_THROW`，并在入队前清除同一施放者尚未播放的冲突发射声，避免把弓箭或重复的药水投掷声混进同一次投掷里；命中后的原版药水破裂 `levelEvent` 仍独立保留。
 - 潜影弹：`SHULKER_BULLET` 准备时间固定 12 tick，飞行时间继续复用按距离计算的 projectile flight。服务端对潜影贝专门改用壳体中心朝目标前缘作为发射点，不再复用通用眼睛位置；客户端 `BattleWorldOverlay` 复用原版 `ShulkerBullet` 作为只渲染实体，并在命中点补本地音效与粒子。
 - 潜影贝姿态：只有攻击者本体是潜影贝且正在播放 `SHULKER_BULLET` 时，客户端 `ClientEvents.syncVisualShulkerPeekStates(...)` 才会临时把壳体打开；动画结束、战斗结束或实体离开客户端后必须恢复原始 peek 值。玩家或其它非潜影贝单位打出同牌时，只保留潜影弹飞行与命中，不套用潜影贝开壳表现。
-- 原版物品使用姿势：弓、弩、三叉戟、喝药水等通过临时主手物品和 `visualUsingItem` 驱动原版使用动画。`ClientEvents.syncVisualUseItemState(...)` 维护 `useItem`、`useItemRemaining` 和 living entity flags，让原版模型按持续使用时间累计姿势。
+- 原版物品使用姿势：弓、弩、三叉戟、喝药水等通过临时主手物品和 `visualUsingItem` 驱动原版使用动画。`ClientEvents.syncVisualUseItemState(...)` 维护 `useItem`、`useItemRemaining` 和 living entity flags，让原版模型按持续使用时间累计姿势。战斗进行中，所有参战者在没有 `visualMainHandOverride` 的帧里都要临时隐藏默认主手物品，避免把进入战斗前的手持物继续显示给其他客户端；只有战斗视觉事件驱动的临时持物可以显示。
 - 怪物专属姿势：骷髅弓、溺尸三叉戟、卫道士举斧、恼鬼冲锋、猪灵近战、劫掠兽/疣猪兽头槌、女巫饮药、烈焰人/恶魂蓄火球等都通过 `ClientEvents` 的临时状态同步到原版实体字段，动画结束后必须恢复原状态。
 - 监守者专属表现：`WARDEN_MELEE` 使用监守者攻击动画状态和近战命中音效，攻击动画状态由每 tick 的 `visualWardenAttackTick(...)` 在接近完成后启动；`WARDEN_SONIC_BOOM` 在事件消费时播放蓄力音效，若攻击者是监守者则立即强制重开音波动画状态播放本体蓄力动作，到 `animationTicks - 4` 的释放点同一 tick 生成从攻击者到目标的整条 `SONIC_BOOM` 粒子轨迹并播放释放音效；`WARDEN_ROAR` 使用咆哮音效和咆哮动画状态，每次事件消费都会强制重开咆哮动画状态以支持连续使用。攻击者不是监守者时不强求肢体动作，但音波牌仍在释放点保留粒子轨迹和释放音效。
 - 受击和击退：造成生命伤害的视觉事件会触发目标 `VisualState.hurtFlash(...)`。客户端通过 `hurtTime` 播放受击闪烁，并用 `knockbackDelta` 在渲染层播放带重力、阻力和回弹 settle 的击退偏移。

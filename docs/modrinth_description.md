@@ -2,15 +2,15 @@
 
 ## Short Summary / 简短摘要
 
-**中文：** 月尖塔 为 Minecraft 加入牌组构筑式卡牌战斗：挑战生物、打出装备转化而来的卡牌、管理抽牌堆与弃牌堆，并在回合制战斗中判断敌人的意图。
+**中文：** 月尖塔 为 Minecraft 加入牌组构筑式卡牌战斗：挑战生物、击败怪物获取卡牌、打出装备转化而来的卡牌、管理抽牌堆与弃牌堆，并在回合制战斗中判断敌人的意图。
 
-**English:** Moon Spire adds deck-building card battles to Minecraft: challenge creatures, play cards converted from equipment, manage your draw and discard piles, and read enemy intents in turn-based combat.
+**English:** Moon Spire adds deck-building card battles to Minecraft: challenge creatures, earn cards by defeating monsters, play cards converted from equipment, manage your draw and discard piles, and read enemy intents in turn-based combat.
 
 ## 中文简介
 
 **月尖塔** 是一个基于 **NeoForge** 的 **Minecraft 1.21.1** 模组。它把牌组构筑式卡牌战斗融入 Minecraft 的冒险流程中，让玩家不只是挥剑和拉弓，也能用一套不断调整的卡组来处理战斗。
 
-在 月尖塔 中，玩家可以向可交战生物发起挑战，进入专门的回合制卡牌战斗，这也会让附近10格内的玩家和敌对生物一起进入战斗。每个回合都有固定费用，手牌、抽牌堆、弃牌堆和被消耗的牌都会影响你的选择。攻击、格挡、流血、守护、抽牌、弃牌、消耗手牌等效果会通过卡面、敌人意图、头顶状态与战斗动画呈现出来，让每一次出牌都更清楚地反馈到战场上。
+在 月尖塔 中，玩家可以向可交战生物发起挑战，击败怪物获取卡牌，并进入专门的回合制卡牌战斗，这也会让附近10格内的玩家和敌对生物一起进入战斗。每个回合都有固定费用，手牌、抽牌堆、弃牌堆和被消耗的牌都会影响你的选择。攻击、格挡、流血、守护、抽牌、弃牌、消耗手牌等效果会通过卡面、敌人意图、头顶状态与战斗动画呈现出来，让每一次出牌都更清楚地反馈到战场上。
 
 模组的核心之一是 **制卡台**。玩家可以把装备转化为可使用的卡牌，让原本属于 Minecraft 的物品进入卡组循环。你的装备、敌人的行动、当前费用、状态层数和牌堆顺序都会共同决定战斗节奏。
 
@@ -44,7 +44,7 @@
 
 ## English Description
 
-**Moon Spire** is a **Minecraft 1.21.1** mod built for **NeoForge**. It weaves deck-building card combat into Minecraft's adventure loop, letting players handle battles not only with swords and bows, but also with an evolving deck.
+**Moon Spire** is a **Minecraft 1.21.1** mod built for **NeoForge**. It weaves deck-building card combat into Minecraft's adventure loop, letting players earn cards by defeating monsters and handle battles not only with swords and bows, but also with an evolving deck.
 
 In Moon Spire, players can challenge eligible creatures and enter a dedicated turn-based card battle, which also brings nearby players and hostile creatures within 10 blocks into the fight. Each turn has a fixed amount of energy, while your hand, draw pile, discard pile, and exhausted cards all affect your choices. Attacks, Block, Bleed, Guard, card draw, discard, hand exhaustion, and other effects are shown through card faces, enemy intents, overhead statuses, and battle animations, giving each card play clearer feedback on the battlefield.
 

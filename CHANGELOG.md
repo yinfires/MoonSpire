@@ -24,6 +24,77 @@ Each release should include:
 
 ---
 
+## 1.0.2 - 2026-05-18
+
+- Minecraft: 1.21.1
+- Mod Loader: NeoForge 21.1.228
+- License: Apache-2.0
+- Release Type: Content, gameplay, and UI update
+
+### 中文更新日志
+
+#### 新增内容
+
+- 新增击败怪物后的卡牌奖励机制，战斗结算后可以直接获得对应卡牌。
+
+#### 卡牌与牌组
+
+- 新增多组怪物专属卡组，覆盖卫道士、掠夺者、幻翼、恼鬼、唤魔者、劫掠兽、女巫、蠹虫、史莱姆、末影人、凋灵骷髅、末影螨、潜影贝、监守者、烈焰人、恶魂、僵尸猪灵、岩浆怪、疣猪兽、僵尸疣猪兽、猪灵和猪灵蛮兵等敌人。
+- 怪物卡组、意图预览和奖励生成继续共用同一套注册与回退流程，新增内容可以更稳定地接入现有战斗体系。
+
+#### 界面与反馈
+
+- 卡牌放大和缩放过渡更平滑，减少界面跳动。
+- 战斗界面、制卡台、奖励页和开发者中心现在会更好地自适应不同分辨率。
+
+#### 开发者与整合包工具
+
+- 开发者中心现在也会使用自适应布局，小窗口下更容易操作。
+
+#### 修复内容
+
+- 修复部分文本显示错误。
+- 修复死亡后残留动画的问题。
+- 修复卫道士的意图显示错误。
+
+#### 兼容性
+
+- 本版本继续面向 Minecraft 1.21.1。
+- 本版本继续面向 NeoForge 21.1.228。
+- 本版本需要 Java 21。
+
+### English Changelog
+
+#### Added
+
+- Added a card reward for defeating monsters, so battles can directly grant the matching cards after resolution.
+
+#### Cards And Decks
+
+- Added more monster-specific decks covering vindicators, pillagers, phantoms, vexes, evokers, ravagers, witches, silverfish, slimes, endermen, wither skeletons, endermites, shulkers, wardens, blazes, ghasts, zombified piglins, magma cubes, hoglins, zombified hoglins, piglins, and piglin brutes.
+- Monster decks, intent previews, and reward generation still share the same registration and fallback pipeline, so new content fits the existing battle system more reliably.
+
+#### UI And Feedback
+
+- Card zoom and scale transitions are smoother, reducing UI jumping.
+- The battle screen, Card Forge, reward screen, and Developer Center adapt better to different resolutions.
+
+#### Developer And Modpack Tools
+
+- The Developer Center now uses the shared adaptive layout, making it easier to use in smaller windows.
+
+#### Fixed
+
+- Fixed text display errors.
+- Fixed lingering death animations.
+- Fixed vindicator intent display issues.
+
+#### Compatibility
+
+- This release still targets Minecraft 1.21.1.
+- This release still targets NeoForge 21.1.228.
+- This release requires Java 21.
+
 ## 1.0.1 - 2026-05-14
 
 - Minecraft: 1.21.1

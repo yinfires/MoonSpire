@@ -397,7 +397,10 @@ public final class ClientEvents {
 
         @SubscribeEvent
         public static void hideDefaultPlayerHand(RenderPlayerEvent.Pre event) {
-            if (!ClientBattleState.active() || event.getEntity().getId() != ClientBattleState.snapshot().player().entityId()) {
+            if (!ClientBattleState.active()) {
+                return;
+            }
+            if (ClientBattleState.snapshot().combatant(event.getEntity().getId()) == null) {
                 return;
             }
             if (!ClientBattleState.visualMainHandOverride(event.getEntity().getId()).isEmpty()) {
@@ -1040,6 +1043,18 @@ public final class ClientEvents {
             model.rightArmPose = HumanoidModel.ArmPose.EMPTY;
         }
 
+        @SubscribeEvent
+        public static void hideDefaultBattleHands(RenderLivingEvent.Pre<?, ?> event) {
+            LivingEntity entity = event.getEntity();
+            if (!ClientBattleState.active()
+                    || entity instanceof net.minecraft.world.entity.player.Player
+                    || ClientBattleState.snapshot().combatant(entity.getId()) == null
+                    || !ClientBattleState.visualMainHandOverride(entity.getId()).isEmpty()) {
+                return;
+            }
+            applyTemporaryMainHand(entity, ItemStack.EMPTY, false);
+        }
+
         private static boolean isEvokerSpellAnimation(BattleVisualEvent.AnimationType type) {
             return type == BattleVisualEvent.AnimationType.EVOKER_FANG_LINE
                     || type == BattleVisualEvent.AnimationType.EVOKER_FANG_CIRCLE
@@ -1441,6 +1456,9 @@ public final class ClientEvents {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_THROW.value(), Math.max(1, prepareTicks), 1.0F, 1.0F);
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_THUNDER.value(), Math.max(1, event.animationTicks() + 8), 1.2F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW) {
+                removeScheduledBattleSounds(attacker.getId(), SoundEvents.ARROW_SHOOT);
+                removeScheduledBattleSounds(attacker.getId(), SoundEvents.SPLASH_POTION_THROW);
+                removeScheduledBattleSounds(attacker.getId(), SoundEvents.WITCH_THROW);
                 scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_THROW : SoundEvents.SPLASH_POTION_THROW, 0, 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.POTION_DRINK) {
                 scheduleBattleSound(attacker, attacker instanceof Witch ? SoundEvents.WITCH_DRINK : SoundEvents.GENERIC_DRINK, 0, 1.0F, 1.0F);
@@ -1488,6 +1506,16 @@ public final class ClientEvents {
 
         private static void scheduleBattleSound(LivingEntity entity, SoundEvent sound, int delayTicks, float volume, float pitch) {
             SCHEDULED_BATTLE_SOUNDS.add(new ScheduledBattleSound(entity.getId(), sound, Math.max(0, delayTicks), volume, pitch));
+        }
+
+        private static void removeScheduledBattleSounds(int entityId, SoundEvent sound) {
+            Iterator<ScheduledBattleSound> iterator = SCHEDULED_BATTLE_SOUNDS.iterator();
+            while (iterator.hasNext()) {
+                ScheduledBattleSound scheduled = iterator.next();
+                if (scheduled.entityId == entityId && scheduled.sound == sound) {
+                    iterator.remove();
+                }
+            }
         }
 
         private static void tickScheduledBattleSounds(Minecraft minecraft) {

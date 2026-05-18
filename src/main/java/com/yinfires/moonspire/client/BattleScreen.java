@@ -3769,10 +3769,17 @@ public class BattleScreen extends NoBlurScreen {
         List<Integer> allies = liveIds(monsterCard ? snapshot.enemies() : snapshot.players());
         List<Integer> enemies = liveIds(monsterCard ? snapshot.players() : snapshot.enemies());
         int self = allies.contains(selfEntityId) ? selfEntityId : monsterCard ? snapshot.monster().entityId() : snapshot.player().entityId();
+        List<Integer> otherAllies = new ArrayList<>();
+        for (int ally : allies) {
+            if (ally != self) {
+                otherAllies.add(ally);
+            }
+        }
+        int pointedAlly = otherAllies.contains(pointedTarget) ? pointedTarget : -1;
         int opponent = enemies.contains(pointedTarget) ? pointedTarget : enemies.isEmpty() ? -1 : enemies.getFirst();
         return switch (target) {
             case SELF, ALL_ALLIES -> List.of(self);
-            case SINGLE_ALLY -> List.of();
+            case SINGLE_ALLY, RANDOM_ALLY -> pointedAlly >= 0 ? List.of(pointedAlly) : otherAllies.isEmpty() ? List.of() : List.of(otherAllies.getFirst());
             case SINGLE_ENEMY, RANDOM_ENEMY -> opponent < 0 ? List.of() : List.of(opponent);
             case ALL_ENEMIES -> enemies;
             case ALL_UNITS -> {
@@ -3781,7 +3788,7 @@ public class BattleScreen extends NoBlurScreen {
                 yield all;
             }
             case ALL_OTHER_UNITS -> enemies;
-            case ALL_OTHER_ALLIES, RANDOM_ALLY -> List.of();
+            case ALL_OTHER_ALLIES -> otherAllies;
         };
     }
 
