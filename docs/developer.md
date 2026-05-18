@@ -20,6 +20,8 @@
 - `moonspire/developer/card_art/`：开发者卡牌烘焙后的 PNG。
 - `moonspire/developer/monsters/`：怪物覆盖配置。
 
+战斗动画实现和维护说明见 `docs/battle_animation.md`。新增或改动战斗动画类型、时序、渲染钩子、客户端视觉状态、弹射物、临时手持物、原版使用姿势、怪物专属姿势或受击/击退表现时，应先阅读并同步更新该文档。
+
 主数据文件：
 
 `moonspire/developer/ui/developer_data.json`
