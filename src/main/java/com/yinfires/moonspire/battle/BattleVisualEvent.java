@@ -162,6 +162,8 @@ public record BattleVisualEvent(
         POTION_DRINK,
         WIND_CHARGE,
         PIGLIN_MELEE_SWING,
-        HOGLIN_HEAD_ATTACK
+        HOGLIN_HEAD_ATTACK,
+        BLAZE_FIREBALL,
+        GHAST_FIREBALL
     }
 }

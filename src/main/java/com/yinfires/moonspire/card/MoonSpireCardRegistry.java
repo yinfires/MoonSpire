@@ -464,6 +464,36 @@ public final class MoonSpireCardRegistry {
                 new RegisteredCardDefinition("builtin_monster_eruptive_pressure", "card.moonspire.monster.eruptive_pressure.name", "", 2, 0, 0, List.of(
                         new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
                         new CardEffect(CardEffectKind.BURN, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "minecraft:magma_cream", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_blaze_fireball", "card.moonspire.monster.blaze_fireball.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 5, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_blazing_barrage", "card.moonspire.monster.blazing_barrage.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.SINGLE_ENEMY, 2),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_smoldering_guard", "card.moonspire.monster.smoldering_guard.name", "", 1, 0, 5, List.of(
+                        new CardEffect(CardEffectKind.THORNS, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_heat_haze", "card.moonspire.monster.heat_haze.name", "", 1, 0, 3, List.of(
+                        new CardEffect(CardEffectKind.HASTE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_flame_pressure", "card.moonspire.monster.flame_pressure.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 3, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_ghast_fireball", "card.moonspire.monster.ghast_fireball.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 6, CardTarget.SINGLE_ENEMY),
+                        new CardEffect(CardEffectKind.BURN, 1, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_explosive_wail", "card.moonspire.monster.explosive_wail.name", "", 2, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.REMOTE, 1),
+                        new CardEffect(CardEffectKind.DAMAGE, 4, CardTarget.ALL_ENEMIES),
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_sulfur_drift", "card.moonspire.monster.sulfur_drift.name", "", 1, 0, 4, List.of(
+                        new CardEffect(CardEffectKind.PHASE, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_tearful_ward", "card.moonspire.monster.tearful_ward.name", "", 1, 0, 6, List.of(
+                        new CardEffect(CardEffectKind.GUARD, 1, CardTarget.SELF)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
+                new RegisteredCardDefinition("builtin_monster_infernal_shriek", "card.moonspire.monster.infernal_shriek.name", "", 1, 0, 0, List.of(
+                        new CardEffect(CardEffectKind.WEAKNESS, 1, CardTarget.ALL_ENEMIES)), CardSourceType.MONSTER, "", "", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_ender_stare", "card.moonspire.monster.ender_stare.name", "", 1, 0, 0, List.of(
                         new CardEffect(CardEffectKind.GAZE, 2, CardTarget.SINGLE_ENEMY)), CardSourceType.MONSTER, "", "minecraft:ender_eye", 0, 0, 1.0F, "default", ""),
                 new RegisteredCardDefinition("builtin_monster_blink_step", "card.moonspire.monster.blink_step.name", "", 1, 0, 0, List.of(

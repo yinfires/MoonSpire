@@ -584,6 +584,11 @@ public final class ClientBattleState {
         return state == null ? 0 : state.windChargeTicks();
     }
 
+    public static boolean visualFireballCharging(int entityId) {
+        VisualState state = visualStates.get(entityId);
+        return state != null && state.fireballChargeTicks() > 0;
+    }
+
     public static BattleVisualEvent.AnimationType visualEvokerSpellType(int entityId) {
         VisualState state = visualStates.get(entityId);
         return state == null ? BattleVisualEvent.AnimationType.NONE : state.evokerSpellType();
@@ -968,7 +973,9 @@ public final class ClientBattleState {
                 || event.animationType() == BattleVisualEvent.AnimationType.TRIDENT_THROW
                 || event.animationType() == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
                 || event.animationType() == BattleVisualEvent.AnimationType.POTION_THROW
-                || event.animationType() == BattleVisualEvent.AnimationType.WIND_CHARGE;
+                || event.animationType() == BattleVisualEvent.AnimationType.WIND_CHARGE
+                || event.animationType() == BattleVisualEvent.AnimationType.BLAZE_FIREBALL
+                || event.animationType() == BattleVisualEvent.AnimationType.GHAST_FIREBALL;
     }
 
     public static int projectilePrepareTicks(BattleVisualEvent event) {
@@ -995,7 +1002,8 @@ public final class ClientBattleState {
                 || animationType == BattleVisualEvent.AnimationType.TRIDENT_THROW
                 || animationType == BattleVisualEvent.AnimationType.CHANNELING_TRIDENT_THROW
                 || animationType == BattleVisualEvent.AnimationType.POTION_THROW
-                || animationType == BattleVisualEvent.AnimationType.WIND_CHARGE;
+                || animationType == BattleVisualEvent.AnimationType.WIND_CHARGE
+                || isFireballAnimation(animationType);
     }
 
     private static Vec3 lungeStart(BattleVisualEvent event) {
@@ -1229,6 +1237,9 @@ public final class ClientBattleState {
             if (animationType == BattleVisualEvent.AnimationType.WIND_CHARGE) {
                 return new ItemStack(Items.WIND_CHARGE);
             }
+            if (isFireballAnimation(animationType)) {
+                return ItemStack.EMPTY;
+            }
             return new ItemStack(Items.ARROW);
         }
 
@@ -1258,6 +1269,7 @@ public final class ClientBattleState {
         private int evokerSpellTicks;
         private int evokerSpellAge;
         private int windChargeTicks;
+        private int fireballChargeTicks;
         private BattleVisualEvent.AnimationType evokerSpellType = BattleVisualEvent.AnimationType.NONE;
         private Vec3 lungeStart = Vec3.ZERO;
         private Vec3 lungeStrike = Vec3.ZERO;
@@ -1326,8 +1338,12 @@ public final class ClientBattleState {
             return windChargeTicks;
         }
 
+        public int fireballChargeTicks() {
+            return fireballChargeTicks;
+        }
+
         public BattleVisualEvent.AnimationType animationType() {
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0 && fireballChargeTicks <= 0) {
                 return BattleVisualEvent.AnimationType.NONE;
             }
             return animationType;
@@ -1377,6 +1393,10 @@ public final class ClientBattleState {
             }
             if (nextType == BattleVisualEvent.AnimationType.WIND_CHARGE && animationTicks > 0) {
                 windChargeTicks = Math.max(1, animationTicks);
+                this.animationType = nextType;
+            }
+            if (isFireballAnimation(nextType) && animationTicks > 0) {
+                fireballChargeTicks = Math.max(1, projectilePrepareTicks(nextType, animationTicks));
                 this.animationType = nextType;
             }
             if (stack != null && !stack.isEmpty()) {
@@ -1663,6 +1683,9 @@ public final class ClientBattleState {
             if (windChargeTicks > 0) {
                 windChargeTicks--;
             }
+            if (fireballChargeTicks > 0) {
+                fireballChargeTicks--;
+            }
             float lungeWalkSpeed = 0.0F;
             if (lungeTicks > 0) {
                 previousLungePosition = currentLungePosition;
@@ -1688,7 +1711,7 @@ public final class ClientBattleState {
             if (walkSpeed <= 0.001F) {
                 walkSpeed = 0.0F;
             }
-            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0) {
+            if (itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0 && fireballChargeTicks <= 0) {
                 animationType = BattleVisualEvent.AnimationType.NONE;
             }
         }
@@ -1746,8 +1769,13 @@ public final class ClientBattleState {
         }
 
         private boolean done() {
-            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
+            return itemTicks <= 0 && usingTicks <= 0 && lungeTicks <= 0 && lungeSettleTicks <= 0 && selfDestructTicks <= 0 && evokerSpellTicks <= 0 && windChargeTicks <= 0 && fireballChargeTicks <= 0 && hurtTicks <= 0 && knockbackReleaseTicks <= 0 && knockbackTicks <= 0 && knockbackSettleTicks <= 0;
         }
+    }
+
+    private static boolean isFireballAnimation(BattleVisualEvent.AnimationType type) {
+        return type == BattleVisualEvent.AnimationType.BLAZE_FIREBALL
+                || type == BattleVisualEvent.AnimationType.GHAST_FIREBALL;
     }
 
     private static boolean isEvokerSpellAnimation(BattleVisualEvent.AnimationType type) {

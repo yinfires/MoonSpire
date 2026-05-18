@@ -512,6 +512,16 @@ public record CardInstance(
             case "card.moonspire.monster.cinder_cling.name" -> "builtin_monster_cinder_cling";
             case "card.moonspire.monster.igneous_body.name" -> "builtin_monster_igneous_body";
             case "card.moonspire.monster.eruptive_pressure.name" -> "builtin_monster_eruptive_pressure";
+            case "card.moonspire.monster.blaze_fireball.name" -> "builtin_monster_blaze_fireball";
+            case "card.moonspire.monster.blazing_barrage.name" -> "builtin_monster_blazing_barrage";
+            case "card.moonspire.monster.smoldering_guard.name" -> "builtin_monster_smoldering_guard";
+            case "card.moonspire.monster.heat_haze.name" -> "builtin_monster_heat_haze";
+            case "card.moonspire.monster.flame_pressure.name" -> "builtin_monster_flame_pressure";
+            case "card.moonspire.monster.ghast_fireball.name" -> "builtin_monster_ghast_fireball";
+            case "card.moonspire.monster.explosive_wail.name" -> "builtin_monster_explosive_wail";
+            case "card.moonspire.monster.sulfur_drift.name" -> "builtin_monster_sulfur_drift";
+            case "card.moonspire.monster.tearful_ward.name" -> "builtin_monster_tearful_ward";
+            case "card.moonspire.monster.infernal_shriek.name" -> "builtin_monster_infernal_shriek";
             case "card.moonspire.monster.pounce.name" -> "builtin_monster_pounce";
             case "card.moonspire.monster.skitter.name" -> "builtin_monster_skitter";
             case "card.moonspire.monster.bite.name" -> "builtin_monster_bite";

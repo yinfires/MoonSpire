@@ -338,6 +338,28 @@ public final class MonsterDeckProfile {
             "builtin_monster_igneous_body",
             "builtin_monster_igneous_body",
             "builtin_monster_eruptive_pressure");
+    private static final List<String> BLAZE_DEFAULT_DECK = List.of(
+            "builtin_monster_blaze_fireball",
+            "builtin_monster_blaze_fireball",
+            "builtin_monster_blaze_fireball",
+            "builtin_monster_blazing_barrage",
+            "builtin_monster_blazing_barrage",
+            "builtin_monster_smoldering_guard",
+            "builtin_monster_smoldering_guard",
+            "builtin_monster_heat_haze",
+            "builtin_monster_heat_haze",
+            "builtin_monster_flame_pressure");
+    private static final List<String> GHAST_DEFAULT_DECK = List.of(
+            "builtin_monster_ghast_fireball",
+            "builtin_monster_ghast_fireball",
+            "builtin_monster_ghast_fireball",
+            "builtin_monster_explosive_wail",
+            "builtin_monster_explosive_wail",
+            "builtin_monster_sulfur_drift",
+            "builtin_monster_sulfur_drift",
+            "builtin_monster_tearful_ward",
+            "builtin_monster_tearful_ward",
+            "builtin_monster_infernal_shriek");
     private static final List<String> ENDERMAN_DEFAULT_DECK = List.of(
             "builtin_monster_ender_stare",
             "builtin_monster_ender_stare",
@@ -428,6 +450,12 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.MAGMA_CUBE) {
             return magmaCubeCards(monster);
+        }
+        if (type == EntityType.BLAZE) {
+            return cards(BLAZE_DEFAULT_DECK);
+        }
+        if (type == EntityType.GHAST) {
+            return cards(GHAST_DEFAULT_DECK);
         }
         if (type == EntityType.ENDERMAN) {
             return cards(ENDERMAN_DEFAULT_DECK);
@@ -522,6 +550,12 @@ public final class MonsterDeckProfile {
         }
         if (type == EntityType.MAGMA_CUBE) {
             return MAGMA_CUBE_DEFAULT_DECK;
+        }
+        if (type == EntityType.BLAZE) {
+            return BLAZE_DEFAULT_DECK;
+        }
+        if (type == EntityType.GHAST) {
+            return GHAST_DEFAULT_DECK;
         }
         if (type == EntityType.ENDERMAN) {
             return ENDERMAN_DEFAULT_DECK;

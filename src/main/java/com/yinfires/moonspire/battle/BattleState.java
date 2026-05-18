@@ -92,6 +92,7 @@ public class BattleState {
     private static final int BOW_DRAW_TICKS = 20;
     private static final int CROSSBOW_LOAD_TICKS = 25;
     private static final int TRIDENT_DRAW_TICKS = 18;
+    private static final int FIREBALL_PREPARE_TICKS = 20;
     private static final int WIND_CHARGE_TICKS = 15;
     private static final int GUARDIAN_BEAM_TICKS = 80;
     private static final int POTION_THROW_PREPARE_TICKS = 8;
@@ -2262,6 +2263,9 @@ public class BattleState {
         if (isWindChargeCard(card)) {
             return WIND_CHARGE_TICKS;
         }
+        if (isBlazeFireballCard(card) || isGhastFireballCard(card)) {
+            return FIREBALL_PREPARE_TICKS;
+        }
         ItemStack stack = card.sourceStack();
         if (!stack.isEmpty() && stack.is(Items.CROSSBOW)) {
             return CROSSBOW_LOAD_TICKS;
@@ -2281,6 +2285,12 @@ public class BattleState {
         }
         if (isWindChargeCard(card)) {
             return BattleVisualEvent.AnimationType.WIND_CHARGE;
+        }
+        if (isBlazeFireballCard(card)) {
+            return BattleVisualEvent.AnimationType.BLAZE_FIREBALL;
+        }
+        if (isGhastFireballCard(card)) {
+            return BattleVisualEvent.AnimationType.GHAST_FIREBALL;
         }
         ItemStack stack = card.sourceStack();
         return !stack.isEmpty() && stack.is(Items.CROSSBOW)
@@ -2302,6 +2312,23 @@ public class BattleState {
 
     private ItemStack windChargeStack() {
         return new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace("wind_charge")));
+    }
+
+    private boolean isBlazeFireballCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_blaze_fireball".equals(card.cardId())
+                || "builtin_monster_blazing_barrage".equals(card.cardId())
+                || "builtin_monster_flame_pressure".equals(card.cardId());
+    }
+
+    private boolean isGhastFireballCard(CardInstance card) {
+        if (card == null) {
+            return false;
+        }
+        return "builtin_monster_ghast_fireball".equals(card.cardId())
+                || "builtin_monster_explosive_wail".equals(card.cardId());
     }
 
     private boolean isTridentCard(CardInstance card) {
@@ -2598,8 +2625,9 @@ public class BattleState {
             }
             boolean trident = isTridentCard(batch.card());
             boolean windCharge = isWindChargeCard(batch.card());
-            ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? windChargeStack() : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
-            ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? ItemStack.EMPTY : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
+            boolean fireball = isBlazeFireballCard(batch.card()) || isGhastFireballCard(batch.card());
+            ItemStack projectileStack = trident ? new ItemStack(Items.TRIDENT) : windCharge ? windChargeStack() : fireball ? ItemStack.EMPTY : batch.projectileStack().isEmpty() ? new ItemStack(Items.ARROW) : batch.projectileStack();
+            ItemStack visualStack = trident ? new ItemStack(Items.TRIDENT) : windCharge || fireball ? ItemStack.EMPTY : batch.stack().isEmpty() ? new ItemStack(Items.BOW) : batch.stack();
             int drawTicks = rangedPrepareTicks(batch.card());
             LivingEntity actor = batch.user().entity();
             LivingEntity target = animated.target().entity();

@@ -52,7 +52,9 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
+import net.minecraft.world.entity.monster.Blaze;
 import net.minecraft.world.entity.monster.Drowned;
+import net.minecraft.world.entity.monster.Ghast;
 import net.minecraft.world.entity.monster.Pillager;
 import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.SpellcasterIllager;
@@ -102,6 +104,7 @@ public final class ClientEvents {
     private static final double CHALLENGE_RANGE = 10.0D;
     private static final Map<Integer, TemporaryHandState> TEMP_MAIN_HANDS = new HashMap<>();
     private static final Map<Integer, TemporaryHandState> VISUAL_MAIN_HANDS = new HashMap<>();
+    private static final Map<Integer, TemporaryFireballState> VISUAL_FIREBALL_STATES = new HashMap<>();
     private static final Map<Integer, TemporaryArmPoseState> TEMP_ARM_POSES = new HashMap<>();
     private static final Map<Integer, VisualRiptideState> VISUAL_RIPTIDE_STATES = new HashMap<>();
     private static final Set<Integer> VISUAL_RAVAGER_HEAD_RAMS = new HashSet<>();
@@ -209,6 +212,7 @@ public final class ClientEvents {
                 spawnEvokerSpellParticles(minecraft);
                 syncVisualWalkAnimations(minecraft);
                 syncVisualHandOverrides(minecraft);
+                syncVisualFireballStates(minecraft);
                 tickScheduledBattleSounds(minecraft);
                 tickScheduledSelfDestructExplosions(minecraft);
                 syncVisualRiptideStates(minecraft);
@@ -805,6 +809,52 @@ public final class ClientEvents {
             breeze.shoot.stop();
         }
 
+        private static void syncVisualFireballStates(Minecraft minecraft) {
+            if (minecraft.level == null) {
+                VISUAL_FIREBALL_STATES.clear();
+                return;
+            }
+            Set<Integer> activeFireballStates = new HashSet<>();
+            for (var combatant : ClientBattleState.snapshot().players()) {
+                syncVisualFireballState(minecraft.level.getEntity(combatant.entityId()), activeFireballStates);
+            }
+            for (var combatant : ClientBattleState.snapshot().enemies()) {
+                syncVisualFireballState(minecraft.level.getEntity(combatant.entityId()), activeFireballStates);
+            }
+            for (int entityId : VISUAL_FIREBALL_STATES.keySet().toArray(Integer[]::new)) {
+                if (!activeFireballStates.contains(entityId)) {
+                    restoreVisualFireballState(minecraft.level.getEntity(entityId));
+                }
+            }
+        }
+
+        private static void syncVisualFireballState(Entity entity, Set<Integer> activeFireballStates) {
+            if (!(entity instanceof LivingEntity living)) {
+                return;
+            }
+            BattleVisualEvent.AnimationType type = ClientBattleState.visualAnimationType(living.getId());
+            boolean charging = ClientBattleState.visualFireballCharging(living.getId());
+            if (charging && type == BattleVisualEvent.AnimationType.BLAZE_FIREBALL && living instanceof Blaze blaze) {
+                VISUAL_FIREBALL_STATES.computeIfAbsent(living.getId(), id -> TemporaryFireballState.capture(living));
+                blaze.setCharged(true);
+                activeFireballStates.add(living.getId());
+            } else if (charging && type == BattleVisualEvent.AnimationType.GHAST_FIREBALL && living instanceof Ghast ghast) {
+                VISUAL_FIREBALL_STATES.computeIfAbsent(living.getId(), id -> TemporaryFireballState.capture(living));
+                ghast.setCharging(true);
+                activeFireballStates.add(living.getId());
+            }
+        }
+
+        private static void restoreVisualFireballState(Entity entity) {
+            if (!(entity instanceof LivingEntity living)) {
+                return;
+            }
+            TemporaryFireballState state = VISUAL_FIREBALL_STATES.remove(living.getId());
+            if (state != null) {
+                state.restore(living);
+            }
+        }
+
         private static void syncVisualUseItemState(LivingEntity entity, ItemStack mainHand) {
             int duration = Math.max(1, mainHand.getUseDuration(entity));
             int usedTicks = Math.max(0, ClientBattleState.visualTicksUsingItem(entity.getId()));
@@ -904,6 +954,11 @@ public final class ClientEvents {
                     || type == BattleVisualEvent.AnimationType.EVOKER_SUMMON_VEX;
         }
 
+        private static boolean isFireballAnimation(BattleVisualEvent.AnimationType type) {
+            return type == BattleVisualEvent.AnimationType.BLAZE_FIREBALL
+                    || type == BattleVisualEvent.AnimationType.GHAST_FIREBALL;
+        }
+
         private static void restoreArmPose(LivingEntity entity) {
             TemporaryArmPoseState state = TEMP_ARM_POSES.remove(entity.getId());
             if (state != null && Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(entity) instanceof net.minecraft.client.renderer.entity.LivingEntityRenderer<?, ?> renderer
@@ -924,6 +979,9 @@ public final class ClientEvents {
                     if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
                         restoreVisualMainHand(living);
                     }
+                }
+                for (int entityId : VISUAL_FIREBALL_STATES.keySet().toArray(Integer[]::new)) {
+                    restoreVisualFireballState(minecraft.level.getEntity(entityId));
                 }
                 for (int entityId : TEMP_ARM_POSES.keySet().toArray(Integer[]::new)) {
                     if (minecraft.level.getEntity(entityId) instanceof LivingEntity living) {
@@ -959,6 +1017,7 @@ public final class ClientEvents {
             clearEntityHandAnimation(minecraft.player, stopUsingItems);
             TEMP_MAIN_HANDS.clear();
             VISUAL_MAIN_HANDS.clear();
+            VISUAL_FIREBALL_STATES.clear();
             TEMP_ARM_POSES.clear();
             VISUAL_RIPTIDE_STATES.clear();
             VISUAL_RAVAGER_HEAD_RAMS.clear();
@@ -1050,15 +1109,21 @@ public final class ClientEvents {
                 return;
             }
             for (ClientBattleState.ProjectileImpactVisual impact : ClientBattleState.consumeProjectileImpactVisuals()) {
-                if (impact.animationType() != BattleVisualEvent.AnimationType.WIND_CHARGE || impact.position() == null) {
+                if (impact.position() == null) {
                     continue;
                 }
-                Entity attacker = minecraft.level.getEntity(impact.attackerId());
-                boolean breeze = attacker instanceof Breeze;
-                SoundEvent burstSound = breeze ? SoundEvents.BREEZE_WIND_CHARGE_BURST.value() : SoundEvents.WIND_CHARGE_BURST.value();
                 Vec3 position = impact.position();
-                minecraft.level.playLocalSound(position.x, position.y, position.z, burstSound, SoundSource.PLAYERS, 1.0F, 1.0F, false);
-                spawnWindChargeBurstParticles(minecraft, position);
+                if (impact.animationType() == BattleVisualEvent.AnimationType.WIND_CHARGE) {
+                    Entity attacker = minecraft.level.getEntity(impact.attackerId());
+                    boolean breeze = attacker instanceof Breeze;
+                    SoundEvent burstSound = breeze ? SoundEvents.BREEZE_WIND_CHARGE_BURST.value() : SoundEvents.WIND_CHARGE_BURST.value();
+                    minecraft.level.playLocalSound(position.x, position.y, position.z, burstSound, SoundSource.PLAYERS, 1.0F, 1.0F, false);
+                    spawnWindChargeBurstParticles(minecraft, position);
+                } else if (isFireballAnimation(impact.animationType())) {
+                    boolean large = impact.animationType() == BattleVisualEvent.AnimationType.GHAST_FIREBALL;
+                    minecraft.level.playLocalSound(position.x, position.y, position.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, large ? 1.15F : 0.8F, large ? 0.9F : 1.15F, false);
+                    spawnFireballImpactParticles(minecraft, position, large);
+                }
             }
         }
 
@@ -1079,6 +1144,29 @@ public final class ClientEvents {
                         x * 0.12D,
                         0.02D,
                         z * 0.12D);
+            }
+        }
+
+        private static void spawnFireballImpactParticles(Minecraft minecraft, Vec3 position, boolean large) {
+            if (minecraft.level == null) {
+                return;
+            }
+            minecraft.level.addParticle(ParticleTypes.EXPLOSION, position.x, position.y, position.z, 0.0D, 0.0D, 0.0D);
+            int count = large ? 18 : 10;
+            for (int i = 0; i < count; i++) {
+                double angle = i * (Math.PI * 2.0D / count);
+                double radius = large ? 0.55D : 0.35D;
+                double x = Math.cos(angle);
+                double z = Math.sin(angle);
+                double y = ((i % 3) - 1) * 0.06D;
+                minecraft.level.addParticle(
+                        ParticleTypes.FLAME,
+                        position.x + x * radius,
+                        position.y + y,
+                        position.z + z * radius,
+                        x * 0.08D,
+                        0.03D,
+                        z * 0.08D);
             }
         }
 
@@ -1170,6 +1258,11 @@ public final class ClientEvents {
                 } else {
                     scheduleBattleSound(attacker, SoundEvents.WIND_CHARGE_THROW, Math.max(1, prepareTicks), 1.0F, 1.0F);
                 }
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.BLAZE_FIREBALL) {
+                scheduleBattleSound(attacker, SoundEvents.BLAZE_SHOOT, Math.max(1, prepareTicks), 1.0F, 1.0F);
+            } else if (event.animationType() == BattleVisualEvent.AnimationType.GHAST_FIREBALL) {
+                scheduleBattleSound(attacker, SoundEvents.GHAST_WARN, 0, 1.0F, 1.0F);
+                scheduleBattleSound(attacker, SoundEvents.GHAST_SHOOT, Math.max(1, prepareTicks), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.RIPTIDE_RUSH) {
                 scheduleBattleSound(attacker, SoundEvents.TRIDENT_RIPTIDE_1.value(), Math.max(1, ClientBattleState.RIPTIDE_CHARGE_TICKS), 1.0F, 1.0F);
             } else if (event.animationType() == BattleVisualEvent.AnimationType.HOGLIN_HEAD_ATTACK) {
@@ -1242,6 +1335,23 @@ public final class ClientEvents {
             }
         }
 
+    }
+
+    private record TemporaryFireballState(Boolean originalBlazeCharged, Boolean originalGhastCharging) {
+        private static TemporaryFireballState capture(LivingEntity entity) {
+            Boolean blazeCharged = entity instanceof Blaze blaze ? blaze.isCharged() : null;
+            Boolean ghastCharging = entity instanceof Ghast ghast ? ghast.isCharging() : null;
+            return new TemporaryFireballState(blazeCharged, ghastCharging);
+        }
+
+        private void restore(LivingEntity entity) {
+            if (originalBlazeCharged != null && entity instanceof Blaze blaze) {
+                blaze.setCharged(originalBlazeCharged);
+            }
+            if (originalGhastCharging != null && entity instanceof Ghast ghast) {
+                ghast.setCharging(originalGhastCharging);
+            }
+        }
     }
 
     private static final class TemporaryHandState {
