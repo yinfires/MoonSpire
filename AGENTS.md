@@ -7,6 +7,7 @@
 - Gameplay entries must be categorized by feature area, describe the player-facing rule/behavior, and briefly explain how the code implements it.
 - If a code change affects gameplay even indirectly, update or add the matching category entry instead of leaving the document stale.
 - Any developer-function modification, addition, or removal must be recorded in `docs/developer.md` in the same change.
+- Any monster default deck, monster battle attribute, default monster initial effect, monster reward pool, developer monster override, or monster deck fallback change must first read `docs/monster_decks.md`; if the change affects those rules, update `docs/monster_decks.md` in the same change.
 - Any battle animation implementation, addition, modification, or removal must first read `docs/battle_animation.md`; if the change affects 战斗动画 chains, timing, rendering hooks, visual states, animation types, projectile behavior, temporary held items, vanilla item-use poses, monster-specific poses, hurt/knockback visuals, or world overlay visuals, update `docs/battle_animation.md` in the same change.
 - The root `NOTICE` file must be written in both English and Simplified Chinese.
 - When the user says only "回合开始时" or "回合结束时" without further qualification, interpret it as the start or end of the acting side's own turn (玩家方或怪物方自己的回合), not the start or end of the whole combat round.
